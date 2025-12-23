@@ -1,6 +1,7 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Layout } from './components/Layout';
+import { SalesManager } from './components/SalesManager';
 import { Dashboard } from './components/Dashboard';
 import { InventoryManager } from './components/InventoryManager';
 import { EventManager } from './components/EventManager';
@@ -13,18 +14,38 @@ import { MOCK_INVENTORY, MOCK_EVENTS, MOCK_TRANSACTIONS, MOCK_PACKAGES, MOCK_EMP
 import { MessageSquare } from 'lucide-react';
 
 const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'inventory' | 'events' | 'packages' | 'employees' | 'quotations'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'inventory' | 'events' | 'packages' | 'employees' | 'quotations' | 'sales'>('dashboard');
   const [isChatOpen, setIsChatOpen] = useState(false);
   
-  const [appState, setAppState] = useState<AppState>({
-    inventory: MOCK_INVENTORY,
-    events: MOCK_EVENTS,
-    transactions: MOCK_TRANSACTIONS,
-    packages: MOCK_PACKAGES,
-    employees: MOCK_EMPLOYEES,
-    quotations: [],
-    logs: []
+  const [appState, setAppState] = useState<AppState>(() => {
+    try {
+      const raw = localStorage.getItem('ebus_app_state');
+      if (raw) {
+        return JSON.parse(raw) as AppState;
+      }
+    } catch (err) {
+      console.warn('Failed to parse stored app state, falling back to defaults', err);
+    }
+    return {
+      inventory: MOCK_INVENTORY,
+      events: MOCK_EVENTS,
+      transactions: MOCK_TRANSACTIONS,
+      packages: MOCK_PACKAGES,
+      employees: MOCK_EMPLOYEES,
+      saleItems: [],
+      saleOrders: [],
+      quotations: [],
+      logs: []
+    };
   });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('ebus_app_state', JSON.stringify(appState));
+    } catch (err) {
+      console.warn('Failed to persist app state', err);
+    }
+  }, [appState]);
 
   const addLog = (message: string, type: LogEntry['type'] = 'INFO') => {
     const newLog: LogEntry = {
@@ -43,23 +64,47 @@ const App: React.FC = () => {
   const handleUpdateInventory = (updatedItem: InventoryItem) => {
     setAppState(prev => ({
       ...prev,
-      inventory: prev.inventory.map(i => i.id === updatedItem.id ? updatedItem : i)
+      inventory: prev.inventory.map(i => i.id === updatedItem.id ? updatedItem : i),
+      saleItems: (prev.saleItems || []).map(s => s.id === `SALE-${updatedItem.id}` ? {
+        ...s,
+        name: updatedItem.name,
+        category: updatedItem.category,
+        description: updatedItem.description,
+        images: updatedItem.imageUrl ? [updatedItem.imageUrl] : s.images,
+        price: Number(updatedItem.rentalPrice) || s.price,
+        link: updatedItem.purchaseLink || s.link,
+        barcode: s.barcode || updatedItem.id
+      } : s)
     }));
     addLog(`Cập nhật thông tin thiết bị: ${updatedItem.name}`, 'INFO');
   };
 
   const handleAddNewItem = (item: InventoryItem) => {
-    setAppState(prev => ({
-      ...prev,
-      inventory: [...prev.inventory, item]
-    }));
+    setAppState(prev => {
+      const exists = prev.inventory.some(i => i.id === item.id);
+      const newInventory = exists ? prev.inventory : [...prev.inventory, item];
+      const saleId = `SALE-${item.id}`;
+      const existsSale = (prev.saleItems || []).some(s => s.id === saleId);
+      const newSaleItems = existsSale ? prev.saleItems : [...(prev.saleItems || []), {
+        id: saleId,
+        name: item.name,
+        category: item.category,
+        description: item.description,
+        images: item.imageUrl ? [item.imageUrl] : [],
+        price: Number(item.rentalPrice) || 0,
+        link: item.purchaseLink || '',
+        barcode: item.id
+      }];
+      return { ...prev, inventory: newInventory, saleItems: newSaleItems };
+    });
     addLog(`Đã thêm thiết bị mới: ${item.name}`, 'SUCCESS');
   };
   
   const handleBulkImport = (items: InventoryItem[]) => {
     setAppState(prev => {
       let currentInv = [...prev.inventory];
-      items.forEach(newItem => {
+      let currentSales = [...(prev.saleItems || [])];
+      items.forEach((newItem, idx) => {
         const existingIdx = currentInv.findIndex(i => i.name.toLowerCase() === newItem.name.toLowerCase());
         if (existingIdx > -1) {
           currentInv[existingIdx] = {
@@ -69,9 +114,13 @@ const App: React.FC = () => {
           };
         } else {
           currentInv.push(newItem);
+          const saleId = `SALE-${newItem.id}`;
+          if (!currentSales.some(s => s.id === saleId)) {
+            currentSales.push({ id: saleId, name: newItem.name, category: newItem.category, description: newItem.description, images: newItem.imageUrl ? [newItem.imageUrl] : [], price: Number(newItem.rentalPrice) || 0, link: newItem.purchaseLink || '', barcode: newItem.id });
+          }
         }
       });
-      return { ...prev, inventory: currentInv };
+      return { ...prev, inventory: currentInv, saleItems: currentSales };
     });
     addLog(`Đã nhập hàng loạt ${items.length} hạng mục.`, 'INFO');
   };
@@ -90,12 +139,20 @@ const App: React.FC = () => {
       }
 
       const newInventory = prev.inventory.filter(i => i.id !== id);
+      const newSaleItems = (prev.saleItems || []).filter(s => s.id !== `SALE-${id}`);
       addLog(`Đã xóa thiết bị: ${itemName}`, 'SUCCESS');
       return {
         ...prev,
-        inventory: newInventory
+        inventory: newInventory,
+        saleItems: newSaleItems
       };
     });
+  };
+
+  // --- Handlers for Sale Orders ---
+  const handleCreateSaleOrder = (order: any) => {
+    setAppState(prev => ({ ...prev, saleOrders: [...(prev.saleOrders || []), order] }));
+    addLog(`Tạo phiếu xuất bán hàng: ${order.id} cho ${order.customerName}`, 'SUCCESS');
   };
 
   const handleRestockItem = (id: string, qty: number) => {
@@ -196,6 +253,21 @@ const App: React.FC = () => {
     addLog(`Cập nhật trạng thái báo giá ${id} thành ${status}.`, 'INFO');
   };
 
+  // --- Handlers cho Hàng bán sự kiện ---
+  const handleCreateSaleItem = (item: any) => {
+    setAppState(prev => ({ ...prev, saleItems: [...(prev.saleItems || []), item] }));
+    addLog(`Đã thêm hàng bán: ${item.name}`, 'SUCCESS');
+  };
+  const handleUpdateSaleItem = (item: any) => {
+    setAppState(prev => ({ ...prev, saleItems: (prev.saleItems || []).map(s => s.id === item.id ? item : s) }));
+    addLog(`Cập nhật hàng bán: ${item.name}`, 'INFO');
+  };
+  const handleDeleteSaleItem = (id: string) => {
+    const name = appState.saleItems?.find(s => s.id === id)?.name || 'Không xác định';
+    setAppState(prev => ({ ...prev, saleItems: (prev.saleItems || []).filter(s => s.id !== id) }));
+    addLog(`Đã xóa hàng bán: ${name}`, 'SUCCESS');
+  };
+
   // --- Handlers cho Sự kiện (Full Logic) ---
   const handleCreateEvent = (event: Event) => {
     setAppState(prev => ({ ...prev, events: [...prev.events, event] }));
@@ -269,6 +341,18 @@ const App: React.FC = () => {
     const item = appState.inventory.find(i => i.id === itemId);
     const event = appState.events.find(e => e.id === eventId);
     if (!item || !event) return;
+    
+    // Find the item allocation to check if return exceeds exported quantity
+    const itemAlloc = event.items.find(ai => ai.itemId === itemId);
+    if (!itemAlloc) return;
+    
+    // Validate: returned quantity + new qty should not exceed exported quantity
+    const maxReturnableQty = itemAlloc.quantity - itemAlloc.returnedQuantity;
+    if (qty > maxReturnableQty) {
+      alert(`Chỉ có thể trả lại tối đa ${maxReturnableQty} sản phẩm (đã trả ${itemAlloc.returnedQuantity}/${itemAlloc.quantity})`);
+      return;
+    }
+    
     setAppState(prev => ({
       ...prev,
       inventory: prev.inventory.map(i => i.id === itemId ? { ...i, availableQuantity: i.availableQuantity + qty, inUseQuantity: i.inUseQuantity - qty } : i),
@@ -400,6 +484,15 @@ const App: React.FC = () => {
           onCreateQuotation={handleCreateQuotation} 
           onDeleteQuotation={handleDeleteQuotation} 
           onUpdateStatus={handleUpdateQuotationStatus} 
+        />
+      )}
+      {activeTab === 'sales' && (
+        <SalesManager
+          saleItems={appState.saleItems || []}
+          onAddSaleItem={handleCreateSaleItem}
+          onUpdateSaleItem={handleUpdateSaleItem}
+          onDeleteSaleItem={handleDeleteSaleItem}
+          onCreateSaleOrder={handleCreateSaleOrder}
         />
       )}
       {activeTab === 'events' && (

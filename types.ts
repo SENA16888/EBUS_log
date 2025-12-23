@@ -47,6 +47,34 @@ export interface InventoryItem {
   productionNote?: string;
 }
 
+export interface SaleItem {
+  id: string;
+  name: string;
+  category?: string;
+  description?: string;
+  images?: string[];
+  price: number;
+  link?: string;
+  barcode?: string;
+}
+
+export interface SaleOrderLine {
+  itemId: string;
+  name: string;
+  price: number;
+  quantity: number;
+}
+
+export interface SaleOrder {
+  id: string;
+  date: string;
+  customerName: string;
+  customerContact?: string;
+  items: SaleOrderLine[];
+  total: number;
+  note?: string;
+}
+
 export interface Employee {
   id: string;
   name: string;
@@ -88,6 +116,7 @@ export interface Event {
   startDate: string;
   endDate: string;
   status: EventStatus;
+  session?: 'MORNING' | 'AFTERNOON' | 'EVENING';
   items: EventItemAllocation[];
   staff?: EventStaffAllocation[];
   expenses?: EventExpense[];
@@ -155,5 +184,7 @@ export interface AppState {
   packages: ComboPackage[];
   employees: Employee[];
   quotations: Quotation[];
+  saleItems?: SaleItem[];
+  saleOrders?: SaleOrder[];
   logs: LogEntry[];
 }

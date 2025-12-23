@@ -95,35 +95,58 @@ export const PackageManager: React.FC<PackageManagerProps> = ({
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-        {packages.map(pkg => (
-          <div key={pkg.id} className="bg-white rounded-xl shadow-sm border border-slate-100 flex flex-col hover:shadow-md transition group relative">
-            <div className="p-5 border-b border-slate-100 bg-slate-50/50 flex justify-between items-start">
-              <div className="flex-1">
-                <h3 className="font-bold text-gray-800 flex items-center gap-2">
-                  <Package className="text-blue-500" size={20} /> {pkg.name}
-                </h3>
-                <p className="text-sm font-bold text-blue-600 mt-1">{pkg.packagePrice?.toLocaleString()} VNĐ</p>
+        {packages.map(pkg => {
+          const shortages = pkg.items.map(it => {
+            const inv = inventory.find(i => i.id === it.itemId);
+            const available = inv ? inv.availableQuantity : 0;
+            return { itemId: it.itemId, required: it.quantity, available };
+          }).filter(s => s.available < s.required);
+          const needsRestock = shortages.length > 0;
+
+          return (
+            <div key={pkg.id} className={`bg-white rounded-xl shadow-sm border border-slate-100 flex flex-col hover:shadow-md transition group relative ${needsRestock ? 'ring-2 ring-orange-200' : ''}`}>
+              <div className="p-5 border-b border-slate-100 bg-slate-50/50 flex justify-between items-start">
+                <div className="flex-1">
+                  <h3 className="font-bold text-gray-800 flex items-center gap-2">
+                    <Package className="text-blue-500" size={20} /> {pkg.name}
+                  </h3>
+                  <p className="text-sm font-bold text-blue-600 mt-1">{pkg.packagePrice?.toLocaleString()} VNĐ</p>
+                </div>
+                <div className="flex items-center gap-3">
+                  {needsRestock ? (
+                    <div className="text-xs font-black uppercase text-orange-700 bg-orange-100 px-2 py-1 rounded">Cần bổ sung</div>
+                  ) : (
+                    <div className="text-xs font-black uppercase text-green-700 bg-green-100 px-2 py-1 rounded">Sẵn sàng</div>
+                  )}
+                  <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-50 relative">
+                    <button onClick={(e) => handleOpenEdit(e, pkg)} title="Sửa gói" className="p-2 text-slate-400 hover:text-blue-600 hover:bg-white rounded-lg transition-all shadow-sm border border-transparent hover:border-blue-100"><Pencil size={18} /></button>
+                    <button onClick={(e) => handleDeleteClick(e, pkg.id, pkg.name)} title="Xóa gói" className="p-2 text-slate-400 hover:text-red-600 hover:bg-white rounded-lg transition-all shadow-sm border border-transparent hover:border-red-100"><Trash2 size={18} /></button>
+                  </div>
+                </div>
               </div>
-              <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-50 relative">
-                <button onClick={(e) => handleOpenEdit(e, pkg)} title="Sửa gói" className="p-2 text-slate-400 hover:text-blue-600 hover:bg-white rounded-lg transition-all shadow-sm border border-transparent hover:border-blue-100"><Pencil size={18} /></button>
-                <button onClick={(e) => handleDeleteClick(e, pkg.id, pkg.name)} title="Xóa gói" className="p-2 text-slate-400 hover:text-red-600 hover:bg-white rounded-lg transition-all shadow-sm border border-transparent hover:border-red-100"><Trash2 size={18} /></button>
+              <div className="p-5 flex-1">
+                <ul className="space-y-2">
+                  {pkg.items.map((pkgItem, idx) => {
+                    const invItem = inventory.find(i => i.id === pkgItem.itemId);
+                    const enough = invItem ? invItem.availableQuantity >= pkgItem.quantity : false;
+                    return (
+                      <li key={idx} className="flex justify-between items-center text-sm">
+                        <span className="text-gray-700 flex items-center gap-2">
+                          <div className={`w-2 h-2 rounded-full ${enough ? 'bg-green-400' : 'bg-red-400'}`} />
+                          {invItem ? invItem.name : pkgItem.itemId}
+                          {!enough && (
+                            <span className="text-[10px] text-red-500 font-bold ml-2">(thiếu {Math.max(0, pkgItem.quantity - (invItem?.availableQuantity||0))})</span>
+                          )}
+                        </span>
+                        <span className="font-medium bg-blue-50 text-blue-700 px-2 py-0.5 rounded text-xs">x{pkgItem.quantity}</span>
+                      </li>
+                    );
+                  })}
+                </ul>
               </div>
             </div>
-            <div className="p-5 flex-1">
-              <ul className="space-y-2">
-                {pkg.items.map((pkgItem, idx) => {
-                  const invItem = inventory.find(i => i.id === pkgItem.itemId);
-                  return (
-                    <li key={idx} className="flex justify-between items-center text-sm">
-                      <span className="text-gray-700 flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-slate-300"></div>{invItem ? invItem.name : pkgItem.itemId}</span>
-                      <span className="font-medium bg-blue-50 text-blue-700 px-2 py-0.5 rounded text-xs">x{pkgItem.quantity}</span>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {showCreateModal && (

@@ -62,12 +62,18 @@ export const EventManager: React.FC<EventManagerProps> = ({
     startDate: '',
     endDate: ''
   });
+  const [newEventSession, setNewEventSession] = useState<'MORNING' | 'AFTERNOON' | 'EVENING'>('MORNING');
 
   // Export State
   const [exportMode, setExportMode] = useState<'SINGLE' | 'COMBO'>('SINGLE');
   const [selectedItemForExport, setSelectedItemForExport] = useState('');
   const [selectedPackageId, setSelectedPackageId] = useState('');
   const [exportQty, setExportQty] = useState(1);
+
+  // Calendar view state
+  const [showCalendarModal, setShowCalendarModal] = useState(false);
+  const [calendarSelectedEventId, setCalendarSelectedEventId] = useState<string | null>(null);
+  const [showEventDetailModal, setShowEventDetailModal] = useState(false);
 
   // Assign Staff State
   const [selectedStaffId, setSelectedStaffId] = useState('');
@@ -97,6 +103,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
       location: newEventData.location,
       startDate: newEventData.startDate,
       endDate: newEventData.endDate || newEventData.startDate,
+      session: newEventSession,
       status: EventStatus.UPCOMING,
       items: [],
       staff: [],
@@ -105,6 +112,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
     onCreateEvent(newEvent);
     setShowCreateEventModal(false);
     setNewEventData({ name: '', client: '', location: '', startDate: '', endDate: '' });
+    setNewEventSession('MORNING');
     setSelectedEventId(newEvent.id);
   };
 
@@ -136,6 +144,32 @@ export const EventManager: React.FC<EventManagerProps> = ({
       onFinalizeOrder(selectedEventId);
       setShowPrintModal(true);
     }
+  };
+
+  const getEventSummary = (eventId: string) => {
+    const ev = events.find(e => e.id === eventId);
+    if (!ev) return null;
+    const linkedQ = ev.quotationId ? quotations.find(q => q.id === ev.quotationId) : null;
+    const staffCostsLocal = ev.staff?.reduce((a, b) => a + b.salary, 0) || 0;
+    const otherCostsLocal = ev.expenses?.reduce((a, b) => a + b.amount, 0) || 0;
+    const totalCostsLocal = staffCostsLocal + otherCostsLocal;
+    const revenueLocal = linkedQ?.totalAmount || 0;
+    const grossProfitLocal = revenueLocal - totalCostsLocal;
+    const profitMarginLocal = revenueLocal > 0 ? (grossProfitLocal / revenueLocal) * 100 : 0;
+    const staffCount = ev.staff?.length || 0;
+    const itemsCount = ev.items?.reduce((a, b) => a + b.quantity, 0) || 0;
+    return {
+      event: ev,
+      linkedQuotation: linkedQ,
+      staffCosts: staffCostsLocal,
+      otherCosts: otherCostsLocal,
+      totalCosts: totalCostsLocal,
+      revenue: revenueLocal,
+      grossProfit: grossProfitLocal,
+      profitMargin: profitMarginLocal,
+      staffCount,
+      itemsCount
+    };
   };
 
   const handleStaffAssignSubmit = () => {
@@ -205,12 +239,14 @@ export const EventManager: React.FC<EventManagerProps> = ({
       <div className="w-full lg:w-1/3 bg-white rounded-xl shadow-sm border border-slate-100 flex flex-col h-full overflow-hidden">
         <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
           <h3 className="font-bold text-gray-800 text-lg">Sự Kiện</h3>
-          <button 
-            onClick={() => setShowCreateEventModal(true)} 
-            className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
-          >
-            <Plus size={20} />
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setShowCreateEventModal(true)} className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">
+              <Plus size={20} />
+            </button>
+            <button onClick={() => setShowCalendarModal(true)} title="Xem lịch" className="p-2 bg-slate-100 rounded-lg hover:bg-slate-200 transition">
+              <Calendar size={18} />
+            </button>
+          </div>
         </div>
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
           {events.length === 0 && <div className="text-center py-10 text-gray-400 italic text-sm">Chưa có sự kiện nào.</div>}
@@ -222,7 +258,14 @@ export const EventManager: React.FC<EventManagerProps> = ({
             >
               <h4 className="font-bold text-gray-800">{event.name}</h4>
               <p className="text-xs text-gray-500 flex items-center gap-1 mt-1"><Calendar size={12}/> {event.startDate}</p>
-              {event.quotationId && <div className="mt-2 inline-flex items-center gap-1 text-[10px] font-bold bg-green-100 text-green-700 px-2 py-0.5 rounded-full"><LinkIcon size={10}/> Đã gắn báo giá</div>}
+              <div className="mt-2 flex items-center gap-2">
+                {event.session && (
+                  <div className="inline-flex items-center gap-1 text-[10px] font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full">
+                    {event.session === 'MORNING' ? 'SÁNG' : event.session === 'AFTERNOON' ? 'CHIỀU' : 'TỐI'}
+                  </div>
+                )}
+                {event.quotationId && <div className="inline-flex items-center gap-1 text-[10px] font-bold bg-green-100 text-green-700 px-2 py-0.5 rounded-full"><LinkIcon size={10}/> Đã gắn báo giá</div>}
+              </div>
             </div>
           ))}
         </div>
@@ -305,7 +348,16 @@ export const EventManager: React.FC<EventManagerProps> = ({
                               <td className="px-4 py-3 text-center font-black text-blue-600">{alloc.quantity}</td>
                               <td className="px-4 py-3 text-center font-black text-green-600">{alloc.returnedQuantity}</td>
                               <td className="px-4 py-3">
-                                <button onClick={() => onReturnFromEvent(selectedEvent.id, alloc.itemId, 1)} className="p-1 text-blue-600 hover:bg-blue-100 rounded">
+                                <button 
+                                  onClick={() => onReturnFromEvent(selectedEvent.id, alloc.itemId, 1)} 
+                                  disabled={alloc.returnedQuantity >= alloc.quantity}
+                                  className={`p-1 rounded ${
+                                    alloc.returnedQuantity >= alloc.quantity 
+                                      ? 'text-gray-300 cursor-not-allowed bg-gray-50' 
+                                      : 'text-blue-600 hover:bg-blue-100'
+                                  }`}
+                                  title={alloc.returnedQuantity >= alloc.quantity ? `Đã trả hết ${alloc.quantity} sản phẩm` : `Còn có thể trả ${alloc.quantity - alloc.returnedQuantity} sản phẩm`}
+                                >
                                   <ArrowLeft size={16}/>
                                 </button>
                               </td>
@@ -538,6 +590,14 @@ export const EventManager: React.FC<EventManagerProps> = ({
                  <input type="date" className="w-full border border-slate-300 rounded-xl p-3" value={newEventData.startDate} onChange={e => setNewEventData({...newEventData, startDate: e.target.value})} />
                  <input type="date" className="w-full border border-slate-300 rounded-xl p-3" value={newEventData.endDate} onChange={e => setNewEventData({...newEventData, endDate: e.target.value})} />
               </div>
+              <div className="mt-3">
+                <label className="text-[12px] font-bold text-gray-600 mb-1 block">Buổi</label>
+                <select className="w-full border border-slate-300 rounded-xl p-3 bg-white" value={newEventSession} onChange={e => setNewEventSession(e.target.value as any)}>
+                  <option value="MORNING">SÁNG</option>
+                  <option value="AFTERNOON">CHIỀU</option>
+                  <option value="EVENING">TỐI</option>
+                </select>
+              </div>
             </div>
             <div className="p-6 bg-slate-50 flex justify-end gap-3">
               <button onClick={() => setShowCreateEventModal(false)} className="px-4 py-2 font-bold text-gray-500">Hủy</button>
@@ -573,6 +633,130 @@ export const EventManager: React.FC<EventManagerProps> = ({
           </div>
         </div>
       )}
+
+      {/* MODAL: Calendar View */}
+      {showCalendarModal && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-4xl p-6 shadow-2xl max-h-[90vh] overflow-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-xl font-bold">Lịch Sự Kiện</h3>
+              <div className="flex items-center gap-2">
+                <button onClick={() => setShowCalendarModal(false)} className="px-3 py-2 bg-slate-100 rounded-lg"><X size={18} /></button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-7 gap-2 text-sm">
+              {['CN','T2','T3','T4','T5','T6','T7'].map(d => (
+                <div key={d} className="text-center font-black text-xs text-slate-500 uppercase">{d}</div>
+              ))}
+
+              {/* Simple month grid for current month */}
+              {(() => {
+                const now = new Date();
+                const year = now.getFullYear();
+                const month = now.getMonth();
+                const first = new Date(year, month, 1);
+                const startDay = first.getDay();
+                const daysInMonth = new Date(year, month+1, 0).getDate();
+                const cells = [] as any[];
+                for (let i = 0; i < startDay; i++) cells.push(null);
+                for (let d = 1; d <= daysInMonth; d++) cells.push(new Date(year, month, d));
+                return cells.map((dt, idx) => {
+                  if (!dt) return <div key={idx} className="h-24 p-2 border rounded-lg bg-slate-50" />;
+                  const key = dt.toISOString().slice(0,10);
+                  const dayEvents = events.filter(ev => ev.startDate === key || ev.startDate === dt.toLocaleDateString('en-CA'));
+                  return (
+                    <div key={idx} className="h-24 p-2 border rounded-lg bg-white flex flex-col">
+                      <div className="text-xs text-slate-400 font-black">{dt.getDate()}</div>
+                      <div className="mt-1 overflow-auto text-[12px]">
+                        {dayEvents.map(ev => (
+                          <button key={ev.id} onClick={() => { setCalendarSelectedEventId(ev.id); setShowEventDetailModal(true); }} className="w-full text-left truncate py-0.5 px-1 rounded hover:bg-blue-50 text-blue-600 font-medium">
+                            <span className="font-medium">{ev.name}</span>
+                            {ev.session && (
+                              <span className="ml-2 inline-flex items-center text-[10px] font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full">
+                                {ev.session === 'MORNING' ? 'SÁNG' : ev.session === 'AFTERNOON' ? 'CHIỀU' : 'TỐI'}
+                              </span>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: Event Detail from Calendar */}
+      {showEventDetailModal && calendarSelectedEventId && (() => {
+        const summary = getEventSummary(calendarSelectedEventId!);
+        if (!summary) return null;
+        const ev = summary.event;
+        return (
+          <div key={ev.id} className="fixed inset-0 bg-black/70 z-[70] flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl w-full max-w-2xl p-6 shadow-2xl max-h-[90vh] overflow-auto relative z-[80]">
+              <div className="flex justify-between items-start mb-4">
+                <div>
+                  <h3 className="text-2xl font-black">{ev.name}</h3>
+                  <p className="text-sm text-slate-500">{ev.client} • {ev.location}</p>
+                  <div className="flex items-center gap-3 mt-1">
+                    <p className="text-xs text-slate-400">{ev.startDate} → {ev.endDate}</p>
+                    {ev.session && (
+                      <div className="inline-flex items-center text-[11px] font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full">
+                        {ev.session === 'MORNING' ? 'SÁNG' : ev.session === 'AFTERNOON' ? 'CHIỀU' : 'TỐI'}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => { setShowEventDetailModal(false); setCalendarSelectedEventId(null); }} className="px-4 py-2 bg-slate-100 rounded-lg">Đóng</button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                <div className="bg-slate-50 p-4 rounded-lg">
+                  <p className="text-xs font-black text-slate-500 uppercase">Doanh thu</p>
+                  <p className="text-lg font-black text-blue-600">{summary.revenue.toLocaleString()}đ</p>
+                </div>
+                <div className="bg-slate-50 p-4 rounded-lg">
+                  <p className="text-xs font-black text-slate-500 uppercase">Chi phí</p>
+                  <p className="text-lg font-black text-orange-500">{summary.totalCosts.toLocaleString()}đ</p>
+                </div>
+                <div className="bg-slate-50 p-4 rounded-lg">
+                  <p className="text-xs font-black text-slate-500 uppercase">Lợi nhuận gộp</p>
+                  <p className="text-lg font-black text-green-600">{summary.grossProfit.toLocaleString()}đ ({summary.profitMargin.toFixed(1)}%)</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="bg-white p-4 rounded-lg border">
+                  <p className="text-xs text-slate-400 uppercase font-black">Địa điểm</p>
+                  <p className="font-black">{ev.location}</p>
+                </div>
+                <div className="bg-white p-4 rounded-lg border">
+                  <p className="text-xs text-slate-400 uppercase font-black">Nhân sự</p>
+                  <p className="font-black">{summary.staffCount} người</p>
+                </div>
+                <div className="bg-white p-4 rounded-lg border">
+                  <p className="text-xs text-slate-400 uppercase font-black">Thiết bị</p>
+                  <p className="font-black">{summary.itemsCount} cái</p>
+                </div>
+              </div>
+
+              <div className="mt-6">
+                <h4 className="font-black text-slate-700 mb-2">Danh sách chi tiết</h4>
+                <div className="bg-white rounded-lg border p-4">
+                  <p className="text-sm"><b>Nhân sự:</b> {ev.staff?.map(s => s.employeeId).join(', ') || 'Không có'}</p>
+                  <p className="text-sm mt-2"><b>Chi phí:</b> {ev.expenses?.length ? ev.expenses.map(ex => `${ex.description} (${ex.amount}đ)`).join('; ') : 'Không có'}</p>
+                  <p className="text-sm mt-2"><b>Thiết bị:</b> {ev.items?.map(it => `${it.itemId} x ${it.quantity}`).join(', ') || 'Không có'}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* MODAL: Print Slip */}
       {showPrintModal && selectedEvent && (

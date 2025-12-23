@@ -27,6 +27,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCategory, setFilterCategory] = useState('All');
+  const [showLowStockOnly, setShowLowStockOnly] = useState(false);
   
   const [showImportModal, setShowImportModal] = useState(false);
   const [showStatusModal, setShowStatusModal] = useState(false);
@@ -62,7 +63,9 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
     const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
                           item.id.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesCategory = filterCategory === 'All' || item.category === filterCategory;
-    return matchesSearch && matchesCategory;
+    const isLowStock = item.availableQuantity <= (item.minStock || 0);
+    const matchesLowStock = !showLowStockOnly || isLowStock;
+    return matchesSearch && matchesCategory && matchesLowStock;
   });
 
   const handleOpenEdit = (e: React.MouseEvent, item: InventoryItem) => {
@@ -254,13 +257,21 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
             {categories.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
         </div>
-        <div className="bg-orange-500 p-5 rounded-3xl border border-orange-400 flex items-center gap-4 text-white shadow-lg">
+        <button
+          type="button"
+          onClick={() => setShowLowStockOnly(prev => !prev)}
+          aria-pressed={showLowStockOnly}
+          title={showLowStockOnly ? 'Bỏ lọc sắp hết hàng' : 'Lọc sắp hết hàng'}
+          className={`p-5 rounded-3xl border flex items-center gap-4 text-white shadow-lg transition ${
+            showLowStockOnly ? 'bg-orange-600 border-orange-500 ring-2 ring-orange-200' : 'bg-orange-500 border-orange-400 hover:bg-orange-600'
+          }`}
+        >
           <AlertTriangle size={24} />
           <div>
             <p className="text-[10px] font-black uppercase tracking-widest opacity-80">Sắp hết hàng</p>
             <p className="text-2xl font-black leading-none">{inventory.filter(i => i.availableQuantity <= (i.minStock || 0)).length} mã</p>
           </div>
-        </div>
+        </button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pb-20">
@@ -362,6 +373,17 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
                   <input type="number" className="w-full border-2 border-slate-100 rounded-2xl p-4 text-sm font-black" value={newItemData.totalQuantity} onChange={(e) => setNewItemData({...newItemData, totalQuantity: Number(e.target.value)})} disabled={importMode === 'EDIT'} />
                   {importMode === 'EDIT' && <p className="text-[10px] text-blue-500 mt-1 italic">Dùng chức năng "Nhập thêm hàng" để tăng số lượng.</p>}
                 </div>
+
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Giá thuê (VNĐ)</label>
+                  <input type="number" className="w-full border-2 border-slate-100 rounded-2xl p-4 text-sm font-black" value={newItemData.rentalPrice} onChange={(e) => setNewItemData({...newItemData, rentalPrice: Number(e.target.value)})} />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Ngưỡng cảnh báo tồn</label>
+                  <input type="number" className="w-full border-2 border-slate-100 rounded-2xl p-4 text-sm font-black" value={newItemData.minStock} onChange={(e) => setNewItemData({...newItemData, minStock: Number(e.target.value)})} />
+                </div>
+
                 <div className="md:col-span-2">
                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Link ảnh minh họa</label>
                    <input type="text" className="w-full border-2 border-slate-100 rounded-2xl p-4 text-sm font-bold" value={newItemData.imageUrl} onChange={(e) => setNewItemData({...newItemData, imageUrl: e.target.value})} />

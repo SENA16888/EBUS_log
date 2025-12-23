@@ -9,8 +9,8 @@ import { LogEntry } from '../types';
 
 interface LayoutProps {
   children: React.ReactNode;
-  activeTab: 'dashboard' | 'inventory' | 'events' | 'packages' | 'employees' | 'quotations';
-  onTabChange: (tab: 'dashboard' | 'inventory' | 'events' | 'packages' | 'employees' | 'quotations') => void;
+  activeTab: 'dashboard' | 'inventory' | 'events' | 'packages' | 'employees' | 'quotations' | 'sales';
+  onTabChange: (tab: 'dashboard' | 'inventory' | 'events' | 'packages' | 'employees' | 'quotations' | 'sales') => void;
   logs: LogEntry[];
 }
 
@@ -65,6 +65,16 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange
           >
             <FileText size={20} />
             <span className="font-medium text-sm">Báo giá khách</span>
+          </button>
+
+          <button 
+            onClick={() => onTabChange('sales')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
+              activeTab === 'sales' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+            }`}
+          >
+            <Layers size={20} />
+            <span className="font-medium text-sm">Hàng bán</span>
           </button>
 
           <button 
