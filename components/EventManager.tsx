@@ -381,8 +381,8 @@ export const EventManager: React.FC<EventManagerProps> = ({
                     </div>
                     
                     <div className="flex gap-3">
-                      <select
-                        className="flex-1 rounded-xl p-3 text-sm bg-white text-gray-800 outline-none focus:ring-2 focus:ring-blue-200 border border-white/40 shadow-lg"
+                      <select 
+                        className="flex-1 border-none rounded-xl p-3 text-sm bg-white/10 text-white outline-none focus:ring-2 focus:ring-white/50 backdrop-blur-md"
                         value={selectedEvent.quotationId || ''}
                         onChange={e => handleLinkQuotation(e.target.value)}
                       >

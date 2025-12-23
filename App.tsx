@@ -8,19 +8,14 @@ import { PackageManager } from './components/PackageManager';
 import { EmployeeManager } from './components/EmployeeManager';
 import { QuotationManager } from './components/QuotationManager';
 import { AIChat } from './components/AIChat';
-import { AppState, InventoryItem, Event, EventStatus, Transaction, TransactionType, ComboPackage, Employee, Quotation, QuotationLineItem, EventStaffAllocation, EventExpense, LogEntry } from './types';
+import { AppState, InventoryItem, Event, EventStatus, Transaction, TransactionType, ComboPackage, Employee, Quotation, EventStaffAllocation, EventExpense, LogEntry } from './types';
 import { MOCK_INVENTORY, MOCK_EVENTS, MOCK_TRANSACTIONS, MOCK_PACKAGES, MOCK_EMPLOYEES } from './constants';
 import { MessageSquare } from 'lucide-react';
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'inventory' | 'events' | 'packages' | 'employees' | 'quotations'>('dashboard');
   const [isChatOpen, setIsChatOpen] = useState(false);
-
-  const calculateQuotationTotal = (items: QuotationLineItem[], discount: number) => {
-    const subtotal = items.reduce((sum, item) => sum + item.total, 0);
-    return subtotal - discount;
-  };
-
+  
   const [appState, setAppState] = useState<AppState>({
     inventory: MOCK_INVENTORY,
     events: MOCK_EVENTS,
@@ -82,43 +77,25 @@ const App: React.FC = () => {
   };
 
   const handleDeleteItem = (id: string) => {
-    const itemToDelete = appState.inventory.find(i => i.id === id);
-    if (!itemToDelete) return;
-
-    if (itemToDelete.inUseQuantity > 0) {
-      alert(`CẢNH BÁO: Không thể xóa "${itemToDelete.name}"!\n\nLý do: Đang có ${itemToDelete.inUseQuantity} chiếc đang được sử dụng tại sự kiện.\nVui lòng thu hồi thiết bị về kho trước khi xóa.`);
-      addLog(`Xóa thất bại: "${itemToDelete.name}" đang được sử dụng.`, 'WARNING');
-      return;
-    }
-
+    let itemName = 'Không xác định';
     setAppState(prev => {
-      const newInventory = prev.inventory.filter(i => i.id !== id);
-      const newPackages = prev.packages.map(pkg => ({
-        ...pkg,
-        items: pkg.items.filter(item => item.itemId !== id)
-      }));
-      const newQuotations = prev.quotations.map(q => {
-        const filteredItems = q.items.filter(item => !(item.type === 'ITEM' && item.id === id));
-        return {
-          ...q,
-          items: filteredItems,
-          totalAmount: calculateQuotationTotal(filteredItems, q.discount)
-        };
-      });
-      const newEvents = prev.events.map(e => ({
-        ...e,
-        items: e.items.filter(ai => ai.itemId !== id)
-      }));
+      const itemToDelete = prev.inventory.find(i => i.id === id);
+      if (!itemToDelete) return prev;
+      itemName = itemToDelete.name;
 
+      if (itemToDelete.inUseQuantity > 0) {
+        alert(`CẢNH BÁO: Không thể xóa "${itemToDelete.name}"!\n\nLý do: Đang có ${itemToDelete.inUseQuantity} chiếc đang được sử dụng tại sự kiện.\nVui lòng thu hồi thiết bị về kho trước khi xóa.`);
+        addLog(`Xóa thất bại: "${itemName}" đang được sử dụng.`, 'WARNING');
+        return prev;
+      }
+
+      const newInventory = prev.inventory.filter(i => i.id !== id);
+      addLog(`Đã xóa thiết bị: ${itemName}`, 'SUCCESS');
       return {
         ...prev,
-        inventory: newInventory,
-        packages: newPackages,
-        quotations: newQuotations,
-        events: newEvents
+        inventory: newInventory
       };
     });
-    addLog(`Đã xóa thiết bị: ${itemToDelete.name}`, 'SUCCESS');
   };
 
   const handleRestockItem = (id: string, qty: number) => {
@@ -181,18 +158,9 @@ const App: React.FC = () => {
     const pkgName = appState.packages.find(p => p.id === id)?.name || 'Không xác định';
     setAppState(prev => {
       const newPackages = prev.packages.filter(p => p.id !== id);
-      const newQuotations = prev.quotations.map(q => {
-        const filteredItems = q.items.filter(item => !(item.type === 'PACKAGE' && item.id === id));
-        return {
-          ...q,
-          items: filteredItems,
-          totalAmount: calculateQuotationTotal(filteredItems, q.discount)
-        };
-      });
       return {
         ...prev,
-        packages: newPackages,
-        quotations: newQuotations
+        packages: newPackages
       };
     });
     addLog(`Đã xóa gói combo: ${pkgName}`, 'SUCCESS');
