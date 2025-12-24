@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { InventoryItem } from '../types';
 import { 
   Search, Plus, Filter, X, Trash2, AlertTriangle, Wrench, ClipboardList,
-  ShoppingCart, Info, ArrowUpCircle, Settings2, Link as LinkIcon, CheckCircle
+  ShoppingCart, Info, ArrowUpCircle, Settings2, Link as LinkIcon, CheckCircle, CalendarClock
 } from 'lucide-react';
 
 interface InventoryManagerProps {
@@ -54,7 +54,10 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
     rentalPrice: 0,
     purchaseLink: '',
     minStock: 5,
-    productionNote: ''
+    productionNote: '',
+    plannedPurchase: false,
+    plannedQuantity: 0,
+    plannedEta: ''
   });
 
   const categories = ['All', 'STEM', 'Âm thanh', 'Ánh sáng', 'Hiệu ứng', 'Hình ảnh', 'Quảng cáo', 'CSVG'];
@@ -82,7 +85,10 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
       rentalPrice: item.rentalPrice || 0,
       purchaseLink: item.purchaseLink || '',
       minStock: item.minStock || 5,
-      productionNote: item.productionNote || ''
+      productionNote: item.productionNote || '',
+      plannedPurchase: !!item.plannedPurchase,
+      plannedQuantity: item.plannedQuantity || 0,
+      plannedEta: item.plannedEta || ''
     });
     setImportMode('EDIT');
     setShowImportModal(true);
@@ -142,7 +148,10 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
       rentalPrice: Number(newItemData.rentalPrice),
       purchaseLink: newItemData.purchaseLink,
       minStock: Number(newItemData.minStock),
-      productionNote: newItemData.productionNote
+      productionNote: newItemData.productionNote,
+      plannedPurchase: newItemData.plannedPurchase,
+      plannedQuantity: Number(newItemData.plannedQuantity) || 0,
+      plannedEta: newItemData.plannedEta
     };
     onAddNewItem(newItem);
     setShowImportModal(false);
@@ -163,7 +172,10 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
       rentalPrice: Number(newItemData.rentalPrice),
       purchaseLink: newItemData.purchaseLink,
       minStock: Number(newItemData.minStock),
-      productionNote: newItemData.productionNote
+      productionNote: newItemData.productionNote,
+      plannedPurchase: newItemData.plannedPurchase,
+      plannedQuantity: Number(newItemData.plannedQuantity) || 0,
+      plannedEta: newItemData.plannedEta
     };
     onUpdateInventory(updatedItem);
     setShowImportModal(false);
@@ -224,7 +236,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
     setNewItemData({
       name: '', category: 'STEM', description: '', location: '', totalQuantity: 1,
       imageUrl: 'https://picsum.photos/200/200', rentalPrice: 0, purchaseLink: '',
-      minStock: 5, productionNote: ''
+      minStock: 5, productionNote: '', plannedPurchase: false, plannedQuantity: 0, plannedEta: ''
     });
     setEditingItemId(null);
     setImportMode('NEW');
@@ -292,6 +304,11 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
                 <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000" />
                 <div className="absolute top-4 left-4 bg-black/40 backdrop-blur-md text-white text-[9px] font-black px-3 py-1.5 rounded-full uppercase tracking-widest">{item.category}</div>
                 {isLowStock && <div className="absolute bottom-4 left-4 bg-red-600 text-white text-[9px] font-black px-3 py-1.5 rounded-full shadow-xl animate-pulse uppercase tracking-widest">Cảnh báo tồn kho</div>}
+                {item.plannedPurchase && (
+                  <div className="absolute bottom-4 right-4 bg-amber-500 text-white text-[10px] font-black px-3 py-1.5 rounded-full shadow-xl uppercase tracking-widest flex items-center gap-1">
+                    <CalendarClock size={12}/> Dự kiến {item.plannedQuantity || 0}{item.plannedEta ? ` • ${item.plannedEta}` : ''}
+                  </div>
+                )}
               </div>
 
               <div className="p-6 flex-1 flex flex-col">
@@ -320,6 +337,11 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
                       {item.maintenanceQuantity > 0 && <span className="bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded text-[10px] font-bold">Bảo trì: {item.maintenanceQuantity}</span>}
                       {item.brokenQuantity > 0 && <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded text-[10px] font-bold">Hỏng: {item.brokenQuantity}</span>}
                       {item.lostQuantity > 0 && <span className="bg-gray-200 text-gray-700 px-2 py-0.5 rounded text-[10px] font-bold">Mất: {item.lostQuantity}</span>}
+                    </div>
+                  )}
+                  {item.plannedPurchase && (
+                    <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 p-3 rounded-2xl text-[11px] font-bold text-amber-700">
+                      <CalendarClock size={14}/> Dự kiến mua: {item.plannedQuantity || 0} {item.plannedEta ? `• ${item.plannedEta}` : ''}
                     </div>
                   )}
 
@@ -391,6 +413,41 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
                 <div className="md:col-span-2">
                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Link mua hàng / NCC</label>
                    <input type="text" className="w-full border-2 border-slate-100 rounded-2xl p-4 text-sm font-bold" value={newItemData.purchaseLink} onChange={(e) => setNewItemData({...newItemData, purchaseLink: e.target.value})} placeholder="https://..." />
+                </div>
+                <div className="md:col-span-2 border border-amber-100 rounded-2xl p-4 bg-amber-50/60">
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="text-[10px] font-black text-amber-700 uppercase tracking-widest">Dự kiến mua (chưa nhập kho)</label>
+                    <input
+                      type="checkbox"
+                      className="w-5 h-5 accent-amber-500"
+                      checked={newItemData.plannedPurchase}
+                      onChange={e => setNewItemData({ ...newItemData, plannedPurchase: e.target.checked })}
+                    />
+                  </div>
+                  {newItemData.plannedPurchase && (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-3">
+                      <div>
+                        <label className="block text-[10px] font-black text-amber-700 uppercase tracking-widest mb-1">Số lượng dự kiến</label>
+                        <input
+                          type="number"
+                          className="w-full border border-amber-200 rounded-xl p-3 text-sm font-bold text-amber-700"
+                          value={newItemData.plannedQuantity}
+                          onChange={e => setNewItemData({ ...newItemData, plannedQuantity: Number(e.target.value) })}
+                          min={0}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-black text-amber-700 uppercase tracking-widest mb-1">Thời gian dự kiến</label>
+                        <input
+                          type="text"
+                          className="w-full border border-amber-200 rounded-xl p-3 text-sm font-bold"
+                          placeholder="VD: 12/2024 hoặc Tuần 1/12"
+                          value={newItemData.plannedEta}
+                          onChange={e => setNewItemData({ ...newItemData, plannedEta: e.target.value })}
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
                 <div className="md:col-span-2">
                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Ghi chú kỹ thuật / Sản xuất</label>

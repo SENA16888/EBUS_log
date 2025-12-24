@@ -45,6 +45,9 @@ export interface InventoryItem {
   purchaseLink?: string; 
   minStock?: number;
   productionNote?: string;
+  plannedPurchase?: boolean;
+  plannedQuantity?: number;
+  plannedEta?: string;
 }
 
 export interface SaleItem {
@@ -119,6 +122,7 @@ export interface EventExpense {
   subCategory?: string; 
   description: string;
   amount: number;
+  vatInvoiceLink?: string;
 }
 
 export interface EventItemAllocation {
@@ -142,6 +146,29 @@ export interface EventProcessStep {
   checklist: EventProcessChecklistItem[];
 }
 
+export type LayoutPackageSource = 'QUOTATION' | 'PACKAGE' | 'CUSTOM';
+
+export interface EventLayoutBlock {
+  id: string;
+  name: string;
+  packageId?: string;
+  packageName?: string;
+  packageSource?: LayoutPackageSource;
+  staffId?: string;
+  staffName?: string;
+  color: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface EventLayout {
+  floorplanImage?: string;
+  floorplanAspectRatio?: number;
+  blocks: EventLayoutBlock[];
+}
+
 export interface Event {
   id: string;
   name: string;
@@ -159,6 +186,8 @@ export interface Event {
   quotationId?: string; 
   isOrderCreated?: boolean; 
   processSteps?: EventProcessStep[];
+  layout?: EventLayout;
+  saleOrderIds?: string[];
 }
 
 export interface Transaction {

@@ -431,6 +431,22 @@ const App: React.FC = () => {
     }));
   };
 
+  const handleLinkSaleOrderToEvent = (eventId: string, saleOrderId: string, link: boolean) => {
+    setAppState(prev => {
+      const event = prev.events.find(e => e.id === eventId);
+      if (!event) return prev;
+      const saleOrders = prev.saleOrders || [];
+      const updatedSaleOrders = saleOrders.map(order => {
+        if (order.id !== saleOrderId) return order;
+        return link ? { ...order, eventId, eventName: event.name } : { ...order, eventId: undefined, eventName: undefined };
+      });
+      const currentIds = new Set(event.saleOrderIds || []);
+      if (link) currentIds.add(saleOrderId); else currentIds.delete(saleOrderId);
+      const updatedEvents = prev.events.map(e => e.id === eventId ? { ...e, saleOrderIds: Array.from(currentIds) } : e);
+      return { ...prev, saleOrders: updatedSaleOrders, events: updatedEvents };
+    });
+  };
+
   const handleSyncQuotation = (eventId: string, quotationId: string) => {
     setAppState(prev => {
       const quote = prev.quotations.find(q => q.id === quotationId);
@@ -540,6 +556,7 @@ const App: React.FC = () => {
           packages={appState.packages} 
           employees={appState.employees} 
           quotations={appState.quotations}
+          saleOrders={appState.saleOrders || []}
           onExportToEvent={handleExportToEvent} 
           onExportPackageToEvent={handleExportPackageToEvent}
           onSyncQuotation={handleSyncQuotation}
@@ -554,6 +571,7 @@ const App: React.FC = () => {
           onToggleItemDone={handleToggleEventItemDone}
           onToggleStaffDone={handleToggleEventStaffDone}
           onUpdateEvent={handleUpdateEvent}
+          onLinkSaleOrder={handleLinkSaleOrderToEvent}
         />
       )}
       

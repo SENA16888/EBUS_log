@@ -1,12 +1,12 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { Event, InventoryItem, EventStatus, ComboPackage, Employee, EventExpense, EventStaffAllocation, Quotation, EventProcessStep } from '../types';
+import { Event, InventoryItem, EventStatus, ComboPackage, Employee, EventExpense, EventStaffAllocation, Quotation, EventProcessStep, EventLayout, EventLayoutBlock, LayoutPackageSource } from '../types';
 import { 
   Calendar, MapPin, Box, ArrowLeft, Plus, X, Layers, 
   Users, DollarSign, Trash2, Truck, BookOpen, 
   Utensils, Wallet, Printer, Coffee, AlertCircle,
   TrendingUp, ArrowRightLeft, UserCheck, Link as LinkIcon,
-  Calculator, ChevronRight, PieChart as PieIcon, FileText, CheckCircle, RefreshCw
+  Calculator, ChevronRight, PieChart as PieIcon, FileText, CheckCircle, RefreshCw, Upload
 } from 'lucide-react';
 
 interface EventManagerProps {
@@ -15,6 +15,7 @@ interface EventManagerProps {
   packages?: ComboPackage[];
   employees?: Employee[];
   quotations?: Quotation[];
+  saleOrders?: any[];
   onExportToEvent: (eventId: string, itemId: string, qty: number) => void;
   onExportPackageToEvent?: (eventId: string, packageId: string, qty: number) => void;
   onSyncQuotation?: (eventId: string, quotationId: string) => void;
@@ -29,6 +30,7 @@ interface EventManagerProps {
   onLinkQuotation?: (eventId: string, quotationId: string) => void;
   onFinalizeOrder?: (eventId: string) => void;
   onUpdateEvent?: (eventId: string, updates: Partial<Event>) => void;
+  onLinkSaleOrder?: (eventId: string, saleOrderId: string, link: boolean) => void;
 }
 
 const PROCESS_STEPS_TEMPLATE = [
@@ -85,6 +87,12 @@ const SESSION_OPTIONS: { value: EventSession; label: string }[] = [
   { value: 'EVENING', label: 'TỐI' }
 ];
 
+const LAYOUT_COLORS = ['#2563eb', '#0ea5e9', '#16a34a', '#f97316', '#f59e0b', '#a855f7', '#ef4444', '#06b6d4'];
+
+type ResizeDirection = 'right' | 'left' | 'top' | 'bottom' | 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left';
+
+const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+
 const getEventSchedule = (event: Event): EventScheduleItem[] => {
   if (event.schedule && event.schedule.length > 0) {
     const normalized = (event.schedule as any[]).map(it => {
@@ -113,6 +121,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
   packages = [],
   employees = [],
   quotations = [],
+  saleOrders = [],
   onExportToEvent,
   onExportPackageToEvent,
   onSyncQuotation,
@@ -124,10 +133,12 @@ export const EventManager: React.FC<EventManagerProps> = ({
   onRemoveExpense,
   onLinkQuotation,
   onFinalizeOrder,
-  onUpdateEvent
+  onUpdateEvent,
+  onLinkSaleOrder
 }) => {
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
-  const [detailTab, setDetailTab] = useState<'EQUIPMENT' | 'STAFF' | 'COSTS' | 'FLOWS'>('EQUIPMENT');
+  const [detailTab, setDetailTab] = useState<'EQUIPMENT' | 'STAFF' | 'COSTS' | 'FLOWS' | 'LAYOUT'>('EQUIPMENT');
+  const [selectedLayoutBlockId, setSelectedLayoutBlockId] = useState<string | null>(null);
   
   // Modals
   const [showCreateEventModal, setShowCreateEventModal] = useState(false);
@@ -166,17 +177,40 @@ export const EventManager: React.FC<EventManagerProps> = ({
   const [staffRate, setStaffRate] = useState('');
   const [staffSession, setStaffSession] = useState<'MORNING' | 'AFTERNOON' | 'EVENING'>('MORNING');
   const [selectedShiftDate, setSelectedShiftDate] = useState<string | null>(null);
+  const [layoutForm, setLayoutForm] = useState({
+    name: '',
+    packageId: '',
+    packageName: '',
+    packageSource: 'QUOTATION' as LayoutPackageSource,
+    customPackageName: '',
+    staffId: '',
+    staffName: '',
+    color: LAYOUT_COLORS[0]
+  });
+  const [draggingBlock, setDraggingBlock] = useState<{ id: string; offsetX: number; offsetY: number; rect: DOMRect } | null>(null);
+  const [resizingBlock, setResizingBlock] = useState<{ id: string; direction: ResizeDirection; rect: DOMRect } | null>(null);
+  const [showLayoutFullscreen, setShowLayoutFullscreen] = useState(false);
+  const [editingBlockId, setEditingBlockId] = useState<string | null>(null);
 
   // Expense State
   const [expenseCat, setExpenseCat] = useState<EventExpense['category']>('TRANSPORT_GOODS');
   const [expenseSub, setExpenseSub] = useState('');
   const [expenseDesc, setExpenseDesc] = useState('');
   const [expenseAmount, setExpenseAmount] = useState('');
+  const [expenseVatLink, setExpenseVatLink] = useState('');
 
   const selectedEvent = events.find(e => e.id === selectedEventId);
   const linkedQuotation = selectedEvent?.quotationId ? quotations.find(q => q.id === selectedEvent.quotationId) : null;
   const fallbackProcessSteps = useMemo(() => createDefaultProcessSteps(), [selectedEventId]);
   const processSteps = selectedEvent?.processSteps && selectedEvent.processSteps.length > 0 ? selectedEvent.processSteps : fallbackProcessSteps;
+  const linkedSaleOrders = useMemo(() => {
+    if (!selectedEvent) return [];
+    return saleOrders.filter(o => o.eventId === selectedEvent.id || (selectedEvent.saleOrderIds || []).includes(o.id));
+  }, [saleOrders, selectedEvent]);
+  const selectableSaleOrders = useMemo(() => {
+    if (!selectedEvent) return [];
+    return saleOrders.filter(o => o.eventId === undefined || o.eventId === selectedEvent.id || (selectedEvent.saleOrderIds || []).includes(o.id));
+  }, [saleOrders, selectedEvent]);
 
   useEffect(() => {
     if (selectedEvent && (!selectedEvent.processSteps || selectedEvent.processSteps.length === 0) && onUpdateEvent) {
@@ -206,7 +240,12 @@ export const EventManager: React.FC<EventManagerProps> = ({
       items: [],
       staff: [],
       expenses: [],
-      processSteps: createDefaultProcessSteps()
+      processSteps: createDefaultProcessSteps(),
+      layout: {
+        floorplanImage: '',
+        floorplanAspectRatio: undefined,
+        blocks: []
+      }
     };
     onCreateEvent(newEvent);
     setShowCreateEventModal(false);
@@ -341,11 +380,13 @@ export const EventManager: React.FC<EventManagerProps> = ({
       category: expenseCat,
       subCategory: expenseSub,
       description: expenseDesc || expenseCat,
-      amount: Number(expenseAmount)
+      amount: Number(expenseAmount),
+      vatInvoiceLink: expenseVatLink || undefined
     });
     setExpenseDesc('');
     setExpenseAmount('');
     setExpenseSub('');
+    setExpenseVatLink('');
   };
 
   const handleStaffSelect = (empId: string) => {
@@ -377,13 +418,357 @@ export const EventManager: React.FC<EventManagerProps> = ({
       };
     });
     updateProcessSteps(nextSteps);
+
+    // Nếu hoàn tất bước "Hoàn tất sự kiện" thì chốt trạng thái sự kiện
+    if (stepId === 'CLOSE' && selectedEvent && onUpdateEvent) {
+      const closeStep = nextSteps.find(s => s.id === 'CLOSE');
+      const allDone = closeStep ? closeStep.checklist.every(c => c.checked) : false;
+      if (allDone && selectedEvent.status !== EventStatus.COMPLETED) {
+        onUpdateEvent(selectedEvent.id, { status: EventStatus.COMPLETED });
+      }
+    }
+  };
+
+  const eventLayout: EventLayout = selectedEvent?.layout || { floorplanImage: '', blocks: [] };
+
+  const layoutPackageOptions = useMemo(() => {
+    const options: { value: string; label: string; displayName: string; source: LayoutPackageSource; rawId: string }[] = [];
+    if (linkedQuotation) {
+      linkedQuotation.items.forEach(item => {
+        options.push({
+          value: `Q-${item.id}-${item.type}`,
+          label: `${item.name} • Báo giá`,
+          displayName: item.name,
+          source: 'QUOTATION',
+          rawId: item.id
+        });
+      });
+    }
+    packages.forEach(pkg => {
+      const exists = options.some(opt => opt.rawId === pkg.id && opt.source === 'PACKAGE');
+      if (!exists) {
+        options.push({
+          value: `PKG-${pkg.id}`,
+          label: `${pkg.name} • Gói hệ thống`,
+          displayName: pkg.name,
+          source: 'PACKAGE',
+          rawId: pkg.id
+        });
+      }
+    });
+    return options;
+  }, [linkedQuotation, packages]);
+
+  const persistLayout = (layout: EventLayout) => {
+    if (!selectedEvent || !onUpdateEvent) return;
+    onUpdateEvent(selectedEvent.id, { layout });
+  };
+
+  const handleFloorplanUpload = (file?: File | null) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const src = reader.result as string;
+      const img = new Image();
+      img.onload = () => {
+        const ratio = img.naturalWidth && img.naturalHeight ? img.naturalWidth / img.naturalHeight : undefined;
+        persistLayout({ ...eventLayout, floorplanImage: src, floorplanAspectRatio: ratio });
+      };
+      img.src = src;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleRemoveFloorplan = () => {
+    persistLayout({ ...eventLayout, floorplanImage: '', floorplanAspectRatio: undefined });
+  };
+
+  const resetLayoutForm = () => {
+    setLayoutForm({
+      name: '',
+      packageId: '',
+      packageName: '',
+      packageSource: 'QUOTATION',
+      customPackageName: '',
+      staffId: '',
+      staffName: '',
+      color: LAYOUT_COLORS[(eventLayout.blocks.length + 1) % LAYOUT_COLORS.length]
+    });
+    setEditingBlockId(null);
+  };
+
+  const handleSaveLayoutBlock = () => {
+    if (!selectedEvent) return;
+    if (!layoutForm.name.trim()) {
+      alert('Vui lòng nhập tên trạm/khu vực.');
+      return;
+    }
+
+    const packageName = layoutForm.packageSource === 'CUSTOM' ? layoutForm.customPackageName : layoutForm.packageName;
+    const staffLabel = layoutForm.staffName || employees.find(e => e.id === layoutForm.staffId)?.name || '';
+
+    if (editingBlockId) {
+      updateLayoutBlock(editingBlockId, {
+        name: layoutForm.name.trim(),
+        packageId: layoutForm.packageSource === 'CUSTOM' ? undefined : layoutForm.packageId || undefined,
+        packageName: packageName || undefined,
+        packageSource: layoutForm.packageSource,
+        staffId: layoutForm.staffId || undefined,
+        staffName: staffLabel || undefined,
+        color: layoutForm.color
+      });
+      setSelectedLayoutBlockId(editingBlockId);
+      resetLayoutForm();
+      return;
+    }
+
+    const newBlock: EventLayoutBlock = {
+      id: `BLOCK-${Date.now()}`,
+      name: layoutForm.name.trim(),
+      packageId: layoutForm.packageSource === 'CUSTOM' ? undefined : layoutForm.packageId || undefined,
+      packageName: packageName || undefined,
+      packageSource: layoutForm.packageSource,
+      staffId: layoutForm.staffId || undefined,
+      staffName: staffLabel || undefined,
+      color: layoutForm.color,
+      x: clamp(8 + eventLayout.blocks.length * 3, 2, 78),
+      y: clamp(8 + eventLayout.blocks.length * 3, 2, 78),
+      width: 18,
+      height: 12
+    };
+
+    persistLayout({ ...eventLayout, blocks: [...eventLayout.blocks, newBlock] });
+    resetLayoutForm();
+    setSelectedLayoutBlockId(newBlock.id);
+  };
+
+  const updateLayoutBlock = (blockId: string, updates: Partial<EventLayoutBlock>) => {
+    const nextBlocks = eventLayout.blocks.map(block => block.id === blockId ? { ...block, ...updates } : block);
+    persistLayout({ ...eventLayout, blocks: nextBlocks });
+  };
+
+  const handleRemoveLayoutBlock = (blockId: string) => {
+    const nextBlocks = eventLayout.blocks.filter(block => block.id !== blockId);
+    persistLayout({ ...eventLayout, blocks: nextBlocks });
+    if (selectedLayoutBlockId === blockId) {
+      setSelectedLayoutBlockId(null);
+    }
+  };
+
+  const handleBlockDragStart = (e: React.MouseEvent, blockId: string) => {
+    const container = (e.currentTarget as HTMLElement).closest('[data-layout-board]') as HTMLElement | null;
+    if (!container) return;
+    const block = eventLayout.blocks.find(b => b.id === blockId);
+    if (!block) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const rect = container.getBoundingClientRect();
+    const offsetX = ((e.clientX - rect.left) / rect.width) * 100 - block.x;
+    const offsetY = ((e.clientY - rect.top) / rect.height) * 100 - block.y;
+    setDraggingBlock({ id: blockId, offsetX, offsetY, rect });
+    setSelectedLayoutBlockId(blockId);
+  };
+
+  const handleResizeStart = (e: React.MouseEvent, blockId: string, direction: ResizeDirection) => {
+    const container = (e.currentTarget as HTMLElement).closest('[data-layout-board]') as HTMLElement | null;
+    if (!container) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const rect = container.getBoundingClientRect();
+    setResizingBlock({ id: blockId, direction, rect });
+    setSelectedLayoutBlockId(blockId);
+  };
+
+  const handlePrintLayout = () => {
+    if (!selectedEvent) return;
+    const printWindow = window.open('', 'PRINT', 'width=1400,height=900');
+    if (!printWindow) return;
+    const ratio = eventLayout.floorplanAspectRatio || 16 / 9;
+    const backgroundStyle = eventLayout.floorplanImage 
+      ? `background-image:url(${eventLayout.floorplanImage});background-size:contain;background-repeat:no-repeat;background-position:center;`
+      : `background:#0f172a;`;
+    const blocksHtml = eventLayout.blocks.map(block => `
+      <div style="
+        position:absolute;
+        left:${block.x}%;
+        top:${block.y}%;
+        width:${block.width}%;
+        height:${block.height}%;
+        border:2px solid ${block.color};
+        background:${block.color}20;
+        border-radius:12px;
+        box-sizing:border-box;
+        overflow:hidden;
+      ">
+        <div style="padding:12px;font-size:13px;font-weight:800;color:#0f172a;line-height:1.5;text-shadow:0 1px 3px rgba(0,0,0,0.65),0 0 1px #fff;">
+          <div>${block.name}</div>
+          ${block.packageName ? `<div style="font-size:12px;font-weight:700;margin-top:2px;text-shadow:0 1px 3px rgba(0,0,0,0.6),0 0 1px #fff;">${block.packageName}</div>` : ''}
+          ${block.staffName ? `<div style="font-size:12px;font-weight:700;margin-top:2px;color:#0f172a;text-shadow:0 1px 3px rgba(0,0,0,0.6),0 0 1px #fff;">${block.staffName}</div>` : ''}
+        </div>
+      </div>
+    `).join('');
+    printWindow.document.write(`
+      <!doctype html>
+      <html>
+        <head>
+          <title>Sơ đồ trạm - ${selectedEvent.name}</title>
+          <style>
+            @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+          </style>
+        </head>
+        <body style="margin:0;padding:24px;background:#0b1224;font-family:Arial, sans-serif;color:#fff;">
+          <h2 style="margin:0 0 12px;font-size:20px;font-weight:900;">Sơ đồ trạm • ${selectedEvent.name}</h2>
+          <p style="margin:0 0 16px;font-size:12px;color:#cbd5e1;">Kéo thả các block đại diện cho khu vực và nhân sự.</p>
+          <div style="position:relative;width:100%;aspect-ratio:${ratio};max-height:820px;border:1px dashed #cbd5e1;border-radius:16px;${backgroundStyle}overflow:hidden;">
+            ${blocksHtml}
+          </div>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.onload = () => {
+      printWindow.print();
+      printWindow.close();
+    };
+  };
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      const rect = draggingBlock?.rect || resizingBlock?.rect;
+      if (!rect) return;
+      const xPercent = ((e.clientX - rect.left) / rect.width) * 100;
+      const yPercent = ((e.clientY - rect.top) / rect.height) * 100;
+
+      if (draggingBlock) {
+        const block = eventLayout.blocks.find(b => b.id === draggingBlock.id);
+        if (!block) return;
+        const newX = clamp(xPercent - draggingBlock.offsetX, 0, 100 - block.width);
+        const newY = clamp(yPercent - draggingBlock.offsetY, 0, 100 - block.height);
+        updateLayoutBlock(block.id, { x: newX, y: newY });
+      } else if (resizingBlock) {
+        const block = eventLayout.blocks.find(b => b.id === resizingBlock.id);
+        if (!block) return;
+        const minSize = 6;
+        let nextX = block.x;
+        let nextY = block.y;
+        let nextW = block.width;
+        let nextH = block.height;
+
+        if (resizingBlock.direction.includes('right')) {
+          nextW = clamp(xPercent - nextX, minSize, 100 - nextX);
+        }
+        if (resizingBlock.direction.includes('left')) {
+          const newX = clamp(xPercent, 0, nextX + nextW - minSize);
+          nextW = nextW + (nextX - newX);
+          nextX = newX;
+        }
+        if (resizingBlock.direction.includes('bottom')) {
+          nextH = clamp(yPercent - nextY, minSize, 100 - nextY);
+        }
+        if (resizingBlock.direction.includes('top')) {
+          const newY = clamp(yPercent, 0, nextY + nextH - minSize);
+          nextH = nextH + (nextY - newY);
+          nextY = newY;
+        }
+        updateLayoutBlock(block.id, { x: nextX, y: nextY, width: nextW, height: nextH });
+      }
+    };
+
+    const handleMouseUp = () => {
+      if (draggingBlock) setDraggingBlock(null);
+      if (resizingBlock) setResizingBlock(null);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [draggingBlock, resizingBlock, eventLayout.blocks]);
+
+  useEffect(() => {
+    setSelectedLayoutBlockId(null);
+    setDraggingBlock(null);
+    setResizingBlock(null);
+    setShowLayoutFullscreen(false);
+    setEditingBlockId(null);
+    setLayoutForm(prev => ({
+      ...prev,
+      name: '',
+      customPackageName: '',
+      staffId: '',
+      staffName: ''
+    }));
+  }, [selectedEventId]);
+
+  const renderLayoutBoard = (variant: 'main' | 'fullscreen') => {
+    const ratio = eventLayout.floorplanAspectRatio || 16 / 9;
+    return (
+      <div 
+        data-layout-board={variant}
+        className={`relative rounded-2xl border border-dashed border-slate-300 bg-slate-900/60 overflow-hidden w-full ${variant === 'fullscreen' ? '' : 'max-h-[560px]'}`}
+        style={{
+          backgroundImage: eventLayout.floorplanImage ? `url(${eventLayout.floorplanImage})` : undefined,
+          backgroundSize: 'contain',
+          backgroundRepeat: 'no-repeat',
+          backgroundPosition: 'center',
+          aspectRatio: `${ratio}`
+        }}
+      >
+        {!eventLayout.floorplanImage && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center text-center text-slate-200 p-6">
+            <MapPin size={48} className="mb-3 opacity-70" />
+            <p className="font-black text-lg">Tải ảnh mặt bằng để bắt đầu</p>
+            <p className="text-sm text-slate-300 max-w-xl">Sau khi tải ảnh, hãy kéo từng block sang và điều chỉnh kích thước bằng cách kéo ở cạnh hoặc góc.</p>
+          </div>
+        )}
+
+        {eventLayout.blocks.map(block => (
+          <div
+            key={block.id}
+            className={`absolute rounded-lg border shadow-lg transition cursor-move ${selectedLayoutBlockId === block.id ? 'ring-2 ring-blue-500' : ''}`}
+            onMouseDown={e => handleBlockDragStart(e, block.id)}
+            style={{
+              left: `${block.x}%`,
+              top: `${block.y}%`,
+              width: `${block.width}%`,
+              height: `${block.height}%`,
+              borderColor: block.color,
+              backgroundColor: `${block.color}1A`
+            }}
+          >
+            <div className="absolute inset-0 p-2 pointer-events-none space-y-1">
+              <p className="text-xs font-black text-slate-900 flex items-center gap-1" style={{ textShadow: '0 1px 3px rgba(0,0,0,0.65), 0 0 1px #fff' }}>
+                <span className="inline-block w-2 h-2 rounded-full" style={{ backgroundColor: block.color }}></span>
+                {block.name}
+              </p>
+              {block.packageName && <p className="text-[11px] font-semibold text-slate-800 leading-tight" style={{ textShadow: '0 1px 3px rgba(0,0,0,0.6), 0 0 1px #fff' }}>{block.packageName}</p>}
+              {block.staffName && <p className="text-[11px] text-blue-900 font-semibold leading-tight" style={{ textShadow: '0 1px 3px rgba(0,0,0,0.6), 0 0 1px #fff' }}>{block.staffName}</p>}
+            </div>
+
+            <div className="absolute -right-1 top-1/2 -translate-y-1/2 w-3 h-3 bg-white border border-slate-300 rounded cursor-e-resize" onMouseDown={e => handleResizeStart(e, block.id, 'right')}></div>
+            <div className="absolute -left-1 top-1/2 -translate-y-1/2 w-3 h-3 bg-white border border-slate-300 rounded cursor-w-resize" onMouseDown={e => handleResizeStart(e, block.id, 'left')}></div>
+            <div className="absolute left-1/2 -translate-x-1/2 -top-1 w-3 h-3 bg-white border border-slate-300 rounded cursor-n-resize" onMouseDown={e => handleResizeStart(e, block.id, 'top')}></div>
+            <div className="absolute left-1/2 -translate-x-1/2 -bottom-1 w-3 h-3 bg-white border border-slate-300 rounded cursor-s-resize" onMouseDown={e => handleResizeStart(e, block.id, 'bottom')}></div>
+            <div className="absolute -right-1 -top-1 w-3 h-3 bg-white border border-slate-300 rounded cursor-ne-resize" onMouseDown={e => handleResizeStart(e, block.id, 'top-right')}></div>
+            <div className="absolute -left-1 -top-1 w-3 h-3 bg-white border border-slate-300 rounded cursor-nw-resize" onMouseDown={e => handleResizeStart(e, block.id, 'top-left')}></div>
+            <div className="absolute -right-1 -bottom-1 w-3 h-3 bg-white border border-slate-300 rounded cursor-se-resize" onMouseDown={e => handleResizeStart(e, block.id, 'bottom-right')}></div>
+            <div className="absolute -left-1 -bottom-1 w-3 h-3 bg-white border border-slate-300 rounded cursor-sw-resize" onMouseDown={e => handleResizeStart(e, block.id, 'bottom-left')}></div>
+          </div>
+        ))}
+      </div>
+    );
   };
 
   // Tài chính
   const staffCosts = selectedEvent?.staff?.reduce((a, b) => a + b.salary, 0) || 0;
   const otherCosts = selectedEvent?.expenses?.reduce((a, b) => a + b.amount, 0) || 0;
   const totalCosts = staffCosts + otherCosts;
-  const revenue = linkedQuotation?.totalAmount || 0;
+  const saleOrdersRevenue = linkedSaleOrders.reduce((sum, order) => sum + (order.total || 0), 0);
+  const quotationRevenue = linkedQuotation?.totalAmount || 0;
+  const revenue = quotationRevenue + saleOrdersRevenue;
   const grossProfit = revenue - totalCosts;
   const profitMargin = revenue > 0 ? (grossProfit / revenue) * 100 : 0;
   const totalChecklistCount = processSteps.reduce((acc, step) => acc + step.checklist.length, 0);
@@ -464,6 +849,9 @@ export const EventManager: React.FC<EventManagerProps> = ({
                 <button onClick={() => setDetailTab('STAFF')} className={`pb-3 text-sm font-bold border-b-2 transition flex items-center gap-2 ${detailTab === 'STAFF' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
                   <Users size={16}/> Nhân Sự
                 </button>
+                <button onClick={() => setDetailTab('LAYOUT')} className={`pb-3 text-sm font-bold border-b-2 transition flex items-center gap-2 ${detailTab === 'LAYOUT' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
+                  <MapPin size={16}/> Sơ đồ trạm
+                </button>
                 <button onClick={() => setDetailTab('COSTS')} className={`pb-3 text-sm font-bold border-b-2 transition flex items-center gap-2 ${detailTab === 'COSTS' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
                   <DollarSign size={16}/> Chi Phí & Lợi Nhuận
                 </button>
@@ -501,7 +889,9 @@ export const EventManager: React.FC<EventManagerProps> = ({
                         <tr>
                           <th className="px-3 py-3 font-bold text-gray-500 uppercase text-[10px] text-center">Đã xong</th>
                           <th className="px-4 py-3 font-bold text-gray-500 uppercase text-[10px]">Thiết bị</th>
-                          <th className="px-4 py-3 font-bold text-gray-500 uppercase text-[10px] text-center">Số lượng</th>
+                          <th className="px-4 py-3 font-bold text-gray-500 uppercase text-[10px] text-center">Cần</th>
+                          <th className="px-4 py-3 font-bold text-gray-500 uppercase text-[10px] text-center">Kho đang có</th>
+                          <th className="px-4 py-3 font-bold text-gray-500 uppercase text-[10px] text-center">Thiếu</th>
                           <th className="px-4 py-3 font-bold text-gray-500 uppercase text-[10px] text-center">Đã trả</th>
                           <th className="px-4 py-3 w-10"></th>
                         </tr>
@@ -509,8 +899,17 @@ export const EventManager: React.FC<EventManagerProps> = ({
                       <tbody className="divide-y">
                         {selectedEvent.items.map((alloc, i) => {
                           const item = inventory.find(inv => inv.id === alloc.itemId);
+                          const availableNow = item?.availableQuantity ?? 0;
+                          const displayAvailable = Math.max(0, availableNow);
+                          const overdraw = availableNow < 0 ? Math.abs(availableNow) : 0;
+                          const brokenQty = item?.brokenQuantity ?? 0;
+                          const lostQty = item?.lostQuantity ?? 0;
+                          const maintenanceQty = item?.maintenanceQuantity ?? 0;
+                          const effectiveStock = availableNow + alloc.quantity; // cộng lại phần đang giữ cho sự kiện này
+                          const shortage = Math.max(0, alloc.quantity - effectiveStock);
+                          const shortageLabel = shortage > 0 ? `Thiếu ${shortage}` : 'Đủ';
                           return (
-                            <tr key={i} className="hover:bg-slate-50/50">
+                            <tr key={i} className={`hover:bg-slate-50/50 ${shortage > 0 ? 'bg-amber-50' : ''}`}>
                               <td className="px-4 py-3 text-center">
                                 <input type="checkbox" checked={!!alloc.done} onChange={e => onToggleItemDone?.(selectedEvent.id, alloc.itemId, e.target.checked)} />
                               </td>
@@ -521,6 +920,28 @@ export const EventManager: React.FC<EventManagerProps> = ({
                                 </div>
                               </td>
                               <td className="px-4 py-3 text-center font-black text-blue-600">{alloc.quantity}</td>
+                              <td className="px-4 py-3 text-center">
+                                <div className="flex flex-col items-center gap-1">
+                                  <span className="inline-flex items-center justify-center px-2 py-1 rounded-lg text-[11px] font-black bg-slate-100 text-slate-700">
+                                    OK {displayAvailable}
+                                  </span>
+                                  {overdraw > 0 && (
+                                    <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-lg text-[10px] font-black bg-red-100 text-red-700">
+                                      Thiếu kho {overdraw}
+                                    </span>
+                                  )}
+                                  <div className="flex gap-1 flex-wrap justify-center">
+                                    {maintenanceQty > 0 && <span className="bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded text-[10px] font-bold">BT: {maintenanceQty}</span>}
+                                    {brokenQty > 0 && <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded text-[10px] font-bold">Hỏng: {brokenQty}</span>}
+                                    {lostQty > 0 && <span className="bg-gray-200 text-gray-700 px-2 py-0.5 rounded text-[10px] font-bold">Mất: {lostQty}</span>}
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="px-4 py-3 text-center">
+                                <span className={`inline-flex items-center justify-center px-2 py-1 rounded-lg text-[11px] font-black ${shortage > 0 ? 'bg-amber-200 text-amber-800' : 'bg-green-100 text-green-700'}`}>
+                                  {shortageLabel}
+                                </span>
+                              </td>
                               <td className="px-4 py-3 text-center font-black text-green-600">{alloc.returnedQuantity}</td>
                               <td className="px-4 py-3">
                                 <button 
@@ -653,6 +1074,193 @@ export const EventManager: React.FC<EventManagerProps> = ({
                 </div>
               )}
 
+              {detailTab === 'LAYOUT' && selectedEvent && (
+                <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+                  <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-4 h-full">
+                    <div>
+                      <p className="text-[11px] font-black uppercase text-slate-400">Dashbroad vị trí nhân sự</p>
+                      <p className="text-sm font-bold text-slate-700">Tạo block, gắn gói hoạt động và người phụ trách.</p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-[11px] font-black text-slate-500 uppercase">Tên trạm / khu vực</label>
+                      <input 
+                        className="w-full border border-slate-200 rounded-lg p-2.5 text-sm" 
+                        placeholder="VD: Trạm check-in, Khu trải nghiệm 1..."
+                        value={layoutForm.name}
+                        onChange={e => setLayoutForm(prev => ({ ...prev, name: e.target.value }))}
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-[11px] font-black text-slate-500 uppercase">Gắn gói hoạt động</label>
+                      {(() => {
+                        const selectedValue = layoutForm.packageSource === 'CUSTOM' 
+                          ? 'CUSTOM' 
+                          : layoutPackageOptions.find(opt => opt.rawId === layoutForm.packageId && opt.source === layoutForm.packageSource)?.value || '';
+                        return (
+                          <select
+                            className="w-full border border-slate-200 rounded-lg p-2.5 text-sm bg-white"
+                            value={selectedValue}
+                            onChange={e => {
+                              const val = e.target.value;
+                              if (val === 'CUSTOM') {
+                                setLayoutForm(prev => ({ ...prev, packageId: '', packageName: '', packageSource: 'CUSTOM', customPackageName: '' }));
+                                return;
+                              }
+                              const opt = layoutPackageOptions.find(o => o.value === val);
+                              if (opt) {
+                                setLayoutForm(prev => ({ ...prev, packageId: opt.rawId, packageName: opt.displayName, packageSource: opt.source, customPackageName: '' }));
+                              } else {
+                                setLayoutForm(prev => ({ ...prev, packageId: '', packageName: '', packageSource: 'QUOTATION', customPackageName: '' }));
+                              }
+                            }}
+                          >
+                            <option value="">-- Chọn từ báo giá hoặc gói có sẵn --</option>
+                            {layoutPackageOptions.map(opt => (
+                              <option key={opt.value} value={opt.value}>{opt.label}</option>
+                            ))}
+                            <option value="CUSTOM">+ Thêm gói khác</option>
+                          </select>
+                        );
+                      })()}
+                      {layoutForm.packageSource === 'CUSTOM' && (
+                        <input 
+                          className="w-full border border-slate-200 rounded-lg p-2.5 text-sm" 
+                          placeholder="Nhập tên gói bổ sung..."
+                          value={layoutForm.customPackageName}
+                          onChange={e => setLayoutForm(prev => ({ ...prev, customPackageName: e.target.value }))}
+                        />
+                      )}
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-[11px] font-black text-slate-500 uppercase">Nhân sự phụ trách</label>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <select 
+                          className="border border-slate-200 rounded-lg p-2.5 text-sm bg-white"
+                          value={layoutForm.staffId}
+                          onChange={e => {
+                            const id = e.target.value;
+                            const emp = employees.find(emp => emp.id === id);
+                            setLayoutForm(prev => ({ ...prev, staffId: id, staffName: emp?.name || prev.staffName }));
+                          }}
+                        >
+                          <option value="">-- Chọn từ danh sách nhân sự --</option>
+                          {employees.map(emp => (
+                            <option key={emp.id} value={emp.id}>{emp.name} ({emp.role})</option>
+                          ))}
+                        </select>
+                        <input
+                          className="border border-slate-200 rounded-lg p-2.5 text-sm"
+                          placeholder="Hoặc nhập nhanh tên nhân sự khác"
+                          value={layoutForm.staffName}
+                          onChange={e => setLayoutForm(prev => ({ ...prev, staffName: e.target.value }))}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-[11px] font-black text-slate-500 uppercase">Màu block</label>
+                      <div className="flex flex-wrap gap-2">
+                        {LAYOUT_COLORS.map(color => (
+                          <button
+                            key={color}
+                            onClick={() => setLayoutForm(prev => ({ ...prev, color }))}
+                            className={`w-8 h-8 rounded-full border-2 ${layoutForm.color === color ? 'border-slate-900 scale-105' : 'border-slate-200'} transition`}
+                            style={{ backgroundColor: color }}
+                            title={color}
+                          />
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col gap-2">
+                      <button onClick={handleSaveLayoutBlock} className="w-full bg-slate-900 text-white py-2.5 rounded-lg text-sm font-bold hover:bg-black transition shadow-sm">
+                        {editingBlockId ? 'Lưu thay đổi block' : '+ Thêm block vào sơ đồ'}
+                      </button>
+                      {editingBlockId && (
+                        <button onClick={resetLayoutForm} className="w-full bg-slate-100 text-slate-600 py-2.5 rounded-lg text-sm font-bold hover:bg-slate-200 transition shadow-sm">
+                          Hủy chỉnh sửa
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="pt-4 border-t border-slate-100">
+                      <p className="text-xs font-black uppercase text-slate-400 mb-2 flex items-center gap-2"><Layers size={14}/> Danh sách block</p>
+                      <div className="space-y-2 max-h-[260px] overflow-auto pr-1">
+                        {eventLayout.blocks.length === 0 && (
+                          <div className="text-xs text-slate-400 italic bg-slate-50 p-3 rounded-lg">Chưa có block nào. Thêm block và kéo sang mặt bằng.</div>
+                        )}
+                        {eventLayout.blocks.map(block => (
+                          <div 
+                            key={block.id} 
+                            onClick={() => {
+                              setSelectedLayoutBlockId(block.id);
+                              setEditingBlockId(block.id);
+                              setLayoutForm({
+                                name: block.name,
+                                packageId: block.packageId || '',
+                                packageName: block.packageName || '',
+                                packageSource: block.packageSource || 'QUOTATION',
+                                customPackageName: block.packageSource === 'CUSTOM' ? block.packageName || '' : '',
+                                staffId: block.staffId || '',
+                                staffName: block.staffName || '',
+                                color: block.color || LAYOUT_COLORS[0]
+                              });
+                            }}
+                            className={`p-3 rounded-xl border flex justify-between items-start gap-3 cursor-pointer transition ${selectedLayoutBlockId === block.id ? 'border-blue-500 bg-blue-50' : 'border-slate-200 bg-slate-50/60 hover:border-blue-200 hover:bg-blue-50/60'}`}
+                          >
+                            <div className="flex items-start gap-3">
+                              <span className="w-3 h-3 rounded-full mt-1" style={{ backgroundColor: block.color }}></span>
+                              <div>
+                                <p className="font-black text-slate-800 text-sm">{block.name}</p>
+                                {block.packageName && <p className="text-[11px] text-slate-500">{block.packageName}</p>}
+                                {block.staffName && <p className="text-[11px] text-blue-600 font-semibold">{block.staffName}</p>}
+                              </div>
+                            </div>
+                            <button 
+                              onClick={e => { e.stopPropagation(); handleRemoveLayoutBlock(block.id); }}
+                              className="text-gray-300 hover:text-red-500"
+                            >
+                              <Trash2 size={14}/>
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="xl:col-span-2 bg-white rounded-xl border border-slate-200 p-4 space-y-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="text-[11px] font-black uppercase text-slate-400">Mặt bằng & bố trí</p>
+                        <p className="text-sm text-slate-600">Tải ảnh mặt bằng, kéo thả block để đặt khu vực và nhân sự.</p>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <label className="inline-flex items-center gap-2 px-3 py-2 bg-blue-600 text-white text-sm font-bold rounded-lg cursor-pointer hover:bg-blue-700">
+                          <Upload size={16}/> Tải ảnh mặt bằng
+                          <input type="file" accept="image/*" className="hidden" onChange={e => handleFloorplanUpload(e.target.files?.[0])} />
+                        </label>
+                        {eventLayout.floorplanImage && (
+                          <button onClick={handleRemoveFloorplan} className="px-3 py-2 bg-slate-100 text-slate-600 rounded-lg text-sm font-bold hover:bg-slate-200 flex items-center gap-2">
+                            <X size={16}/> Xóa ảnh
+                          </button>
+                        )}
+                        <button onClick={() => setShowLayoutFullscreen(true)} className="px-3 py-2 bg-slate-900 text-white rounded-lg text-sm font-bold hover:bg-black flex items-center gap-2">
+                          <MapPin size={16}/> Toàn màn hình
+                        </button>
+                        <button onClick={handlePrintLayout} className="px-3 py-2 bg-green-600 text-white rounded-lg text-sm font-bold hover:bg-green-700 flex items-center gap-2">
+                          <Printer size={16}/> In sơ đồ trạm
+                        </button>
+                      </div>
+                    </div>
+
+                    {renderLayoutBoard('main')}
+                  </div>
+                </div>
+              )}
+
               {detailTab === 'COSTS' && (
                 <div className="space-y-6">
                   {/* QUOTATION LINK SECTION */}
@@ -699,6 +1307,55 @@ export const EventManager: React.FC<EventManagerProps> = ({
                     )}
                   </div>
 
+                  {/* SALE ORDER LINK SECTION */}
+                  <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+                    <div className="flex items-center justify-between gap-2">
+                      <h4 className="font-bold text-gray-800 text-xs uppercase flex items-center gap-2">
+                        <LinkIcon size={16} className="text-green-600" /> Gán đơn hàng bán cho sự kiện
+                      </h4>
+                      <span className="text-[11px] text-slate-500 font-semibold">{linkedSaleOrders.length} đơn đã gán</span>
+                    </div>
+                    <div className="flex gap-3">
+                      <select
+                        className="flex-1 border rounded-xl p-3 text-sm bg-white"
+                        value=""
+                        onChange={e => {
+                          const id = e.target.value;
+                          if (!id) return;
+                          onLinkSaleOrder?.(selectedEvent.id, id, true);
+                        }}
+                      >
+                        <option value="">-- Chọn đơn bán để gán --</option>
+                        {selectableSaleOrders.map(order => (
+                          <option key={order.id} value={order.id}>
+                            {order.id} • {order.customerName || 'Khách lẻ'} • {order.total?.toLocaleString()}đ
+                            {order.eventId && order.eventId !== selectedEvent.id ? ' (Đang gán sự kiện khác)' : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    {linkedSaleOrders.length > 0 ? (
+                      <div className="space-y-2">
+                        {linkedSaleOrders.map(order => (
+                          <div key={order.id} className="flex items-center justify-between bg-slate-50 p-3 rounded-xl border border-slate-200">
+                            <div>
+                              <p className="font-bold text-slate-800 text-sm">{order.id} • {order.customerName || 'Khách lẻ'}</p>
+                              <p className="text-[11px] text-slate-500">{order.date} • {order.items?.length || 0} dòng</p>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <span className="font-black text-green-600 text-sm">{(order.total || 0).toLocaleString()}đ</span>
+                              <button onClick={() => onLinkSaleOrder?.(selectedEvent.id, order.id, false)} className="text-gray-300 hover:text-red-500">
+                                <Trash2 size={16}/>
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-xs text-slate-400 italic">Chưa gán đơn bán nào. Gán để tính doanh thu tổng.</div>
+                    )}
+                  </div>
+
                   {/* PROFIT SUMMARY CARD */}
                   <div className="bg-slate-900 text-white p-8 rounded-3xl shadow-2xl relative overflow-hidden">
                     <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none">
@@ -709,7 +1366,11 @@ export const EventManager: React.FC<EventManagerProps> = ({
                       <div className="space-y-2">
                         <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-l-2 border-blue-500 pl-2">Doanh thu (A)</p>
                         <p className="text-3xl font-black text-blue-400">{revenue.toLocaleString()}đ</p>
-                        {linkedQuotation && <p className="text-[10px] text-slate-500 italic">Khách hàng: {linkedQuotation.clientName}</p>}
+                        <p className="text-[11px] text-slate-400">
+                          {quotationRevenue > 0 && <span className="mr-3">Báo giá: {quotationRevenue.toLocaleString()}đ</span>}
+                          {saleOrdersRevenue > 0 && <span>Đơn bán: {saleOrdersRevenue.toLocaleString()}đ</span>}
+                          {quotationRevenue === 0 && saleOrdersRevenue === 0 && <span>Chưa có doanh thu</span>}
+                        </p>
                       </div>
                       <div className="space-y-2">
                         <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-l-2 border-orange-500 pl-2">Giá vốn / Chi phí (B)</p>
@@ -731,29 +1392,6 @@ export const EventManager: React.FC<EventManagerProps> = ({
                        </div>
                     </div>
                   </div>
-
-                  {/* List Existing Expenses */}
-                  {(selectedEvent.expenses?.length || 0) > 0 && (
-                    <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-                       <h4 className="font-bold text-gray-800 text-xs uppercase flex items-center gap-2 border-b pb-3 mb-2">
-                         <Wallet className="text-green-600" size={16} /> Chi phí đã nhập
-                       </h4>
-                       <div className="space-y-2">
-                         {selectedEvent.expenses?.map((exp, idx) => (
-                           <div key={exp.id || idx} className="flex justify-between items-center bg-slate-50 p-3 rounded-xl border border-slate-100">
-                              <div>
-                                 <p className="font-bold text-sm text-gray-700">{exp.description}</p>
-                                 <p className="text-xs text-slate-400">{exp.category} {exp.subCategory ? `• ${exp.subCategory}` : ''}</p>
-                              </div>
-                              <div className="flex items-center gap-4">
-                                 <span className="font-bold text-orange-600">{exp.amount.toLocaleString()}đ</span>
-                                 <button onClick={() => onRemoveExpense?.(selectedEvent.id, exp.id)} className="text-gray-300 hover:text-red-500"><Trash2 size={16}/></button>
-                              </div>
-                           </div>
-                         ))}
-                       </div>
-                    </div>
-                  )}
 
                   {/* Operational Expenses Form */}
                   <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
@@ -794,9 +1432,41 @@ export const EventManager: React.FC<EventManagerProps> = ({
                         <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Số tiền (VNĐ)</label>
                         <input type="number" className="w-full border rounded-xl p-3 text-sm font-bold text-orange-600 outline-none focus:ring-2 focus:ring-orange-500" placeholder="0" value={expenseAmount} onChange={e => setExpenseAmount(e.target.value)} />
                       </div>
+                      <div className="md:col-span-2">
+                        <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Link hóa đơn VAT (nếu có)</label>
+                        <input className="w-full border rounded-xl p-3 text-sm outline-none focus:ring-2 focus:ring-blue-500" placeholder="https://drive.google.com/... hoặc link cổng hóa đơn" value={expenseVatLink} onChange={e => setExpenseVatLink(e.target.value)} />
+                      </div>
                     </div>
                     <button onClick={handleAddExpenseSubmit} className="w-full bg-slate-800 text-white py-3 rounded-xl text-sm font-black hover:bg-black transition shadow-lg uppercase tracking-widest">Lưu chi phí</button>
                   </div>
+
+                  {/* List Existing Expenses */}
+                  {(selectedEvent.expenses?.length || 0) > 0 && (
+                    <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+                       <h4 className="font-bold text-gray-800 text-xs uppercase flex items-center gap-2 border-b pb-3 mb-2">
+                         <Wallet className="text-green-600" size={16} /> Chi phí đã nhập
+                       </h4>
+                       <div className="space-y-2">
+                         {selectedEvent.expenses?.map((exp, idx) => (
+                           <div key={exp.id || idx} className="flex justify-between items-center bg-slate-50 p-3 rounded-xl border border-slate-100">
+                              <div>
+                                 <p className="font-bold text-sm text-gray-700">{exp.description}</p>
+                                 <p className="text-xs text-slate-400">{exp.category} {exp.subCategory ? `• ${exp.subCategory}` : ''}</p>
+                                 {exp.vatInvoiceLink && (
+                                   <a href={exp.vatInvoiceLink} target="_blank" rel="noreferrer" className="text-[11px] text-blue-600 underline">
+                                     Hóa đơn VAT
+                                   </a>
+                                 )}
+                              </div>
+                              <div className="flex items-center gap-4">
+                                 <span className="font-bold text-orange-600">{exp.amount.toLocaleString()}đ</span>
+                                 <button onClick={() => onRemoveExpense?.(selectedEvent.id, exp.id)} className="text-gray-300 hover:text-red-500"><Trash2 size={16}/></button>
+                              </div>
+                           </div>
+                         ))}
+                       </div>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -862,6 +1532,29 @@ export const EventManager: React.FC<EventManagerProps> = ({
           </div>
         )}
       </div>
+
+      {/* MODAL: Layout Fullscreen */}
+      {showLayoutFullscreen && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-6xl p-4 shadow-2xl">
+            <div className="flex justify-between items-center mb-4">
+              <div>
+                <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2"><MapPin size={18}/> Sơ đồ trạm - Toàn màn hình</h3>
+                <p className="text-sm text-slate-500">Kéo thả và phóng to rộng rãi hơn.</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button onClick={handlePrintLayout} className="px-3 py-2 bg-green-600 text-white rounded-lg text-sm font-bold hover:bg-green-700 flex items-center gap-2">
+                  <Printer size={16}/> In sơ đồ trạm
+                </button>
+                <button onClick={() => setShowLayoutFullscreen(false)} className="p-2 bg-slate-100 rounded-lg hover:bg-slate-200">
+                  <X size={20}/>
+                </button>
+              </div>
+            </div>
+            {renderLayoutBoard('fullscreen')}
+          </div>
+        </div>
+      )}
 
       {/* MODAL: Create Event */}
       {showCreateEventModal && (
@@ -935,7 +1628,11 @@ export const EventManager: React.FC<EventManagerProps> = ({
               {exportMode === 'SINGLE' ? (
                 <select className="w-full border rounded-xl p-3 bg-white" value={selectedItemForExport} onChange={e => setSelectedItemForExport(e.target.value)}>
                   <option value="">-- Chọn thiết bị --</option>
-                  {inventory.filter(i => i.availableQuantity > 0).map(item => <option key={item.id} value={item.id}>{item.name} (Sẵn kho: {item.availableQuantity})</option>)}
+                  {inventory.map(item => (
+                    <option key={item.id} value={item.id}>
+                      {item.name} (Sẵn: {item.availableQuantity})
+                    </option>
+                  ))}
                 </select>
               ) : (
                 <select className="w-full border rounded-xl p-3 bg-white" value={selectedPackageId} onChange={e => setSelectedPackageId(e.target.value)}>
