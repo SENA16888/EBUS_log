@@ -1,6 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { getFirestore, doc, getDoc, setDoc, collection, getDocs, query, where, deleteDoc, updateDoc } from 'firebase/firestore';
 import { getAuth, onAuthStateChanged, signInAnonymously } from 'firebase/auth';
+import { doc, onSnapshot, Unsubscribe } from 'firebase/firestore';
 
 // Helper to safely get environment variables (same pattern as geminiService)
 const getEnvVar = (key: string): string | undefined => {
@@ -96,4 +97,19 @@ export const syncAppState = async (localState: any): Promise<any> => {
     console.error('Sync error:', error);
     return localState;
   }
+};
+
+// Subscribe to realtime updates for appState/main
+export const subscribeToAppState = (onChange: (data: any | null) => void): Unsubscribe => {
+  const docRef = doc(db, 'appState', 'main');
+  const unsub = onSnapshot(docRef, (snap) => {
+    if (snap.exists()) {
+      onChange(snap.data());
+    } else {
+      onChange(null);
+    }
+  }, (err) => {
+    console.error('Realtime listener error:', err);
+  });
+  return unsub;
 };
