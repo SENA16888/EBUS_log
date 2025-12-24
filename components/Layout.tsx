@@ -2,7 +2,7 @@
 import React from 'react';
 import { 
   LayoutDashboard, Package, CalendarDays, 
-  Settings, Bell, User, Layers, Users, FileText 
+  Settings, Bell, User, Layers, Users, FileText, BookOpen 
 } from 'lucide-react';
 import { ActivityLog } from './ActivityLog';
 import { LogEntry } from '../types';
@@ -111,6 +111,16 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange
         <header className="h-16 bg-white border-b border-slate-200 flex justify-between items-center px-6 z-20">
           <div className="md:hidden font-bold text-gray-800">EventStock AI</div>
           <div className="flex items-center gap-4 ml-auto">
+             <a 
+               href="/huong-dan.html" 
+               target="_blank" 
+               rel="noreferrer" 
+               className="inline-flex items-center gap-2 px-3 py-2 text-sm font-semibold text-blue-700 border border-blue-100 rounded-lg hover:bg-blue-50 hover:border-blue-200 transition"
+             >
+               <BookOpen size={16} />
+               <span className="hidden sm:inline">Hướng dẫn sử dụng</span>
+               <span className="sm:hidden">Hướng dẫn</span>
+             </a>
              <ActivityLog logs={logs} />
              <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center text-blue-700 font-bold text-sm">
                 AD
