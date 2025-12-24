@@ -12,12 +12,19 @@ dist
 dist-ssr
 *.local
 
+# Environment variables (NEVER push these!)
+.env
+.env.local
+.env.*.local
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
 .idea
 .DS_Store
 *.suo
+.firebase/
+.firebaserc
 *.ntvs*
 *.njsproj
 *.sln

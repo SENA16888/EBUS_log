@@ -12,20 +12,14 @@ import { AIChat } from './components/AIChat';
 import { AppState, InventoryItem, Event, EventStatus, Transaction, TransactionType, ComboPackage, Employee, Quotation, EventStaffAllocation, EventExpense, LogEntry } from './types';
 import { MOCK_INVENTORY, MOCK_EVENTS, MOCK_TRANSACTIONS, MOCK_PACKAGES, MOCK_EMPLOYEES } from './constants';
 import { MessageSquare } from 'lucide-react';
+import { saveAppState, loadAppState, initializeAuth } from './services/firebaseService';
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'inventory' | 'events' | 'packages' | 'employees' | 'quotations' | 'sales'>('dashboard');
   const [isChatOpen, setIsChatOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   
   const [appState, setAppState] = useState<AppState>(() => {
-    try {
-      const raw = localStorage.getItem('ebus_app_state');
-      if (raw) {
-        return JSON.parse(raw) as AppState;
-      }
-    } catch (err) {
-      console.warn('Failed to parse stored app state, falling back to defaults', err);
-    }
     return {
       inventory: MOCK_INVENTORY,
       events: MOCK_EVENTS,
@@ -39,13 +33,59 @@ const App: React.FC = () => {
     };
   });
 
+  // Tải dữ liệu từ Firebase khi component mount
   useEffect(() => {
-    try {
-      localStorage.setItem('ebus_app_state', JSON.stringify(appState));
-    } catch (err) {
-      console.warn('Failed to persist app state', err);
-    }
-  }, [appState]);
+    const loadData = async () => {
+      try {
+        setIsLoading(true);
+        await initializeAuth();
+        
+        const firebaseState = await loadAppState();
+        if (firebaseState) {
+          setAppState(firebaseState);
+        } else {
+          // Nếu Firebase trống, lưu dữ liệu mặc định
+          await saveAppState(appState);
+        }
+      } catch (error) {
+        console.error('Failed to load data from Firebase:', error);
+        // Fallback to localStorage
+        try {
+          const raw = localStorage.getItem('ebus_app_state');
+          if (raw) {
+            setAppState(JSON.parse(raw) as AppState);
+          }
+        } catch (err) {
+          console.warn('Failed to parse stored app state', err);
+        }
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadData();
+  }, []);
+
+  // Lưu dữ liệu vào cả localStorage và Firebase
+  useEffect(() => {
+    if (isLoading) return; // Không lưu khi đang tải
+
+    const saveData = async () => {
+      try {
+        // Lưu vào localStorage (backup)
+        localStorage.setItem('ebus_app_state', JSON.stringify(appState));
+        localStorage.setItem('ebus_last_update', new Date().toISOString());
+        
+        // Lưu vào Firebase
+        await saveAppState(appState);
+      } catch (err) {
+        console.warn('Failed to persist app state:', err);
+      }
+    };
+
+    const timer = setTimeout(saveData, 1000); // Debounce 1 giây
+    return () => clearTimeout(timer);
+  }, [appState, isLoading]);
 
   const addLog = (message: string, type: LogEntry['type'] = 'INFO') => {
     const newLog: LogEntry = {

@@ -1,0 +1,99 @@
+import { initializeApp } from 'firebase/app';
+import { getFirestore, doc, getDoc, setDoc, collection, getDocs, query, where, deleteDoc, updateDoc } from 'firebase/firestore';
+import { getAuth, onAuthStateChanged, signInAnonymously } from 'firebase/auth';
+
+// Helper to safely get environment variables (same pattern as geminiService)
+const getEnvVar = (key: string): string | undefined => {
+  return (import.meta as { env?: Record<string, string | undefined> }).env?.[key];
+};
+
+// ⚠️ Thay thế với thông tin Firebase của bạn (tìm trong Firebase Console)
+const firebaseConfig = {
+  apiKey: getEnvVar('VITE_FIREBASE_API_KEY') || 'AIzaSyDummyKeyForTesting',
+  authDomain: getEnvVar('VITE_FIREBASE_AUTH_DOMAIN') || 'ebus-log.firebaseapp.com',
+  projectId: getEnvVar('VITE_FIREBASE_PROJECT_ID') || 'ebus-log',
+  storageBucket: getEnvVar('VITE_FIREBASE_STORAGE_BUCKET') || 'ebus-log.appspot.com',
+  messagingSenderId: getEnvVar('VITE_FIREBASE_MESSAGING_SENDER_ID') || '123456789',
+  appId: getEnvVar('VITE_FIREBASE_APP_ID') || '1:123456789:web:abcdef1234567890',
+};
+
+const app = initializeApp(firebaseConfig);
+export const db = getFirestore(app);
+export const auth = getAuth(app);
+
+// Hàm để đảm bảo người dùng được xác thực (Anonymous Auth)
+export const initializeAuth = (): Promise<void> => {
+  return new Promise((resolve, reject) => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        resolve();
+      } else {
+        try {
+          await signInAnonymously(auth);
+          resolve();
+        } catch (error) {
+          console.error('Auth initialization error:', error);
+          reject(error);
+        }
+      }
+      unsubscribe();
+    });
+  });
+};
+
+// Hàm lưu AppState lên Firebase
+export const saveAppState = async (appState: any): Promise<void> => {
+  try {
+    await initializeAuth();
+    const docRef = doc(db, 'appState', 'main');
+    await setDoc(docRef, {
+      ...appState,
+      lastUpdated: new Date().toISOString(),
+    }, { merge: true });
+  } catch (error) {
+    console.error('Error saving app state to Firebase:', error);
+    throw error;
+  }
+};
+
+// Hàm tải AppState từ Firebase
+export const loadAppState = async (): Promise<any | null> => {
+  try {
+    await initializeAuth();
+    const docRef = doc(db, 'appState', 'main');
+    const docSnap = await getDoc(docRef);
+    
+    if (docSnap.exists()) {
+      return docSnap.data();
+    }
+    return null;
+  } catch (error) {
+    console.error('Error loading app state from Firebase:', error);
+    return null;
+  }
+};
+
+// Hàm đồng bộ hóa giữa localStorage và Firebase
+export const syncAppState = async (localState: any): Promise<any> => {
+  try {
+    const firebaseState = await loadAppState();
+    
+    if (firebaseState) {
+      // Nếu Firebase có dữ liệu, so sánh timestamps
+      const localTime = new Date(localStorage.getItem('ebus_last_update') || 0).getTime();
+      const firebaseTime = new Date(firebaseState.lastUpdated || 0).getTime();
+      
+      // Lấy dữ liệu mới nhất
+      if (firebaseTime > localTime) {
+        return firebaseState;
+      }
+    }
+    
+    // Lưu state hiện tại lên Firebase
+    await saveAppState(localState);
+    return localState;
+  } catch (error) {
+    console.error('Sync error:', error);
+    return localState;
+  }
+};
