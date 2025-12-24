@@ -1,6 +1,6 @@
 
-import React, { useState } from 'react';
-import { Event, InventoryItem, EventStatus, ComboPackage, Employee, EventExpense, EventStaffAllocation, Quotation } from '../types';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Event, InventoryItem, EventStatus, ComboPackage, Employee, EventExpense, EventStaffAllocation, Quotation, EventProcessStep } from '../types';
 import { 
   Calendar, MapPin, Box, ArrowLeft, Plus, X, Layers, 
   Users, DollarSign, Trash2, Truck, BookOpen, 
@@ -19,14 +19,93 @@ interface EventManagerProps {
   onExportPackageToEvent?: (eventId: string, packageId: string, qty: number) => void;
   onSyncQuotation?: (eventId: string, quotationId: string) => void;
   onReturnFromEvent: (eventId: string, itemId: string, qty: number) => void;
+  onToggleItemDone?: (eventId: string, itemId: string, done: boolean) => void;
   onCreateEvent: (newEvent: Event) => void;
   onAssignStaff?: (eventId: string, staffData: EventStaffAllocation) => void;
   onRemoveStaff?: (eventId: string, employeeId: string) => void;
+  onToggleStaffDone?: (eventId: string, employeeId: string, done: boolean) => void;
   onAddExpense?: (eventId: string, expense: EventExpense) => void;
   onRemoveExpense?: (eventId: string, expenseId: string) => void;
   onLinkQuotation?: (eventId: string, quotationId: string) => void;
   onFinalizeOrder?: (eventId: string) => void;
+  onUpdateEvent?: (eventId: string, updates: Partial<Event>) => void;
 }
+
+const PROCESS_STEPS_TEMPLATE = [
+  {
+    id: 'ORDER' as const,
+    title: 'Chốt đơn',
+    checklist: ['Lead', 'Đã liên hệ', 'Đã gửi proposal', 'Đàm phán', 'Đặt cọc', 'Chốt lịch']
+  },
+  {
+    id: 'PLAN' as const,
+    title: 'Lên kế hoạch',
+    checklist: ['Nhận bàn giao', 'Lấy thông tin mặt bằng', 'Sơ đồ trạm', 'Timeline ngày diễn ra', 'Chốt số lượng', 'Gán người theo trạm', 'Ca làm']
+  },
+  {
+    id: 'PACK' as const,
+    title: 'Đóng gói',
+    checklist: ['Lập danh mục', 'Chuẩn bị', 'Kiểm tra hoạt động', 'Đóng gói', 'Giao hàng']
+  },
+  {
+    id: 'EXECUTE' as const,
+    title: 'Tổ chức sự kiện',
+    checklist: ['Xe đến', 'Setup trạm', 'Test', 'Đón đoàn', 'Chạy ca', 'Tổng kết', 'Thu dọn']
+  },
+  {
+    id: 'CLOSE' as const,
+    title: 'Hoàn tất sự kiện',
+    checklist: ['Gửi ảnh', 'Báo cáo']
+  }
+];
+
+const createDefaultProcessSteps = (): EventProcessStep[] =>
+  PROCESS_STEPS_TEMPLATE.map(step => ({
+    id: step.id,
+    title: step.title,
+    checklist: step.checklist.map((label, index) => ({
+      id: `${step.id}-${index}`,
+      label,
+      checked: false
+    }))
+  }));
+
+type EventSession = NonNullable<Event['session']>;
+type EventScheduleItem = { date: string; sessions: EventSession[] };
+
+const SESSION_LABELS: Record<EventSession, string> = {
+  MORNING: 'SÁNG',
+  AFTERNOON: 'CHIỀU',
+  EVENING: 'TỐI'
+};
+
+const SESSION_OPTIONS: { value: EventSession; label: string }[] = [
+  { value: 'MORNING', label: 'SÁNG' },
+  { value: 'AFTERNOON', label: 'CHIỀU' },
+  { value: 'EVENING', label: 'TỐI' }
+];
+
+const getEventSchedule = (event: Event): EventScheduleItem[] => {
+  if (event.schedule && event.schedule.length > 0) {
+    const normalized = (event.schedule as any[]).map(it => {
+      if (it.sessions && Array.isArray(it.sessions)) return { date: it.date, sessions: it.sessions as EventSession[] };
+      if (it.session) return { date: it.date, sessions: [it.session as EventSession] };
+      return { date: it.date, sessions: event.session ? [event.session] : ['MORNING'] };
+    });
+    return [...normalized].sort((a, b) => a.date.localeCompare(b.date));
+  }
+  if (event.startDate) {
+    const fallbackSession = event.session || 'MORNING';
+    return [{ date: event.startDate, sessions: [fallbackSession] }];
+  }
+  return [];
+};
+
+const getSessionsForDate = (event: Event, date: string): EventSession[] | null => {
+  const schedule = getEventSchedule(event);
+  const match = schedule.find(item => item.date === date);
+  return match ? match.sessions : null;
+};
 
 export const EventManager: React.FC<EventManagerProps> = ({ 
   events, 
@@ -44,10 +123,11 @@ export const EventManager: React.FC<EventManagerProps> = ({
   onAddExpense,
   onRemoveExpense,
   onLinkQuotation,
-  onFinalizeOrder
+  onFinalizeOrder,
+  onUpdateEvent
 }) => {
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
-  const [detailTab, setDetailTab] = useState<'EQUIPMENT' | 'STAFF' | 'COSTS'>('EQUIPMENT');
+  const [detailTab, setDetailTab] = useState<'EQUIPMENT' | 'STAFF' | 'COSTS' | 'FLOWS'>('EQUIPMENT');
   
   // Modals
   const [showCreateEventModal, setShowCreateEventModal] = useState(false);
@@ -58,11 +138,14 @@ export const EventManager: React.FC<EventManagerProps> = ({
   const [newEventData, setNewEventData] = useState({
     name: '',
     client: '',
-    location: '',
-    startDate: '',
-    endDate: ''
+    location: ''
   });
-  const [newEventSession, setNewEventSession] = useState<'MORNING' | 'AFTERNOON' | 'EVENING'>('MORNING');
+  const [newEventSchedule, setNewEventSchedule] = useState<EventScheduleItem[]>([]);
+  const [newScheduleDate, setNewScheduleDate] = useState('');
+  const sortedNewEventSchedule = useMemo(
+    () => [...newEventSchedule].sort((a, b) => a.date.localeCompare(b.date)),
+    [newEventSchedule]
+  );
 
   // Export State
   const [exportMode, setExportMode] = useState<'SINGLE' | 'COMBO'>('SINGLE');
@@ -81,6 +164,8 @@ export const EventManager: React.FC<EventManagerProps> = ({
   const [staffUnit, setStaffUnit] = useState<'HOUR' | 'DAY' | 'FIXED'>('DAY');
   const [staffQty, setStaffQty] = useState(1);
   const [staffRate, setStaffRate] = useState('');
+  const [staffSession, setStaffSession] = useState<'MORNING' | 'AFTERNOON' | 'EVENING'>('MORNING');
+  const [selectedShiftDate, setSelectedShiftDate] = useState<string | null>(null);
 
   // Expense State
   const [expenseCat, setExpenseCat] = useState<EventExpense['category']>('TRANSPORT_GOODS');
@@ -90,30 +175,66 @@ export const EventManager: React.FC<EventManagerProps> = ({
 
   const selectedEvent = events.find(e => e.id === selectedEventId);
   const linkedQuotation = selectedEvent?.quotationId ? quotations.find(q => q.id === selectedEvent.quotationId) : null;
+  const fallbackProcessSteps = useMemo(() => createDefaultProcessSteps(), [selectedEventId]);
+  const processSteps = selectedEvent?.processSteps && selectedEvent.processSteps.length > 0 ? selectedEvent.processSteps : fallbackProcessSteps;
+
+  useEffect(() => {
+    if (selectedEvent && (!selectedEvent.processSteps || selectedEvent.processSteps.length === 0) && onUpdateEvent) {
+      onUpdateEvent(selectedEvent.id, { processSteps: createDefaultProcessSteps() });
+    }
+  }, [selectedEvent, onUpdateEvent]);
 
   const handleCreateEventSubmit = () => {
-    if (!newEventData.name || !newEventData.client || !newEventData.startDate) {
+    if (!newEventData.name || !newEventData.client || newEventSchedule.length === 0) {
       alert("Vui lòng điền đủ thông tin sự kiện!");
       return;
     }
+    const sortedSchedule = [...newEventSchedule].sort((a, b) => a.date.localeCompare(b.date));
+    const startDate = sortedSchedule[0].date;
+    const endDate = sortedSchedule[sortedSchedule.length - 1].date;
+    const primarySession = sortedSchedule[0].sessions?.[0] || 'MORNING';
     const newEvent: Event = {
       id: `EVT-${Date.now()}`,
       name: newEventData.name,
       client: newEventData.client,
       location: newEventData.location,
-      startDate: newEventData.startDate,
-      endDate: newEventData.endDate || newEventData.startDate,
-      session: newEventSession,
+      startDate,
+      endDate,
+      session: primarySession,
+      schedule: sortedSchedule.map(s => ({ date: s.date, sessions: s.sessions })),
       status: EventStatus.UPCOMING,
       items: [],
       staff: [],
-      expenses: []
+      expenses: [],
+      processSteps: createDefaultProcessSteps()
     };
     onCreateEvent(newEvent);
     setShowCreateEventModal(false);
-    setNewEventData({ name: '', client: '', location: '', startDate: '', endDate: '' });
-    setNewEventSession('MORNING');
+    setNewEventData({ name: '', client: '', location: '' });
+    setNewEventSchedule([]);
+    setNewScheduleDate('');
     setSelectedEventId(newEvent.id);
+  };
+
+  const handleAddScheduleDate = () => {
+    if (!newScheduleDate) return;
+    if (newEventSchedule.some(item => item.date === newScheduleDate)) {
+      return;
+    }
+    setNewEventSchedule(prev => [...prev, { date: newScheduleDate, sessions: ['MORNING'] }]);
+    setNewScheduleDate('');
+  };
+
+  const toggleScheduleSession = (date: string, session: EventSession) => {
+    setNewEventSchedule(prev => prev.map(item => {
+      if (item.date !== date) return item;
+      const has = item.sessions.includes(session);
+      return { ...item, sessions: has ? item.sessions.filter(s => s !== session) : [...item.sessions, session] };
+    }));
+  };
+
+  const handleRemoveScheduleDate = (date: string) => {
+    setNewEventSchedule(prev => prev.filter(item => item.date !== date));
   };
 
   const handleExportSubmit = () => {
@@ -177,20 +298,37 @@ export const EventManager: React.FC<EventManagerProps> = ({
       alert("Vui lòng nhập đầy đủ thông tin nhân sự!");
       return;
     }
+    if (!selectedShiftDate) {
+      alert('Vui lòng chọn ngày và ca (shift) trước khi phân công.');
+      return;
+    }
     const rate = Number(staffRate);
     const qty = Number(staffQty);
+    // Kiểm tra trùng lịch: cùng ngày và cùng ca (so với tất cả các sự kiện)
+    const conflicts = events.flatMap(e => (e.staff || []).filter(s => s.employeeId === selectedStaffId && s.session === staffSession && s.shiftDate === selectedShiftDate).map(s => ({ event: e, staff: s })));
+    // If conflict found (exclude assigning same person twice to same event/shift)
+    const conflictingOther = conflicts.filter(c => c.event.id !== selectedEventId);
+    if (conflictingOther.length > 0) {
+      const list = conflictingOther.map(c => `${c.event.name} (${c.event.startDate})`).join('\n');
+      alert(`Nhân sự đã bị phân công trùng ca vào ngày này:\n${list}\n\nVui lòng chọn ca khác hoặc nhân sự khác.`);
+      return;
+    }
+
     onAssignStaff(selectedEventId, {
       employeeId: selectedStaffId,
       task: staffTask,
       unit: staffUnit,
       quantity: qty,
       rate: rate,
-      salary: rate * qty
+      salary: rate * qty,
+      session: staffSession,
+      shiftDate: selectedShiftDate || undefined
     });
     setSelectedStaffId('');
     setStaffTask('');
     setStaffRate('');
     setStaffQty(1);
+    setSelectedShiftDate(null);
   };
 
   const handleAddExpenseSubmit = () => {
@@ -225,6 +363,22 @@ export const EventManager: React.FC<EventManagerProps> = ({
     }
   };
 
+  const updateProcessSteps = (steps: EventProcessStep[]) => {
+    if (!selectedEvent || !onUpdateEvent) return;
+    onUpdateEvent(selectedEvent.id, { processSteps: steps });
+  };
+
+  const handleToggleProcessChecklist = (stepId: EventProcessStep['id'], itemId: string) => {
+    const nextSteps = processSteps.map(step => {
+      if (step.id !== stepId) return step;
+      return {
+        ...step,
+        checklist: step.checklist.map(item => item.id === itemId ? { ...item, checked: !item.checked } : item)
+      };
+    });
+    updateProcessSteps(nextSteps);
+  };
+
   // Tài chính
   const staffCosts = selectedEvent?.staff?.reduce((a, b) => a + b.salary, 0) || 0;
   const otherCosts = selectedEvent?.expenses?.reduce((a, b) => a + b.amount, 0) || 0;
@@ -232,6 +386,8 @@ export const EventManager: React.FC<EventManagerProps> = ({
   const revenue = linkedQuotation?.totalAmount || 0;
   const grossProfit = revenue - totalCosts;
   const profitMargin = revenue > 0 ? (grossProfit / revenue) * 100 : 0;
+  const totalChecklistCount = processSteps.reduce((acc, step) => acc + step.checklist.length, 0);
+  const totalChecklistDone = processSteps.reduce((acc, step) => acc + step.checklist.filter(item => item.checked).length, 0);
 
   return (
     <div className="flex flex-col lg:flex-row h-[calc(100vh-100px)] gap-6">
@@ -256,16 +412,28 @@ export const EventManager: React.FC<EventManagerProps> = ({
               onClick={() => setSelectedEventId(event.id)}
               className={`p-4 rounded-xl border-2 cursor-pointer transition ${selectedEventId === event.id ? 'border-blue-500 bg-blue-50 shadow-sm' : 'border-transparent bg-white border-slate-100'}`}
             >
-              <h4 className="font-bold text-gray-800">{event.name}</h4>
-              <p className="text-xs text-gray-500 flex items-center gap-1 mt-1"><Calendar size={12}/> {event.startDate}</p>
-              <div className="mt-2 flex items-center gap-2">
-                {event.session && (
-                  <div className="inline-flex items-center gap-1 text-[10px] font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full">
-                    {event.session === 'MORNING' ? 'SÁNG' : event.session === 'AFTERNOON' ? 'CHIỀU' : 'TỐI'}
-                  </div>
-                )}
-                {event.quotationId && <div className="inline-flex items-center gap-1 text-[10px] font-bold bg-green-100 text-green-700 px-2 py-0.5 rounded-full"><LinkIcon size={10}/> Đã gắn báo giá</div>}
-              </div>
+              {(() => {
+                const schedule = getEventSchedule(event);
+                const uniqueSessions = Array.from(new Set(schedule.flatMap(item => item.sessions)));
+                const start = schedule[0]?.date || event.startDate;
+                const end = schedule[schedule.length - 1]?.date || event.endDate;
+                return (
+                  <>
+                    <h4 className="font-bold text-gray-800">{event.name}</h4>
+                    <p className="text-xs text-gray-500 flex items-center gap-1 mt-1">
+                      <Calendar size={12}/> {start}{end && end !== start ? ` → ${end}` : ''}
+                    </p>
+                    <div className="mt-2 flex items-center gap-2 flex-wrap">
+                      {uniqueSessions.map(session => (
+                        <div key={session} className="inline-flex items-center gap-1 text-[10px] font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full">
+                          {SESSION_LABELS[session]}
+                        </div>
+                      ))}
+                      {event.quotationId && <div className="inline-flex items-center gap-1 text-[10px] font-bold bg-green-100 text-green-700 px-2 py-0.5 rounded-full"><LinkIcon size={10}/> Đã gắn báo giá</div>}
+                    </div>
+                  </>
+                );
+              })()}
             </div>
           ))}
         </div>
@@ -299,6 +467,9 @@ export const EventManager: React.FC<EventManagerProps> = ({
                 <button onClick={() => setDetailTab('COSTS')} className={`pb-3 text-sm font-bold border-b-2 transition flex items-center gap-2 ${detailTab === 'COSTS' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
                   <DollarSign size={16}/> Chi Phí & Lợi Nhuận
                 </button>
+                <button onClick={() => setDetailTab('FLOWS')} className={`pb-3 text-sm font-bold border-b-2 transition flex items-center gap-2 ${detailTab === 'FLOWS' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
+                  <Layers size={16}/> Luồng xử lý
+                </button>
               </div>
             </div>
 
@@ -328,6 +499,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
                     <table className="w-full text-left text-sm">
                       <thead className="bg-slate-50 border-b">
                         <tr>
+                          <th className="px-3 py-3 font-bold text-gray-500 uppercase text-[10px] text-center">Đã xong</th>
                           <th className="px-4 py-3 font-bold text-gray-500 uppercase text-[10px]">Thiết bị</th>
                           <th className="px-4 py-3 font-bold text-gray-500 uppercase text-[10px] text-center">Số lượng</th>
                           <th className="px-4 py-3 font-bold text-gray-500 uppercase text-[10px] text-center">Đã trả</th>
@@ -339,6 +511,9 @@ export const EventManager: React.FC<EventManagerProps> = ({
                           const item = inventory.find(inv => inv.id === alloc.itemId);
                           return (
                             <tr key={i} className="hover:bg-slate-50/50">
+                              <td className="px-4 py-3 text-center">
+                                <input type="checkbox" checked={!!alloc.done} onChange={e => onToggleItemDone?.(selectedEvent.id, alloc.itemId, e.target.checked)} />
+                              </td>
                               <td className="px-4 py-3">
                                 <div className="flex items-center gap-3">
                                   <img src={item?.imageUrl} className="w-8 h-8 rounded" />
@@ -365,7 +540,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
                           );
                         })}
                         {selectedEvent.items.length === 0 && (
-                          <tr><td colSpan={4} className="p-10 text-center text-gray-400 italic">Chưa có thiết bị nào trong danh sách xuất.</td></tr>
+                          <tr><td colSpan={5} className="p-10 text-center text-gray-400 italic">Chưa có thiết bị nào trong danh sách xuất.</td></tr>
                         )}
                       </tbody>
                     </table>
@@ -377,18 +552,66 @@ export const EventManager: React.FC<EventManagerProps> = ({
                 <div className="space-y-6">
                    <div className="bg-white p-5 rounded-xl border border-blue-100 shadow-sm space-y-4">
                     <h4 className="font-bold text-gray-700 text-xs uppercase flex items-center gap-2"><UserCheck size={16} className="text-blue-500"/> Phân công nhân sự sự kiện</h4>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       <select className="border border-slate-200 rounded-lg p-2 text-sm bg-white" value={selectedStaffId} onChange={e => handleStaffSelect(e.target.value)}>
                         <option value="">-- Chọn nhân viên --</option>
                         {employees.map(e => <option key={e.id} value={e.id}>{e.name} ({e.role})</option>)}
                       </select>
                       <input className="border border-slate-200 rounded-lg p-2 text-sm" placeholder="Nhiệm vụ..." value={staffTask} onChange={e => setStaffTask(e.target.value)} />
                     </div>
-                    <div className="grid grid-cols-3 gap-3">
+                      {/* Shift picker: show dates between start and end and allow picking Sáng/Chiều/Tối */}
+                      {selectedEvent && (
+                        <div className="mt-3">
+                          <p className="text-xs font-black text-gray-400 uppercase mb-2">Chọn ngày & ca</p>
+                          <div className="flex gap-2 overflow-auto pb-2">
+                            {(() => {
+                              const start = new Date(selectedEvent.startDate);
+                              const end = new Date(selectedEvent.endDate || selectedEvent.startDate);
+                              const dates: Date[] = [];
+                              for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+                                dates.push(new Date(d));
+                              }
+                              return dates.map(dt => {
+                                const iso = dt.toISOString().slice(0,10);
+                                const display = dt.toLocaleDateString('vi-VN');
+                                return (
+                                  <div key={iso} className="min-w-[140px] p-2 bg-white rounded-lg border border-slate-100">
+                                    <div className="text-[12px] font-black text-slate-600">{display}</div>
+                                          <div className="flex gap-2 mt-2">
+                                            {(() => {
+                                              const sessionsForDate = getEventSchedule(selectedEvent).find(s => s.date === iso)?.sessions || [];
+                                              const buttonsToRender: EventSession[] = sessionsForDate.length > 0 ? sessionsForDate : ['MORNING','AFTERNOON','EVENING'];
+                                              return buttonsToRender.map(sess => (
+                                                <button
+                                                  key={sess}
+                                                  onClick={() => { setSelectedShiftDate(iso); setStaffSession(sess); }}
+                                                  className={`flex-1 text-xs py-1 rounded ${selectedShiftDate === iso && staffSession === sess ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700'}`}
+                                                >
+                                                  {sess === 'MORNING' ? 'SÁNG' : sess === 'AFTERNOON' ? 'CHIỀU' : 'TỐI'}
+                                                </button>
+                                              ));
+                                            })()}
+                                          </div>
+                                  </div>
+                                );
+                              });
+                            })()}
+                          </div>
+                          {selectedShiftDate && (
+                            <div className="mt-2 text-[12px] text-slate-500">Đang chọn: <span className="font-bold text-slate-700">{new Date(selectedShiftDate).toLocaleDateString('vi-VN')}</span> • <span className="font-black">{staffSession === 'MORNING' ? 'SÁNG' : staffSession === 'AFTERNOON' ? 'CHIỀU' : 'TỐI'}</span></div>
+                          )}
+                        </div>
+                      )}
+                    <div className="grid grid-cols-4 gap-3">
                       <select className="border border-slate-200 rounded-lg p-2 text-sm bg-white" value={staffUnit} onChange={e => setStaffUnit(e.target.value as any)}>
                         <option value="DAY">Theo Ngày</option>
                         <option value="HOUR">Theo Giờ</option>
                         <option value="FIXED">Trọn gói</option>
+                      </select>
+                      <select className="border border-slate-200 rounded-lg p-2 text-sm bg-white" value={staffSession} onChange={e => setStaffSession(e.target.value as any)}>
+                        <option value="MORNING">SÁNG</option>
+                        <option value="AFTERNOON">CHIỀU</option>
+                        <option value="EVENING">TỐI</option>
                       </select>
                       <input type="number" className="border border-slate-200 rounded-lg p-2 text-sm text-center" placeholder="SL" value={staffQty} onChange={e => setStaffQty(Number(e.target.value))} />
                       <input type="number" className="border border-slate-200 rounded-lg p-2 text-sm font-bold text-blue-600" placeholder="Đơn giá" value={staffRate} onChange={e => setStaffRate(e.target.value)} />
@@ -406,10 +629,21 @@ export const EventManager: React.FC<EventManagerProps> = ({
                               <div>
                                 <p className="font-bold text-gray-800">{emp?.name}</p>
                                 <p className="text-xs font-medium text-blue-600">{s.task} • {s.quantity} {s.unit === 'DAY' ? 'ngày' : 'giờ'}</p>
+                                {s.session && (
+                                  <div className="mt-1 inline-flex items-center gap-1 text-[10px] font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full">
+                                    {s.session === 'MORNING' ? 'SÁNG' : s.session === 'AFTERNOON' ? 'CHIỀU' : 'TỐI'}
+                                  </div>
+                                )}
+                                {s.shiftDate && (
+                                  <div className="text-[11px] text-slate-400 mt-1">{new Date(s.shiftDate).toLocaleDateString('vi-VN')}</div>
+                                )}
                               </div>
                            </div>
                            <div className="flex items-center gap-6">
-                              <p className="font-black text-gray-800">{s.salary.toLocaleString()}đ</p>
+                              <div className="flex items-center gap-3">
+                                <input type="checkbox" checked={!!s.done} onChange={e => onToggleStaffDone?.(selectedEvent.id, s.employeeId, e.target.checked)} />
+                                <p className="font-black text-gray-800">{s.salary.toLocaleString()}đ</p>
+                              </div>
                               <button onClick={() => onRemoveStaff?.(selectedEvent.id, s.employeeId)} className="text-gray-300 hover:text-red-500"><Trash2 size={16}/></button>
                            </div>
                         </div>
@@ -565,6 +799,61 @@ export const EventManager: React.FC<EventManagerProps> = ({
                   </div>
                 </div>
               )}
+
+              {detailTab === 'FLOWS' && selectedEvent && (
+                <div className="space-y-4">
+                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+                    <div>
+                      <p className="text-xs font-black uppercase tracking-widest text-slate-400">Luồng xử lý công việc</p>
+                      <p className="text-sm font-bold text-slate-700">Tick checklist để đánh dấu hoàn thành.</p>
+                    </div>
+                    <div className="text-xs text-slate-400 font-medium">
+                      Tổng tiến độ: {totalChecklistDone}/{totalChecklistCount}
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto pb-2">
+                    <div className="flex items-stretch gap-3 min-w-[1100px]">
+                      {processSteps.map((step, index) => {
+                        const doneCount = step.checklist.filter(item => item.checked).length;
+                        const totalCount = step.checklist.length;
+                        const isComplete = totalCount > 0 && doneCount === totalCount;
+                        return (
+                          <div key={step.id} className="flex items-stretch gap-3">
+                            <div className={`relative w-64 p-4 rounded-2xl border shadow-sm ${isComplete ? 'border-green-200 bg-green-50' : 'border-slate-200 bg-white'}`}>
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <span className={`h-6 w-6 rounded-full text-[11px] font-black flex items-center justify-center ${isComplete ? 'bg-green-600 text-white' : 'bg-slate-900 text-white'}`}>{index + 1}</span>
+                                  <p className="font-black text-sm text-slate-800">{step.title}</p>
+                                </div>
+                                <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${isComplete ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'}`}>{doneCount}/{totalCount}</span>
+                              </div>
+                              <div className="mt-3 space-y-2">
+                                {step.checklist.map(item => (
+                                  <label key={item.id} className="flex items-start gap-2 text-xs text-slate-700">
+                                    <input
+                                      type="checkbox"
+                                      className="mt-0.5"
+                                      checked={item.checked}
+                                      onChange={() => handleToggleProcessChecklist(step.id, item.id)}
+                                    />
+                                    <span className={item.checked ? 'line-through text-slate-400' : 'text-slate-700'}>{item.label}</span>
+                                  </label>
+                                ))}
+                              </div>
+                            </div>
+                            {index < processSteps.length - 1 && (
+                              <div className="flex items-center text-slate-300">
+                                <ChevronRight size={28} />
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </>
         ) : (
@@ -586,17 +875,44 @@ export const EventManager: React.FC<EventManagerProps> = ({
               <input type="text" className="w-full border border-slate-300 rounded-xl p-3" value={newEventData.name} onChange={e => setNewEventData({...newEventData, name: e.target.value})} placeholder="Tên sự kiện" />
               <input type="text" className="w-full border border-slate-300 rounded-xl p-3" value={newEventData.client} onChange={e => setNewEventData({...newEventData, client: e.target.value})} placeholder="Khách hàng" />
               <input type="text" className="w-full border border-slate-300 rounded-xl p-3" value={newEventData.location} onChange={e => setNewEventData({...newEventData, location: e.target.value})} placeholder="Địa điểm" />
-              <div className="grid grid-cols-2 gap-4">
-                 <input type="date" className="w-full border border-slate-300 rounded-xl p-3" value={newEventData.startDate} onChange={e => setNewEventData({...newEventData, startDate: e.target.value})} />
-                 <input type="date" className="w-full border border-slate-300 rounded-xl p-3" value={newEventData.endDate} onChange={e => setNewEventData({...newEventData, endDate: e.target.value})} />
-              </div>
-              <div className="mt-3">
-                <label className="text-[12px] font-bold text-gray-600 mb-1 block">Buổi</label>
-                <select className="w-full border border-slate-300 rounded-xl p-3 bg-white" value={newEventSession} onChange={e => setNewEventSession(e.target.value as any)}>
-                  <option value="MORNING">SÁNG</option>
-                  <option value="AFTERNOON">CHIỀU</option>
-                  <option value="EVENING">TỐI</option>
-                </select>
+              <div className="space-y-2">
+                <label className="text-[12px] font-bold text-gray-600 block">Ngày tổ chức (chọn trên lịch)</label>
+                <div className="flex gap-2">
+                  <input
+                    type="date"
+                    className="w-full border border-slate-300 rounded-xl p-3"
+                    value={newScheduleDate}
+                    onChange={e => setNewScheduleDate(e.target.value)}
+                  />
+                  <button onClick={handleAddScheduleDate} className="px-4 py-2 bg-blue-600 text-white rounded-lg font-bold">Thêm</button>
+                </div>
+                {sortedNewEventSchedule.length === 0 ? (
+                  <div className="text-xs text-slate-400 italic">Chưa chọn ngày tổ chức.</div>
+                ) : (
+                  <div className="space-y-2">
+                    {sortedNewEventSchedule.map(item => (
+                      <div key={item.date} className="flex flex-col md:flex-row md:items-center gap-2 border border-slate-200 rounded-xl p-3">
+                        <div className="flex items-center gap-2 flex-1">
+                          <Calendar size={16} className="text-slate-400" />
+                          <span className="text-sm font-semibold text-slate-700">{new Date(item.date).toLocaleDateString('vi-VN')}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {SESSION_OPTIONS.map(opt => {
+                            const active = item.sessions.includes(opt.value);
+                            return (
+                              <button key={opt.value} onClick={() => toggleScheduleSession(item.date, opt.value)} className={`px-3 py-1 rounded text-sm ${active ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700'}`}>
+                                {opt.label}
+                              </button>
+                            );
+                          })}
+                          <button onClick={() => handleRemoveScheduleDate(item.date)} className="text-red-500 hover:text-red-600">
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
             <div className="p-6 bg-slate-50 flex justify-end gap-3">
@@ -664,7 +980,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
                 return cells.map((dt, idx) => {
                   if (!dt) return <div key={idx} className="h-24 p-2 border rounded-lg bg-slate-50" />;
                   const key = dt.toISOString().slice(0,10);
-                  const dayEvents = events.filter(ev => ev.startDate === key || ev.startDate === dt.toLocaleDateString('en-CA'));
+                  const dayEvents = events.filter(ev => getEventSchedule(ev).some(item => item.date === key));
                   return (
                     <div key={idx} className="h-24 p-2 border rounded-lg bg-white flex flex-col">
                       <div className="text-xs text-slate-400 font-black">{dt.getDate()}</div>
@@ -672,11 +988,14 @@ export const EventManager: React.FC<EventManagerProps> = ({
                         {dayEvents.map(ev => (
                           <button key={ev.id} onClick={() => { setCalendarSelectedEventId(ev.id); setShowEventDetailModal(true); }} className="w-full text-left truncate py-0.5 px-1 rounded hover:bg-blue-50 text-blue-600 font-medium">
                             <span className="font-medium">{ev.name}</span>
-                            {ev.session && (
-                              <span className="ml-2 inline-flex items-center text-[10px] font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full">
-                                {ev.session === 'MORNING' ? 'SÁNG' : ev.session === 'AFTERNOON' ? 'CHIỀU' : 'TỐI'}
-                              </span>
-                            )}
+                            {(() => {
+                              const sessions = getSessionsForDate(ev, key);
+                              return sessions ? sessions.map(s => (
+                                <span key={s} className="ml-2 inline-flex items-center text-[10px] font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full">
+                                  {SESSION_LABELS[s]}
+                                </span>
+                              )) : null;
+                            })()}
                           </button>
                         ))}
                       </div>
@@ -703,11 +1022,15 @@ export const EventManager: React.FC<EventManagerProps> = ({
                   <p className="text-sm text-slate-500">{ev.client} • {ev.location}</p>
                   <div className="flex items-center gap-3 mt-1">
                     <p className="text-xs text-slate-400">{ev.startDate} → {ev.endDate}</p>
-                    {ev.session && (
-                      <div className="inline-flex items-center text-[11px] font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full">
-                        {ev.session === 'MORNING' ? 'SÁNG' : ev.session === 'AFTERNOON' ? 'CHIỀU' : 'TỐI'}
-                      </div>
-                    )}
+                    {(() => {
+                      const schedule = getEventSchedule(ev);
+                      const uniqueSessions = Array.from(new Set(schedule.flatMap(item => item.sessions)));
+                      return uniqueSessions.map(session => (
+                        <div key={session} className="inline-flex items-center text-[11px] font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full">
+                          {SESSION_LABELS[session]}
+                        </div>
+                      ));
+                    })()}
                   </div>
                 </div>
                 <div className="flex gap-2">
@@ -747,8 +1070,15 @@ export const EventManager: React.FC<EventManagerProps> = ({
 
               <div className="mt-6">
                 <h4 className="font-black text-slate-700 mb-2">Danh sách chi tiết</h4>
-                <div className="bg-white rounded-lg border p-4">
-                  <p className="text-sm"><b>Nhân sự:</b> {ev.staff?.map(s => s.employeeId).join(', ') || 'Không có'}</p>
+                  <div className="bg-white rounded-lg border p-4">
+                  <p className="text-sm"><b>Lịch tổ chức:</b> {getEventSchedule(ev).length ? getEventSchedule(ev).map(item => `${new Date(item.date).toLocaleDateString('vi-VN')} (${item.sessions.map(s => SESSION_LABELS[s]).join(', ')})`).join(', ') : 'Không có'}</p>
+                  <p className="text-sm"><b>Nhân sự:</b> {ev.staff?.length ? ev.staff.map(s => {
+                      const emp = employees.find(en => en.id === s.employeeId);
+                      const name = emp ? emp.name : s.employeeId;
+                      const sess = s.session ? ` (${s.session === 'MORNING' ? 'SÁNG' : s.session === 'AFTERNOON' ? 'CHIỀU' : 'TỐI'})` : '';
+                      const date = s.shiftDate ? ` ${new Date(s.shiftDate).toLocaleDateString('vi-VN')}` : '';
+                      return `${name}${sess}${date}`;
+                    }).join(', ') : 'Không có'}</p>
                   <p className="text-sm mt-2"><b>Chi phí:</b> {ev.expenses?.length ? ev.expenses.map(ex => `${ex.description} (${ex.amount}đ)`).join('; ') : 'Không có'}</p>
                   <p className="text-sm mt-2"><b>Thiết bị:</b> {ev.items?.map(it => `${it.itemId} x ${it.quantity}`).join(', ') || 'Không có'}</p>
                 </div>

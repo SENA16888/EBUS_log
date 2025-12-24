@@ -63,6 +63,9 @@ export interface SaleOrderLine {
   name: string;
   price: number;
   quantity: number;
+  soldQuantity?: number;
+  discount?: number; // VNĐ discount per unit or per line
+  lineTotal?: number;
 }
 
 export interface SaleOrder {
@@ -71,8 +74,21 @@ export interface SaleOrder {
   customerName: string;
   customerContact?: string;
   items: SaleOrderLine[];
+  subtotal?: number;
+  orderDiscount?: number;
   total: number;
   note?: string;
+  type?: 'SALE' | 'RETURN';
+  relatedOrderId?: string;
+  groupType?: 'EVENT' | 'CUSTOMER';
+  groupId?: string;
+  groupName?: string;
+  eventId?: string;
+  eventName?: string;
+  status?: 'DRAFT' | 'FINALIZED';
+  exportConfirmed?: boolean;
+  refundConfirmed?: boolean;
+  returnConfirmed?: boolean;
 }
 
 export interface Employee {
@@ -92,6 +108,9 @@ export interface EventStaffAllocation {
   quantity: number;
   rate: number;
   salary: number; 
+  session?: 'MORNING' | 'AFTERNOON' | 'EVENING';
+  shiftDate?: string;
+  done?: boolean;
 }
 
 export interface EventExpense {
@@ -106,6 +125,21 @@ export interface EventItemAllocation {
   itemId: string;
   quantity: number;
   returnedQuantity: number;
+  done?: boolean;
+}
+
+export type EventProcessStepId = 'ORDER' | 'PLAN' | 'PACK' | 'EXECUTE' | 'CLOSE';
+
+export interface EventProcessChecklistItem {
+  id: string;
+  label: string;
+  checked: boolean;
+}
+
+export interface EventProcessStep {
+  id: EventProcessStepId;
+  title: string;
+  checklist: EventProcessChecklistItem[];
 }
 
 export interface Event {
@@ -117,11 +151,14 @@ export interface Event {
   endDate: string;
   status: EventStatus;
   session?: 'MORNING' | 'AFTERNOON' | 'EVENING';
+  // Each schedule entry may include multiple sessions in the same date
+  schedule?: Array<{ date: string; sessions: ('MORNING' | 'AFTERNOON' | 'EVENING')[] }>;
   items: EventItemAllocation[];
   staff?: EventStaffAllocation[];
   expenses?: EventExpense[];
   quotationId?: string; 
   isOrderCreated?: boolean; 
+  processSteps?: EventProcessStep[];
 }
 
 export interface Transaction {

@@ -151,8 +151,36 @@ const App: React.FC = () => {
 
   // --- Handlers for Sale Orders ---
   const handleCreateSaleOrder = (order: any) => {
-    setAppState(prev => ({ ...prev, saleOrders: [...(prev.saleOrders || []), order] }));
-    addLog(`Tạo phiếu xuất bán hàng: ${order.id} cho ${order.customerName}`, 'SUCCESS');
+    const existed = (appState.saleOrders || []).some(o => o.id === order.id);
+    setAppState(prev => {
+      const currentOrders = [...(prev.saleOrders || [])];
+      const existingIndex = currentOrders.findIndex(o => o.id === order.id);
+      if (existingIndex >= 0) {
+        currentOrders[existingIndex] = order;
+        return { ...prev, saleOrders: currentOrders };
+      }
+      return { ...prev, saleOrders: [...currentOrders, order] };
+    });
+    addLog(`${existed ? 'Cập nhật' : 'Tạo'} phiếu bán hàng: ${order.id} cho ${order.customerName}`, 'SUCCESS');
+  };
+
+  const handleCreateSaleReturn = (ret: any) => {
+    setAppState(prev => ({ ...prev, saleOrders: [...(prev.saleOrders || []), ret] }));
+    addLog(`Tạo đơn trả kho: ${ret.id} (liên quan ${ret.relatedOrderId})`, 'INFO');
+  };
+
+  const handleToggleEventItemDone = (eventId: string, itemId: string, done: boolean) => {
+    setAppState(prev => ({
+      ...prev,
+      events: prev.events.map(e => e.id !== eventId ? e : { ...e, items: e.items.map(it => it.itemId === itemId ? { ...it, done } : it) })
+    }));
+  };
+
+  const handleToggleEventStaffDone = (eventId: string, employeeId: string, done: boolean) => {
+    setAppState(prev => ({
+      ...prev,
+      events: prev.events.map(e => e.id !== eventId ? e : { ...e, staff: (e.staff || []).map(s => s.employeeId === employeeId ? { ...s, done } : s) })
+    }));
   };
 
   const handleRestockItem = (id: string, qty: number) => {
@@ -396,6 +424,13 @@ const App: React.FC = () => {
     }));
   };
 
+  const handleUpdateEvent = (eventId: string, updates: Partial<Event>) => {
+    setAppState(prev => ({
+      ...prev,
+      events: prev.events.map(e => e.id === eventId ? { ...e, ...updates } : e)
+    }));
+  };
+
   const handleSyncQuotation = (eventId: string, quotationId: string) => {
     setAppState(prev => {
       const quote = prev.quotations.find(q => q.id === quotationId);
@@ -489,10 +524,13 @@ const App: React.FC = () => {
       {activeTab === 'sales' && (
         <SalesManager
           saleItems={appState.saleItems || []}
+          events={appState.events}
           onAddSaleItem={handleCreateSaleItem}
           onUpdateSaleItem={handleUpdateSaleItem}
           onDeleteSaleItem={handleDeleteSaleItem}
           onCreateSaleOrder={handleCreateSaleOrder}
+          saleOrders={appState.saleOrders || []}
+          onCreateSaleReturn={handleCreateSaleReturn}
         />
       )}
       {activeTab === 'events' && (
@@ -513,6 +551,9 @@ const App: React.FC = () => {
           onRemoveExpense={handleRemoveExpense}
           onLinkQuotation={handleLinkQuotation}
           onFinalizeOrder={handleFinalizeOrder}
+          onToggleItemDone={handleToggleEventItemDone}
+          onToggleStaffDone={handleToggleEventStaffDone}
+          onUpdateEvent={handleUpdateEvent}
         />
       )}
       
