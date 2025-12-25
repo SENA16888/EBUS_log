@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
-import { Employee } from '../types';
-import { Search, Plus, X, Pencil, Trash2, Phone, Mail, User, DollarSign } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { Employee, Event, EventStatus, EventStaffAllocation } from '../types';
+import { Search, Plus, X, Pencil, Trash2, Phone, Mail, User, DollarSign, Calendar } from 'lucide-react';
 
 interface EmployeeManagerProps {
   employees: Employee[];
+  events?: Event[];
   onAddEmployee: (emp: Employee) => void;
   onUpdateEmployee: (emp: Employee) => void;
   onDeleteEmployee: (id: string) => void;
@@ -11,10 +12,18 @@ interface EmployeeManagerProps {
 
 export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
   employees,
+  events = [],
   onAddEmployee,
   onUpdateEmployee,
   onDeleteEmployee
 }) => {
+  type StaffEventInfo = {
+    event: Event;
+    staff: EventStaffAllocation;
+    date: string;
+    isUpcoming: boolean;
+  };
+
   const [searchTerm, setSearchTerm] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -56,6 +65,46 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
     });
     setShowModal(true);
   };
+
+  const formatDate = (date?: string) => {
+    if (!date) return 'Không rõ ngày';
+    return new Date(date).toLocaleDateString('vi-VN');
+  };
+
+  const sessionLabel: Record<string, string> = {
+    MORNING: 'Sáng',
+    AFTERNOON: 'Chiều',
+    EVENING: 'Tối'
+  };
+
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const employeeEventStats = useMemo(() => {
+    return employees.reduce((acc, emp) => {
+      const allocations = events.flatMap(event => (event.staff || [])
+        .filter(s => s.employeeId === emp.id)
+        .map(s => ({
+          event,
+          staff: s,
+          date: s.shiftDate || event.startDate || event.endDate || '',
+          isUpcoming: (() => {
+            if (event.status === EventStatus.COMPLETED || event.status === EventStatus.CANCELLED) return false;
+            if (!s.shiftDate && !event.startDate) return true;
+            return (s.shiftDate || event.startDate || todayStr) >= todayStr;
+          })()
+        } as StaffEventInfo))
+      );
+
+      const sorted = allocations.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+      const upcoming = sorted.filter(a => a.isUpcoming);
+      const history = sorted.filter(a => !a.isUpcoming);
+      acc[emp.id] = {
+        participationCount: sorted.length,
+        upcoming,
+        history
+      };
+      return acc;
+    }, {} as Record<string, { participationCount: number; upcoming: StaffEventInfo[]; history: StaffEventInfo[] }>);
+  }, [employees, events, todayStr]);
 
   const handleSubmit = () => {
     if (!formData.name || !formData.phone) {
@@ -133,10 +182,64 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
                    {emp.email && <p className="flex items-center gap-2"><Mail size={14} /> {emp.email}</p>}
                    {emp.baseRate && (
                      <p className="flex items-center gap-2 text-green-600 font-medium">
-                       <DollarSign size={14} /> {emp.baseRate.toLocaleString()} đ/ngày
-                     </p>
-                   )}
+                    <DollarSign size={14} /> {emp.baseRate.toLocaleString()} đ/ngày
+                  </p>
+                 )}
                 </div>
+             </div>
+
+             {/* Lịch sử & lịch sắp tới */}
+             <div className="mt-2 text-sm text-gray-700 flex-1 border-t border-slate-100 pt-3">
+               {(() => {
+                 const stats = employeeEventStats[emp.id] || { participationCount: 0, upcoming: [], history: [] };
+                 return (
+                   <div className="space-y-3">
+                     <div className="flex items-center justify-between">
+                       <span className="text-gray-600">Đã tham gia: <strong>{stats.participationCount}</strong> sự kiện</span>
+                       {stats.upcoming.length > 0 ? (
+                         <span className="px-2 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-semibold">Sắp tới: {stats.upcoming.length}</span>
+                       ) : (
+                         <span className="text-xs text-gray-400">Không có lịch sắp tới</span>
+                       )}
+                     </div>
+
+                     {stats.upcoming.length > 0 && (
+                       <div className="space-y-2">
+                         {stats.upcoming.slice(0, 3).map((u: any) => (
+                           <div key={`${u.event.id}-${u.date}-${u.staff.task}`} className="p-2 rounded-lg border border-emerald-100 bg-emerald-50/60">
+                             <div className="flex items-center gap-2 text-emerald-700 font-semibold">
+                               <Calendar size={14} /> <span>{u.event.name}</span>
+                             </div>
+                             <p className="text-xs text-gray-600 mt-1">
+                               {formatDate(u.date)} {u.staff.session ? `• ${sessionLabel[u.staff.session] || u.staff.session}` : ''} {u.staff.task ? `• ${u.staff.task}` : ''}
+                             </p>
+                           </div>
+                         ))}
+                       </div>
+                     )}
+
+                     <div>
+                       <p className="text-xs font-semibold text-gray-500 uppercase mb-1">Lịch sử gần đây</p>
+                       {stats.history.length === 0 ? (
+                         <p className="text-xs text-gray-400">Chưa có dữ liệu lịch sử.</p>
+                       ) : (
+                         <div className="space-y-2">
+                           {stats.history.slice(-3).reverse().map((h: any) => (
+                             <div key={`${h.event.id}-${h.date}-${h.staff.task}`} className="p-2 rounded-lg border border-slate-100 bg-slate-50">
+                               <div className="flex items-center gap-2 text-gray-800 font-semibold">
+                                 <Calendar size={14} /> <span>{h.event.name}</span>
+                               </div>
+                               <p className="text-xs text-gray-600 mt-1">
+                                 {formatDate(h.date)} {h.staff.session ? `• ${sessionLabel[h.staff.session] || h.staff.session}` : ''} {h.staff.task ? `• ${h.staff.task}` : ''}
+                               </p>
+                             </div>
+                           ))}
+                         </div>
+                       )}
+                     </div>
+                   </div>
+                 );
+               })()}
              </div>
           </div>
         ))}

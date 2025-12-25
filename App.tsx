@@ -562,6 +562,7 @@ const App: React.FC = () => {
       {activeTab === 'employees' && (
         <EmployeeManager 
           employees={appState.employees} 
+          events={appState.events}
           onAddEmployee={handleAddEmployee} 
           onUpdateEmployee={handleUpdateEmployee} 
           onDeleteEmployee={handleDeleteEmployee} 
