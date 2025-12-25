@@ -12,7 +12,7 @@ import { AIChat } from './components/AIChat';
 import { AppState, InventoryItem, Event, EventStatus, Transaction, TransactionType, ComboPackage, Employee, Quotation, EventStaffAllocation, EventExpense, LogEntry } from './types';
 import { MOCK_INVENTORY, MOCK_EVENTS, MOCK_TRANSACTIONS, MOCK_PACKAGES, MOCK_EMPLOYEES } from './constants';
 import { MessageSquare } from 'lucide-react';
-import { saveAppState, loadAppState, initializeAuth, subscribeToAppState } from './services/firebaseService';
+import { saveAppState, loadAppState, initializeAuth } from './services/firebaseService';
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'inventory' | 'events' | 'packages' | 'employees' | 'quotations' | 'sales'>('dashboard');
@@ -39,7 +39,7 @@ const App: React.FC = () => {
       try {
         setIsLoading(true);
         await initializeAuth();
-        // 1) Load once
+        
         const firebaseState = await loadAppState();
         if (firebaseState) {
           setAppState(firebaseState);
@@ -47,25 +47,6 @@ const App: React.FC = () => {
           // Nếu Firebase trống, lưu dữ liệu mặc định
           await saveAppState(appState);
         }
-
-        // 2) Subscribe to realtime updates from Firestore so other devices see changes
-        const unsub = subscribeToAppState((remote) => {
-          try {
-            if (!remote) return;
-            const remoteTime = new Date(remote.lastUpdated || 0).getTime();
-            const localTime = new Date(localStorage.getItem('ebus_last_update') || 0).getTime();
-            // Apply remote changes only if remote is newer
-            if (remoteTime > localTime) {
-              setAppState(remote);
-              localStorage.setItem('ebus_app_state', JSON.stringify(remote));
-              localStorage.setItem('ebus_last_update', String(remote.lastUpdated || new Date().toISOString()));
-            }
-          } catch (e) {
-            console.error('Error applying remote update:', e);
-          }
-        });
-        // Ensure we clean up listener on unmount
-        (window as any).__ebus_unsub = unsub;
       } catch (error) {
         console.error('Failed to load data from Firebase:', error);
         // Fallback to localStorage
@@ -83,9 +64,6 @@ const App: React.FC = () => {
     };
 
     loadData();
-    return () => {
-      try { (window as any).__ebus_unsub && (window as any).__ebus_unsub(); } catch (e) {}
-    };
   }, []);
 
   // Lưu dữ liệu vào cả localStorage và Firebase

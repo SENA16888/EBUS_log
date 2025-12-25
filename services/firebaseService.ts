@@ -27,10 +27,12 @@ export const initializeAuth = (): Promise<void> => {
   return new Promise((resolve, reject) => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
+        console.log('Firebase auth: user signed in', { uid: user.uid, isAnonymous: user.isAnonymous });
         resolve();
       } else {
         try {
-          await signInAnonymously(auth);
+          const cred = await signInAnonymously(auth);
+          console.log('Firebase auth: signed in anonymously', { uid: cred.user.uid });
           resolve();
         } catch (error) {
           console.error('Auth initialization error:', error);
