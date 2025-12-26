@@ -145,7 +145,8 @@ export const QuotationManager: React.FC<QuotationManagerProps> = ({
 
       {/* Quotation List Table */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
-        <table className="w-full text-left">
+        <div className="overflow-x-auto">
+        <table className="min-w-[720px] w-full text-left">
           <thead className="bg-slate-50 border-b border-slate-100">
             <tr>
               <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase">Mã / Khách hàng</th>
@@ -186,6 +187,7 @@ export const QuotationManager: React.FC<QuotationManagerProps> = ({
             ))}
           </tbody>
         </table>
+        </div>
         {quotations.length === 0 && (
           <div className="text-center py-20 text-gray-400 italic">Chưa có báo giá nào được tạo.</div>
         )}
@@ -207,7 +209,7 @@ export const QuotationManager: React.FC<QuotationManagerProps> = ({
             <div className="flex-1 overflow-y-auto p-6 flex flex-col lg:flex-row gap-8">
                {/* Left: Input Form */}
                <div className="flex-1 space-y-6">
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                      <div>
                         <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Khách hàng</label>
                         <input 
@@ -234,7 +236,7 @@ export const QuotationManager: React.FC<QuotationManagerProps> = ({
                      <h4 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
                        <Calculator size={18} className="text-blue-500" /> Thêm hạng mục
                      </h4>
-                     <div className="grid grid-cols-2 gap-2">
+                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                         <div className="space-y-2">
                            <p className="text-xs font-bold text-gray-400 uppercase">Gói Combo</p>
                            <div className="max-h-32 overflow-y-auto border border-slate-200 rounded-lg divide-y divide-slate-100">
@@ -371,8 +373,8 @@ export const QuotationManager: React.FC<QuotationManagerProps> = ({
               </div>
 
               {/* Invoice Layout */}
-              <div className="flex-1 overflow-y-auto p-12 bg-white text-slate-800" id="quotation-print">
-                 <div className="flex justify-between items-start mb-12">
+              <div className="flex-1 overflow-y-auto p-6 md:p-12 bg-white text-slate-800" id="quotation-print">
+                 <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-4 mb-12">
                     <div>
                        <h1 className="text-3xl font-black text-blue-600 mb-1">BÁO GIÁ DỊCH VỤ</h1>
                        <p className="text-sm font-bold text-slate-500 uppercase tracking-widest">SỐ: {viewingQuotation.id}</p>
@@ -384,7 +386,7 @@ export const QuotationManager: React.FC<QuotationManagerProps> = ({
                 </div>
                  </div>
 
-                 <div className="grid grid-cols-2 gap-12 mb-12">
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8 md:gap-12 mb-12">
                     <div>
                        <p className="text-xs font-bold text-blue-600 uppercase mb-2">Khách hàng / Đơn vị:</p>
                        <p className="text-lg font-bold">{viewingQuotation.clientName}</p>
@@ -397,7 +399,8 @@ export const QuotationManager: React.FC<QuotationManagerProps> = ({
                     </div>
                  </div>
 
-                 <table className="w-full mb-8">
+                 <div className="overflow-x-auto">
+                 <table className="min-w-[560px] w-full mb-8">
                     <thead>
                        <tr className="bg-slate-100 text-left">
                           <th className="px-4 py-3 text-xs font-bold uppercase">Hạng mục</th>
@@ -415,11 +418,12 @@ export const QuotationManager: React.FC<QuotationManagerProps> = ({
                              </td>
                              <td className="px-4 py-4 text-sm text-center font-bold">{item.quantity}</td>
                              <td className="px-4 py-4 text-sm text-right">{item.unitPrice.toLocaleString()}</td>
-                             <td className="px-4 py-4 text-sm text-right font-bold">{item.total.toLocaleString()}</td>
-                          </tr>
+                            <td className="px-4 py-4 text-sm text-right font-bold">{item.total.toLocaleString()}</td>
+                         </tr>
                        ))}
                     </tbody>
                  </table>
+                 </div>
 
                  <div className="flex justify-end">
                     <div className="w-72 space-y-3">

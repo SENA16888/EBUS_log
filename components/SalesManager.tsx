@@ -60,21 +60,21 @@ export const SalesManager: React.FC<SalesManagerProps> = ({ saleItems, events = 
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
         <div>
           <h2 className="text-2xl font-black">Hàng Bán Sự Kiện</h2>
           <p className="text-sm text-slate-500">Quản lý danh mục hàng bán và xuất danh sách bán hàng.</p>
         </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
           <button onClick={() => setShowHistory(true)} className="bg-slate-700 text-white px-4 py-2 rounded">Lịch sử đơn</button>
           <button onClick={() => setShowExport(true)} className="bg-green-600 text-white px-4 py-2 rounded">Xuất danh sách</button>
           <button onClick={openNew} className="bg-blue-600 text-white px-4 py-2 rounded flex items-center gap-2"><Plus size={16}/> Thêm</button>
         </div>
       </div>
 
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-3">
         <div className="text-sm text-slate-500">Chọn nhiều mặt hàng bằng checkbox, chỉnh số lượng ngay tại chỗ.</div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <button onClick={() => {
             // select all with qty 1
             const all: Record<string, number> = {};

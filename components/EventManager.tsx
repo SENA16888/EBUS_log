@@ -948,7 +948,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
         {selectedEvent ? (
           <>
             <div className="p-6 border-b border-slate-100">
-              <div className="flex justify-between items-start">
+              <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-4">
                 <div>
                   <h2 className="text-2xl font-black text-gray-800">{selectedEvent.name}</h2>
                   <p className="text-sm text-gray-500">{selectedEvent.client} • {selectedEvent.location}</p>
@@ -961,7 +961,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
                 </button>
               </div>
               
-              <div className="flex space-x-8 mt-6">
+              <div className="flex flex-wrap gap-4 md:gap-8 mt-6">
                 <button onClick={() => setDetailTab('EQUIPMENT')} className={`pb-3 text-sm font-bold border-b-2 transition flex items-center gap-2 ${detailTab === 'EQUIPMENT' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
                   <Box size={16}/> Thiết Bị
                 </button>
@@ -980,12 +980,12 @@ export const EventManager: React.FC<EventManagerProps> = ({
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-6 bg-slate-50/30">
+            <div className="flex-1 overflow-y-auto p-4 md:p-6 bg-slate-50/30">
               {detailTab === 'EQUIPMENT' && (
                 <div className="space-y-4">
                   {/* Sync From Quotation Banner */}
                   {linkedQuotation && (
-                    <div className="bg-blue-600 p-4 rounded-xl text-white shadow-lg flex justify-between items-center">
+                    <div className="bg-blue-600 p-4 rounded-xl text-white shadow-lg flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
                        <div className="flex items-center gap-3">
                           <div className="bg-white/20 p-2 rounded-lg"><RefreshCw size={24}/></div>
                           <div>
@@ -997,7 +997,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
                     </div>
                   )}
 
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
                     <button onClick={() => { setExportMode('SINGLE'); setShowExportModal(true); }} className="bg-white border border-blue-600 text-blue-600 px-4 py-2 rounded-lg text-sm font-bold hover:bg-blue-50">+ Thêm lẻ</button>
                     <button onClick={() => { setExportMode('COMBO'); setShowExportModal(true); }} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-blue-700">+ Thêm Combo</button>
                     <button 
@@ -1010,7 +1010,8 @@ export const EventManager: React.FC<EventManagerProps> = ({
                   </div>
 
                   <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-                    <table className="w-full text-left text-sm">
+                    <div className="overflow-x-auto">
+                    <table className="min-w-[760px] w-full text-left text-sm">
                       <thead className="bg-slate-50 border-b">
                         <tr>
                           <th className="px-3 py-3 font-bold text-gray-500 uppercase text-[10px] text-center">
@@ -1140,6 +1141,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
                         )}
                       </tbody>
                     </table>
+                    </div>
                   </div>
                 </div>
               )}

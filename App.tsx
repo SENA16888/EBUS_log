@@ -713,7 +713,7 @@ const App: React.FC = () => {
         />
       )}
       
-      <div className="fixed bottom-6 right-6 z-40">
+      <div className="fixed right-4 md:right-6 bottom-24 md:bottom-6 z-40">
         {!isChatOpen && (
           <button onClick={() => setIsChatOpen(true)} className="bg-blue-600 hover:bg-blue-700 text-white p-4 rounded-full shadow-lg transition-transform hover:scale-110 flex items-center justify-center">
             <MessageSquare size={24} />
