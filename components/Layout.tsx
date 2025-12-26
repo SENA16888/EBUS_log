@@ -16,20 +16,20 @@ interface LayoutProps {
 
 export const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange, logs }) => {
   return (
-    <div className="flex h-screen bg-slate-50">
+    <div className="flex h-screen bg-slate-50 text-[13px] md:text-[14px]">
       {/* Sidebar */}
-      <aside className="w-64 bg-slate-900 text-white flex flex-col hidden md:flex">
-        <div className="p-6">
-          <h1 className="text-xl font-bold bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">
+      <aside className="w-56 bg-slate-900 text-white flex flex-col hidden md:flex">
+        <div className="p-4">
+          <h1 className="text-lg font-bold bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">
             EINSTEIN BUS _ AI
           </h1>
-          <p className="text-xs text-slate-400 mt-1">Quản lý kho sự kiện thông minh</p>
+          <p className="text-[11px] text-slate-400 mt-1">Quản lý kho sự kiện thông minh</p>
         </div>
 
-        <nav className="flex-1 px-4 space-y-1 mt-4">
+        <nav className="flex-1 px-3 space-y-1 mt-3">
           <button 
             onClick={() => onTabChange('dashboard')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-sm ${
               activeTab === 'dashboard' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
             }`}
           >
@@ -99,7 +99,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange
         </nav>
 
         <div className="p-4 border-t border-slate-800">
-           <button className="w-full flex items-center gap-3 px-4 py-3 text-slate-400 hover:text-white transition">
+           <button className="w-full flex items-center gap-3 px-3 py-2.5 text-slate-400 hover:text-white transition">
              <Settings size={20} />
              <span className="font-medium text-sm">Cài đặt</span>
            </button>
@@ -108,27 +108,27 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange
 
       {/* Main Content */}
       <main className="flex-1 flex flex-col h-screen overflow-hidden">
-        <header className="h-16 bg-white border-b border-slate-200 flex justify-between items-center px-6 z-20">
-          <div className="md:hidden font-bold text-gray-800">EINSTEIN BUS _ AI</div>
-          <div className="flex items-center gap-4 ml-auto">
+        <header className="h-14 bg-white border-b border-slate-200 flex justify-between items-center px-4 z-20">
+          <div className="md:hidden font-bold text-gray-800 text-sm">EINSTEIN BUS _ AI</div>
+          <div className="flex items-center gap-3 ml-auto">
              <a 
                href="/huong-dan.html" 
                target="_blank" 
                rel="noreferrer" 
-               className="inline-flex items-center gap-2 px-3 py-2 text-sm font-semibold text-blue-700 border border-blue-100 rounded-lg hover:bg-blue-50 hover:border-blue-200 transition"
+               className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-blue-700 border border-blue-100 rounded-lg hover:bg-blue-50 hover:border-blue-200 transition"
              >
                <BookOpen size={16} />
                <span className="hidden sm:inline">Hướng dẫn sử dụng</span>
                <span className="sm:hidden">Hướng dẫn</span>
              </a>
              <ActivityLog logs={logs} />
-             <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center text-blue-700 font-bold text-sm">
+             <div className="w-7 h-7 bg-blue-100 rounded-full flex items-center justify-center text-blue-700 font-bold text-xs">
                 AD
              </div>
           </div>
         </header>
 
-        <div className="flex-1 overflow-auto p-6">
+        <div className="flex-1 overflow-auto p-4">
           {children}
         </div>
       </main>

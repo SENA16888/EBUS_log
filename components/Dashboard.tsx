@@ -159,54 +159,54 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState }) => {
   ];
 
   return (
-    <div className="space-y-6">
-      <div className="rounded-3xl bg-gradient-to-r from-slate-900 via-blue-900 to-slate-900 p-6 text-white shadow-xl border border-slate-800">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+    <div className="space-y-5">
+      <div className="rounded-2xl bg-gradient-to-r from-slate-900 via-blue-900 to-slate-900 p-5 text-white shadow-lg border border-slate-800">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
           <div>
-            <p className="flex items-center gap-2 text-sm uppercase tracking-[0.2em] text-sky-200 font-semibold">
+            <p className="flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-sky-200 font-semibold">
               <Sparkles size={16} /> EINSTEIN BUS _ AI
             </p>
-            <h2 className="text-3xl md:text-4xl font-black mt-2">Bảng điều khiển tổng quan</h2>
-            <p className="text-slate-200 mt-2 max-w-2xl">Tổng hợp dữ liệu kho, sự kiện, bán hàng và báo giá trong một màn hình.</p>
+            <h2 className="text-2xl md:text-3xl font-black mt-1.5 leading-tight">Bảng điều khiển tổng quan</h2>
+            <p className="text-slate-200 mt-1.5 max-w-2xl text-sm">Tổng hợp dữ liệu kho, sự kiện, bán hàng và báo giá trong một màn hình.</p>
           </div>
-          <div className="flex flex-wrap gap-3">
-            <div className="px-4 py-2 rounded-full bg-white/10 border border-white/10 text-sm">
+          <div className="flex flex-wrap gap-2 text-xs">
+            <div className="px-3 py-1.5 rounded-full bg-white/10 border border-white/10">
               {eventStatusData[1].value} sự kiện sắp tới
             </div>
-            <div className="px-4 py-2 rounded-full bg-white/10 border border-white/10 text-sm">
+            <div className="px-3 py-1.5 rounded-full bg-white/10 border border-white/10">
               {lowStockItems.length} cảnh báo tồn kho
             </div>
-            <div className="px-4 py-2 rounded-full bg-white/10 border border-white/10 text-sm">
+            <div className="px-3 py-1.5 rounded-full bg-white/10 border border-white/10">
               {saleSummary.totalOrders} đơn bán
             </div>
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5 gap-3.5">
         {statCards.map((card, idx) => (
           <div 
             key={card.title} 
-            className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 flex flex-col gap-2 hover:shadow-md transition"
+            className="bg-white rounded-xl border border-slate-100 shadow-sm p-3.5 flex flex-col gap-1.5 hover:shadow-md transition"
           >
-            <div className={`w-10 h-10 rounded-xl bg-gradient-to-r ${card.accent} flex items-center justify-center`}>
+            <div className={`w-9 h-9 rounded-lg bg-gradient-to-r ${card.accent} flex items-center justify-center`}>
               {card.icon}
             </div>
-            <p className="text-sm text-slate-500 font-medium">{card.title}</p>
-            <h3 className="text-2xl font-black text-slate-900">
+            <p className="text-[13px] text-slate-500 font-medium">{card.title}</p>
+            <h3 className="text-xl font-black text-slate-900 leading-tight">
               {card.format ? card.format(card.value) : formatNumber(card.value)}
             </h3>
-            <p className="text-xs text-slate-500">{card.sub}</p>
+            <p className="text-[11px] text-slate-500 leading-snug">{card.sub}</p>
           </div>
         ))}
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        <div className="xl:col-span-2 bg-white rounded-2xl border border-slate-100 p-6 shadow-sm">
-          <div className="flex items-center justify-between mb-4">
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
+        <div className="xl:col-span-2 bg-white rounded-xl border border-slate-100 p-5 shadow-sm">
+          <div className="flex items-center justify-between mb-3">
             <div>
               <p className="text-xs font-black uppercase text-slate-400">Doanh thu đơn bán</p>
-              <h4 className="text-lg font-bold text-slate-800">6 tháng gần nhất</h4>
+              <h4 className="text-base font-bold text-slate-800">6 tháng gần nhất</h4>
             </div>
             <div className="flex items-center gap-2 text-sm text-emerald-600 font-semibold">
               <TrendingUp size={16} />
@@ -228,13 +228,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState }) => {
           )}
         </div>
 
-        <div className="bg-white rounded-2xl border border-slate-100 p-6 shadow-sm space-y-4">
+        <div className="bg-white rounded-xl border border-slate-100 p-5 shadow-sm space-y-3">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-xs font-black uppercase text-slate-400">Sức khỏe sự kiện</p>
-              <h4 className="text-lg font-bold text-slate-800">Trạng thái</h4>
+              <h4 className="text-base font-bold text-slate-800">Trạng thái</h4>
             </div>
-            <div className="px-3 py-1 rounded-full bg-slate-50 text-slate-600 text-xs font-semibold flex items-center gap-1">
+            <div className="px-2.5 py-1 rounded-full bg-slate-50 text-slate-600 text-[11px] font-semibold flex items-center gap-1">
               <Activity size={14} /> {appState.events.length} sự kiện
             </div>
           </div>
@@ -252,8 +252,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState }) => {
           </div>
           <div className="grid grid-cols-2 gap-2">
             {eventStatusData.map((d, i) => (
-              <div key={i} className="flex items-center justify-between text-sm bg-slate-50 rounded-xl px-3 py-2">
-                <div className="flex items-center gap-2">
+              <div key={i} className="flex items-center justify-between text-[13px] bg-slate-50 rounded-lg px-3 py-2">
+                <div className="flex items-center gap-1.5">
                   <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: d.color }}></span>
                   <span className="text-slate-600">{d.name}</span>
                 </div>
@@ -264,25 +264,25 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState }) => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
-          <div className="flex items-center justify-between mb-3">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        <div className="bg-white rounded-xl border border-slate-100 p-4 shadow-sm">
+          <div className="flex items-center justify-between mb-2.5">
             <div>
               <p className="text-xs font-black uppercase text-slate-400">Lịch sự kiện</p>
-              <h4 className="text-lg font-bold text-slate-800">Sắp tới</h4>
+              <h4 className="text-base font-bold text-slate-800">Sắp tới</h4>
             </div>
             <Clock size={16} className="text-slate-500" />
           </div>
-          <div className="space-y-3">
-            {upcomingEvents.length === 0 && <p className="text-sm text-slate-400">Chưa có sự kiện nào.</p>}
+          <div className="space-y-2.5">
+            {upcomingEvents.length === 0 && <p className="text-[13px] text-slate-400">Chưa có sự kiện nào.</p>}
             {upcomingEvents.map(ev => (
-              <div key={ev.id} className="p-3 rounded-xl border border-slate-100 bg-slate-50/60 hover:bg-slate-100 transition">
+              <div key={ev.id} className="p-3 rounded-lg border border-slate-100 bg-slate-50/60 hover:bg-slate-100 transition">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-bold text-slate-800">{ev.name}</p>
+                    <p className="text-sm font-semibold text-slate-800">{ev.name}</p>
                     <p className="text-xs text-slate-500">{ev.client} • {ev.location}</p>
                   </div>
-                  <div className="text-xs px-3 py-1 rounded-full bg-blue-50 text-blue-700 font-semibold">
+                  <div className="text-[11px] px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 font-semibold">
                     {ev.startDate}
                   </div>
                 </div>
@@ -294,23 +294,23 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState }) => {
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
-          <div className="flex items-center justify-between mb-3">
+        <div className="bg-white rounded-xl border border-slate-100 p-4 shadow-sm">
+          <div className="flex items-center justify-between mb-2.5">
             <div>
               <p className="text-xs font-black uppercase text-slate-400">Tồn kho</p>
-              <h4 className="text-lg font-bold text-slate-800">Sắp hết hàng</h4>
+              <h4 className="text-base font-bold text-slate-800">Sắp hết hàng</h4>
             </div>
             <AlertTriangle size={16} className="text-amber-500" />
           </div>
-          <div className="space-y-3">
-            {lowStockItems.length === 0 && <p className="text-sm text-slate-400">Kho đang an toàn.</p>}
+          <div className="space-y-2.5">
+            {lowStockItems.length === 0 && <p className="text-[13px] text-slate-400">Kho đang an toàn.</p>}
             {lowStockItems.map(item => (
-              <div key={item.id} className="flex items-center justify-between p-3 rounded-xl bg-amber-50 border border-amber-100">
+              <div key={item.id} className="flex items-center justify-between p-3 rounded-lg bg-amber-50 border border-amber-100">
                 <div>
-                  <p className="text-sm font-bold text-slate-800">{item.name}</p>
+                  <p className="text-sm font-semibold text-slate-800">{item.name}</p>
                   <p className="text-xs text-amber-700">Còn {item.availableQuantity} / {item.totalQuantity}</p>
                 </div>
-                <span className="text-xs font-black text-amber-800 bg-amber-100 px-2 py-1 rounded-full">
+                <span className="text-[11px] font-black text-amber-800 bg-amber-100 px-2 py-1 rounded-full">
                   {item.category}
                 </span>
               </div>
@@ -318,24 +318,24 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState }) => {
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
-          <div className="flex items-center justify-between mb-3">
+        <div className="bg-white rounded-xl border border-slate-100 p-4 shadow-sm">
+          <div className="flex items-center justify-between mb-2.5">
             <div>
               <p className="text-xs font-black uppercase text-slate-400">Đơn bán gần nhất</p>
-              <h4 className="text-lg font-bold text-slate-800">Hoạt động bán</h4>
+              <h4 className="text-base font-bold text-slate-800">Hoạt động bán</h4>
             </div>
             <CheckCircle size={16} className="text-emerald-500" />
           </div>
-          <div className="space-y-3">
-            {recentOrders.length === 0 && <p className="text-sm text-slate-400">Chưa có đơn bán.</p>}
+          <div className="space-y-2.5">
+            {recentOrders.length === 0 && <p className="text-[13px] text-slate-400">Chưa có đơn bán.</p>}
             {recentOrders.map(order => (
-              <div key={order.id} className="p-3 rounded-xl border border-slate-100 bg-slate-50/60">
+              <div key={order.id} className="p-3 rounded-lg border border-slate-100 bg-slate-50/60">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-bold text-slate-800">{order.customerName}</p>
+                    <p className="text-sm font-semibold text-slate-800">{order.customerName}</p>
                     <p className="text-xs text-slate-500">{new Date(order.date).toLocaleDateString('vi-VN')}</p>
                   </div>
-                  <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-1 rounded-full">
+                  <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-1 rounded-full">
                     {formatCurrency(getOrderRevenue(order))}
                   </span>
                 </div>
@@ -346,12 +346,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState }) => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
-          <div className="flex items-center justify-between mb-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <div className="bg-white rounded-xl border border-slate-100 p-4 shadow-sm">
+          <div className="flex items-center justify-between mb-3">
             <div>
               <p className="text-xs font-black uppercase text-slate-400">Phân bố danh mục</p>
-              <h4 className="text-lg font-bold text-slate-800">Kho theo nhóm</h4>
+              <h4 className="text-base font-bold text-slate-800">Kho theo nhóm</h4>
             </div>
             <Layers size={16} className="text-slate-500" />
           </div>
@@ -367,29 +367,29 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState }) => {
                 </BarChart>
               </ResponsiveContainer>
             ) : (
-              <div className="text-center text-slate-400 py-10 text-sm">Chưa có dữ liệu danh mục.</div>
+              <div className="text-center text-slate-400 py-10 text-[13px]">Chưa có dữ liệu danh mục.</div>
             )}
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
-          <div className="flex items-center justify-between mb-4">
+        <div className="bg-white rounded-xl border border-slate-100 p-4 shadow-sm">
+          <div className="flex items-center justify-between mb-3">
             <div>
               <p className="text-xs font-black uppercase text-slate-400">Báo giá</p>
-              <h4 className="text-lg font-bold text-slate-800">Gần nhất</h4>
+              <h4 className="text-base font-bold text-slate-800">Gần nhất</h4>
             </div>
             <FileText size={16} className="text-slate-500" />
           </div>
-          <div className="space-y-3">
-            {recentQuotations.length === 0 && <p className="text-sm text-slate-400">Chưa có báo giá.</p>}
+          <div className="space-y-2.5">
+            {recentQuotations.length === 0 && <p className="text-[13px] text-slate-400">Chưa có báo giá.</p>}
             {recentQuotations.map(q => (
-              <div key={q.id} className="p-3 rounded-xl border border-slate-100 bg-slate-50/60 flex items-center justify-between">
+              <div key={q.id} className="p-3 rounded-lg border border-slate-100 bg-slate-50/60 flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-bold text-slate-800">{q.clientName}</p>
+                  <p className="text-sm font-semibold text-slate-800">{q.clientName}</p>
                   <p className="text-xs text-slate-500">{q.eventName || 'Chưa gắn sự kiện'} • {q.date}</p>
                 </div>
                 <div className="text-right">
-                  <p className="text-xs font-semibold text-blue-700">{formatCurrency(q.totalAmount)}</p>
+                  <p className="text-[11px] font-semibold text-blue-700">{formatCurrency(q.totalAmount)}</p>
                   <p className="text-[11px] text-slate-500 uppercase font-black">{q.status}</p>
                 </div>
               </div>

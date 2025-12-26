@@ -286,29 +286,29 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+    <div className="space-y-5">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
         <div>
-          <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tight">Hệ Thống Kho Thiết Bị</h2>
-          <p className="text-sm text-slate-500 font-medium">Quản lý nhập xuất, bảo trì và mua sắm bổ sung.</p>
+          <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight">Hệ Thống Kho Thiết Bị</h2>
+          <p className="text-sm text-slate-500 font-medium leading-snug">Quản lý nhập xuất, bảo trì và mua sắm bổ sung.</p>
         </div>
         <div className="flex gap-2 w-full sm:w-auto">
-          <button onClick={() => setShowBulkModal(true)} className="flex-1 sm:flex-none bg-slate-800 text-white px-5 py-3 rounded-2xl hover:bg-black transition flex items-center justify-center gap-2 text-xs font-black uppercase tracking-widest shadow-lg">
-            <ClipboardList size={18} /> Nhập Hàng Loạt
+          <button onClick={() => setShowBulkModal(true)} className="flex-1 sm:flex-none bg-slate-800 text-white px-4 py-2.5 rounded-xl hover:bg-black transition flex items-center justify-center gap-2 text-[11px] font-black uppercase tracking-widest shadow-md">
+            <ClipboardList size={16} /> Nhập Hàng Loạt
           </button>
-          <button onClick={() => { setImportMode('NEW'); setShowImportModal(true); }} className="flex-1 sm:flex-none bg-blue-600 text-white px-5 py-3 rounded-2xl hover:bg-blue-700 transition flex items-center justify-center gap-2 text-xs font-black uppercase tracking-widest shadow-lg">
-            <Plus size={18} /> Thêm Thiết Bị
+          <button onClick={() => { setImportMode('NEW'); setShowImportModal(true); }} className="flex-1 sm:flex-none bg-blue-600 text-white px-4 py-2.5 rounded-xl hover:bg-blue-700 transition flex items-center justify-center gap-2 text-[11px] font-black uppercase tracking-widest shadow-md">
+            <Plus size={16} /> Thêm Thiết Bị
           </button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
-        <div className="lg:col-span-3 bg-white p-4 rounded-3xl shadow-sm border border-slate-100 flex flex-col sm:flex-row gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-3.5">
+        <div className="lg:col-span-3 bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col sm:flex-row gap-3">
           <div className="relative flex-1">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
-            <input type="text" placeholder="Tìm tên thiết bị, mã SP..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-12 pr-4 py-3 border border-slate-100 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50/50 text-sm" />
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
+            <input type="text" placeholder="Tìm tên thiết bị, mã SP..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-10 pr-3 py-2.5 border border-slate-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50/50 text-sm" />
           </div>
-          <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)} className="border border-slate-100 rounded-2xl py-3 px-4 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50/50 text-xs font-black uppercase">
+          <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)} className="border border-slate-100 rounded-xl py-2.5 px-3 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50/50 text-[11px] font-black uppercase">
             {categories.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
         </div>
@@ -317,50 +317,50 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
           onClick={() => setShowLowStockOnly(prev => !prev)}
           aria-pressed={showLowStockOnly}
           title={showLowStockOnly ? 'Bỏ lọc sắp hết hàng' : 'Lọc sắp hết hàng'}
-          className={`p-5 rounded-3xl border flex items-center gap-4 text-white shadow-lg transition ${
+          className={`p-4 rounded-2xl border flex items-center gap-3 text-white shadow-md transition ${
             showLowStockOnly ? 'bg-orange-600 border-orange-500 ring-2 ring-orange-200' : 'bg-orange-500 border-orange-400 hover:bg-orange-600'
           }`}
         >
-          <AlertTriangle size={24} />
+          <AlertTriangle size={20} />
           <div>
             <p className="text-[10px] font-black uppercase tracking-widest opacity-80">Sắp hết hàng</p>
-            <p className="text-2xl font-black leading-none">{inventory.filter(i => i.availableQuantity <= (i.minStock || 0)).length} mã</p>
+            <p className="text-xl font-black leading-none">{inventory.filter(i => i.availableQuantity <= (i.minStock || 0)).length} mã</p>
           </div>
         </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pb-20">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 pb-16">
         {filteredInventory.map(item => {
           const isLowStock = item.availableQuantity <= (item.minStock || 0);
           return (
-            <div key={item.id} className={`bg-white rounded-[2rem] shadow-sm border-2 overflow-hidden hover:shadow-2xl transition-all duration-300 group relative flex flex-col ${isLowStock ? 'border-orange-200' : 'border-slate-50 hover:border-blue-100'}`}>
+            <div key={item.id} className={`bg-white rounded-2xl shadow-sm border overflow-hidden hover:shadow-lg transition-all duration-300 group relative flex flex-col ${isLowStock ? 'border-orange-200' : 'border-slate-100 hover:border-blue-100'}`}>
               
               {/* ACTION BUTTONS: Increased Z-Index to 50 to ensure clickability */}
-              <div className="absolute top-4 right-4 flex flex-col gap-2 z-50 opacity-0 group-hover:opacity-100 transition-all transform translate-x-4 group-hover:translate-x-0">
-                 <button onClick={(e) => handleOpenStatus(e, item)} title="Bảo trì / Báo hỏng" className="p-2.5 bg-white/95 backdrop-blur shadow-xl text-slate-700 rounded-2xl hover:text-orange-500 transition-colors"><Wrench size={18} /></button>
-                 <button onClick={(e) => handleOpenRestock(e, item)} title="Nhập thêm hàng" className="p-2.5 bg-white/95 backdrop-blur shadow-xl text-slate-700 rounded-2xl hover:text-green-600 transition-colors"><ArrowUpCircle size={18} /></button>
-                 <button onClick={(e) => handleOpenEdit(e, item)} title="Chỉnh sửa thông tin" className="p-2.5 bg-white/95 backdrop-blur shadow-xl text-slate-700 rounded-2xl hover:text-blue-600 transition-colors"><Settings2 size={18} /></button>
-                 <button onClick={(e) => handleDeleteClick(e, item)} title="Xóa thiết bị" className="p-2.5 bg-white/95 backdrop-blur shadow-xl text-red-400 rounded-2xl hover:bg-red-500 hover:text-white transition-all"><Trash2 size={18} /></button>
+              <div className="absolute top-3 right-3 flex flex-col gap-1.5 z-50 opacity-0 group-hover:opacity-100 transition-all transform translate-x-3 group-hover:translate-x-0">
+                 <button onClick={(e) => handleOpenStatus(e, item)} title="Bảo trì / Báo hỏng" className="p-2 bg-white/95 backdrop-blur shadow text-slate-700 rounded-xl hover:text-orange-500 transition-colors"><Wrench size={16} /></button>
+                 <button onClick={(e) => handleOpenRestock(e, item)} title="Nhập thêm hàng" className="p-2 bg-white/95 backdrop-blur shadow text-slate-700 rounded-xl hover:text-green-600 transition-colors"><ArrowUpCircle size={16} /></button>
+                 <button onClick={(e) => handleOpenEdit(e, item)} title="Chỉnh sửa thông tin" className="p-2 bg-white/95 backdrop-blur shadow text-slate-700 rounded-xl hover:text-blue-600 transition-colors"><Settings2 size={16} /></button>
+                 <button onClick={(e) => handleDeleteClick(e, item)} title="Xóa thiết bị" className="p-2 bg-white/95 backdrop-blur shadow text-red-400 rounded-xl hover:bg-red-500 hover:text-white transition-all"><Trash2 size={16} /></button>
               </div>
 
-              <div className="relative h-48 bg-slate-100 overflow-hidden">
+              <div className="relative h-40 bg-slate-100 overflow-hidden">
                 <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000" />
                 <div className="absolute top-4 left-4 bg-black/40 backdrop-blur-md text-white text-[9px] font-black px-3 py-1.5 rounded-full uppercase tracking-widest">{item.category}</div>
                 {isLowStock && <div className="absolute bottom-4 left-4 bg-red-600 text-white text-[9px] font-black px-3 py-1.5 rounded-full shadow-xl animate-pulse uppercase tracking-widest">Cảnh báo tồn kho</div>}
                 {item.plannedPurchase && (
-                  <div className="absolute bottom-4 right-4 bg-amber-500 text-white text-[10px] font-black px-3 py-1.5 rounded-full shadow-xl uppercase tracking-widest flex items-center gap-1">
+                  <div className="absolute bottom-4 right-4 bg-amber-500 text-white text-[10px] font-black px-3 py-1.5 rounded-full shadow uppercase tracking-widest flex items-center gap-1">
                     <CalendarClock size={12}/> Dự kiến {item.plannedQuantity || 0}{item.plannedEta ? ` • ${item.plannedEta}` : ''}
                   </div>
                 )}
               </div>
 
-              <div className="p-6 flex-1 flex flex-col">
-                <h3 className="font-black text-slate-800 text-base leading-snug line-clamp-2 h-12 mb-3">{item.name}</h3>
-                <div className="space-y-4 flex-1">
+              <div className="p-4 flex-1 flex flex-col">
+                <h3 className="font-black text-slate-800 text-sm leading-snug line-clamp-2 h-10 mb-2.5">{item.name}</h3>
+                <div className="space-y-3 flex-1">
                   <div className="flex justify-between items-end">
                     <div>
                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Sẵn kho</p>
-                       <p className={`text-2xl font-black ${isLowStock ? 'text-orange-600' : 'text-blue-600'}`}>{item.availableQuantity}<span className="text-xs text-slate-300 font-medium ml-1">/ {item.totalQuantity}</span></p>
+                       <p className={`text-xl font-black ${isLowStock ? 'text-orange-600' : 'text-blue-600'}`}>{item.availableQuantity}<span className="text-xs text-slate-300 font-medium ml-1">/ {item.totalQuantity}</span></p>
                     </div>
                     <div className="text-right">
                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Giá thuê</p>
@@ -370,7 +370,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
                   <div className="h-2 bg-slate-100 rounded-full overflow-hidden flex">
                     <div className="bg-blue-500 h-full transition-all duration-700" style={{ width: `${(item.availableQuantity / item.totalQuantity) * 100}%` }} />
                   </div>
-                  <div className="flex items-center gap-2 bg-slate-50 p-2.5 rounded-2xl border border-slate-100 text-[11px] font-bold text-slate-600 truncate uppercase tracking-tighter">
+                  <div className="flex items-center gap-2 bg-slate-50 p-2 rounded-xl border border-slate-100 text-[11px] font-bold text-slate-600 truncate uppercase tracking-tighter">
                     {item.location || 'Chưa định vị'}
                   </div>
                   

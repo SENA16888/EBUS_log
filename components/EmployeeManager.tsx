@@ -136,115 +136,111 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <h2 className="text-2xl font-bold text-gray-800">Danh Mục Nhân Sự</h2>
+    <div className="space-y-5">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+        <h2 className="text-xl font-semibold text-gray-800">Danh Mục Nhân Sự</h2>
         <button 
           onClick={handleOpenAdd}
-          className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition flex items-center gap-2 text-sm font-medium shadow-sm"
+          className="bg-blue-600 text-white px-3 py-2 rounded-md hover:bg-blue-700 transition flex items-center gap-2 text-sm font-medium shadow-sm"
         >
-          <Plus size={16} /> Thêm Nhân Viên
+          <Plus size={14} /> Thêm Nhân Viên
         </button>
       </div>
 
       {/* Search */}
-      <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 relative">
-        <Search className="absolute left-7 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
+      <div className="bg-white p-3 rounded-lg shadow-sm border border-slate-100 relative">
+        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
         <input
           type="text"
           placeholder="Tìm kiếm nhân viên theo tên, vai trò, SĐT..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
-          className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
         />
       </div>
 
       {/* List */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
         {filteredEmployees.map(emp => (
-          <div key={emp.id} className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 flex gap-4 hover:shadow-md transition group relative">
-             <div className="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                <button onClick={() => handleOpenEdit(emp)} className="p-1.5 text-gray-400 hover:text-blue-600 bg-slate-50 rounded">
-                  <Pencil size={16} />
+          <div key={emp.id} className="bg-white p-4 rounded-lg shadow-sm border border-slate-100 flex gap-3 hover:shadow-md transition group relative">
+             <div className="absolute top-3 right-3 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                <button onClick={() => handleOpenEdit(emp)} className="p-1 text-gray-400 hover:text-blue-600 bg-slate-50 rounded">
+                  <Pencil size={14} />
                 </button>
                 <button 
                   onClick={() => { if(window.confirm('Xóa nhân viên này?')) onDeleteEmployee(emp.id); }} 
-                  className="p-1.5 text-gray-400 hover:text-red-600 bg-slate-50 rounded"
+                  className="p-1 text-gray-400 hover:text-red-600 bg-slate-50 rounded"
                 >
-                  <Trash2 size={16} />
+                  <Trash2 size={14} />
                 </button>
              </div>
 
-             <img src={emp.avatarUrl} alt={emp.name} className="w-16 h-16 rounded-full object-cover border border-slate-200" />
+             <img src={emp.avatarUrl} alt={emp.name} className="w-12 h-12 rounded-full object-cover border border-slate-200" />
              
              <div className="flex-1">
-                <h3 className="font-bold text-gray-800 text-lg">{emp.name}</h3>
-                <p className="text-blue-600 font-medium text-sm mb-2">{emp.role || 'Chưa có vị trí'}</p>
+                <h3 className="font-semibold text-gray-800 text-base leading-tight">{emp.name}</h3>
+                <p className="text-blue-600 font-medium text-xs mb-1">{emp.role || 'Chưa có vị trí'}</p>
                 
-                <div className="space-y-1 text-sm text-gray-500">
-                   <p className="flex items-center gap-2"><Phone size={14} /> {emp.phone}</p>
-                   {emp.email && <p className="flex items-center gap-2"><Mail size={14} /> {emp.email}</p>}
+                <div className="space-y-0.5 text-xs text-gray-600">
+                   <p className="flex items-center gap-2"><Phone size={12} /> {emp.phone}</p>
+                   {emp.email && <p className="flex items-center gap-2"><Mail size={12} /> {emp.email}</p>}
                    {emp.baseRate && (
                      <p className="flex items-center gap-2 text-green-600 font-medium">
-                    <DollarSign size={14} /> {emp.baseRate.toLocaleString()} đ/ngày
+                    <DollarSign size={12} /> {emp.baseRate.toLocaleString()} đ/ngày
                   </p>
                  )}
                 </div>
              </div>
 
              {/* Lịch sử & lịch sắp tới */}
-             <div className="mt-2 text-sm text-gray-700 flex-1 border-t border-slate-100 pt-3">
+             <div className="mt-1 text-xs text-gray-700 flex-1 border-t border-slate-100 pt-2">
                {(() => {
                  const stats = employeeEventStats[emp.id] || { participationCount: 0, upcoming: [], history: [] };
+                 const upcomingPreview = stats.upcoming[0];
+                 const historyPreview = stats.history[stats.history.length - 1];
                  return (
-                   <div className="space-y-3">
+                   <div className="space-y-2">
                      <div className="flex items-center justify-between">
                        <span className="text-gray-600">Đã tham gia: <strong>{stats.participationCount}</strong> sự kiện</span>
                        {stats.upcoming.length > 0 ? (
-                         <span className="px-2 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-semibold">Sắp tới: {stats.upcoming.length}</span>
+                         <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[11px] font-semibold">Sắp tới: {stats.upcoming.length}</span>
                        ) : (
-                         <span className="text-xs text-gray-400">Không có lịch sắp tới</span>
+                         <span className="text-[11px] text-gray-400">Không có lịch sắp tới</span>
                        )}
                      </div>
 
-                     {stats.upcoming.length > 0 && (
-                       <div className="space-y-2">
-                         {stats.upcoming.slice(0, 3).map((u: any) => (
-                           <div key={`${u.event.id}-${u.date}-${u.staff.task}`} className="p-2 rounded-lg border border-emerald-100 bg-emerald-50/60">
-                             <div className="flex items-center gap-2 text-emerald-700 font-semibold">
-                               <Calendar size={14} /> <span>{u.event.name}</span>
-                             </div>
-                             <p className="text-xs text-gray-600 mt-1">
-                               {formatDate(u.date)} {(() => {
-                                 const sessions = getStaffSessions(u.staff);
-                                 return sessions.length ? `• ${sessions.map((s: string) => sessionLabel[s] || s).join(', ')}` : '';
-                               })()} {u.staff.task ? `• ${u.staff.task}` : ''}
-                             </p>
-                           </div>
-                         ))}
+                     {upcomingPreview && (
+                       <div className="p-2 rounded-md border border-emerald-100 bg-emerald-50/60">
+                         <div className="flex items-start gap-2 text-emerald-700 font-semibold">
+                           <Calendar size={12} /> <span className="text-xs leading-tight">{upcomingPreview.event.name}</span>
+                         </div>
+                         <p className="text-[11px] text-gray-600 mt-1 leading-snug">
+                           {formatDate(upcomingPreview.date)} {(() => {
+                             const sessions = getStaffSessions(upcomingPreview.staff);
+                             return sessions.length ? `• ${sessions.map((s: string) => sessionLabel[s] || s).join(', ')}` : '';
+                           })()} {upcomingPreview.staff.task ? `• ${upcomingPreview.staff.task}` : ''}
+                           {stats.upcoming.length > 1 && <span className="text-emerald-700 font-semibold"> +{stats.upcoming.length - 1} lịch khác</span>}
+                         </p>
                        </div>
                      )}
 
                      <div>
-                       <p className="text-xs font-semibold text-gray-500 uppercase mb-1">Lịch sử gần đây</p>
-                       {stats.history.length === 0 ? (
-                         <p className="text-xs text-gray-400">Chưa có dữ liệu lịch sử.</p>
-                       ) : (
-                         <div className="space-y-2">
-                          {stats.history.slice(-3).reverse().map((h: any) => (
-                            <div key={`${h.event.id}-${h.date}-${h.staff.task}`} className="p-2 rounded-lg border border-slate-100 bg-slate-50">
-                              <div className="flex items-center gap-2 text-gray-800 font-semibold">
-                                <Calendar size={14} /> <span>{h.event.name}</span>
-                              </div>
-                              <p className="text-xs text-gray-600 mt-1">
-                                {formatDate(h.date)} {(() => {
-                                  const sessions = getStaffSessions(h.staff);
-                                  return sessions.length ? `• ${sessions.map((s: string) => sessionLabel[s] || s).join(', ')}` : '';
-                                })()} {h.staff.task ? `• ${h.staff.task}` : ''}
-                              </p>
-                            </div>
-                          ))}
+                       <p className="text-[11px] font-semibold text-gray-500 uppercase mb-1">Lịch sử gần đây</p>
+                       {historyPreview ? (
+                         <div className="p-2 rounded-md border border-slate-100 bg-slate-50">
+                           <div className="flex items-start gap-2 text-gray-800 font-semibold">
+                             <Calendar size={12} /> <span className="text-xs leading-tight">{historyPreview.event.name}</span>
+                           </div>
+                           <p className="text-[11px] text-gray-600 mt-1 leading-snug">
+                             {formatDate(historyPreview.date)} {(() => {
+                               const sessions = getStaffSessions(historyPreview.staff);
+                               return sessions.length ? `• ${sessions.map((s: string) => sessionLabel[s] || s).join(', ')}` : '';
+                             })()} {historyPreview.staff.task ? `• ${historyPreview.staff.task}` : ''}
+                             {stats.history.length > 1 && <span className="text-gray-700 font-semibold"> +{stats.history.length - 1} lịch cũ</span>}
+                           </p>
                          </div>
+                       ) : (
+                         <p className="text-[11px] text-gray-400">Chưa có dữ liệu lịch sử.</p>
                        )}
                      </div>
                    </div>
