@@ -106,21 +106,32 @@ const printStyles = `
   body {
     margin: 0;
     -webkit-print-color-adjust: exact;
+    background: #fff !important;
+  }
+  body > *:not(#print-slip-wrapper) {
+    display: none !important;
   }
   #print-slip-wrapper {
+    display: block !important;
     position: static !important;
     inset: auto !important;
     height: auto !important;
+    width: auto !important;
     overflow: visible !important;
-    background: white !important;
+    background: transparent !important;
     padding: 0 !important;
+    margin: 0 !important;
+  }
+  #print-slip-wrapper {
+    background: #fff !important;
   }
   #print-slip {
     box-shadow: none !important;
     border: none !important;
     width: 100% !important;
     max-width: 100% !important;
-    padding: 24px !important;
+    padding: 16mm !important;
+    margin: 0 auto !important;
   }
   #print-slip table th,
   #print-slip table td {
@@ -136,6 +147,9 @@ const printStyles = `
   .print\\:hidden {
     display: none !important;
   }
+}
+@page {
+  margin: 12mm;
 }
 `;
 
