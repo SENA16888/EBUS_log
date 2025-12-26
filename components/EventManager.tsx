@@ -192,6 +192,8 @@ export const EventManager: React.FC<EventManagerProps> = ({
   onCreateEvent,
   onAssignStaff,
   onRemoveStaff,
+  onToggleItemDone,
+  onToggleStaffDone,
   onAddExpense,
   onRemoveExpense,
   onLinkQuotation,
