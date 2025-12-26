@@ -66,7 +66,7 @@ const App: React.FC = () => {
     loadData();
   }, []);
 
-  // Lưu dữ liệu vào cả localStorage và Firebase
+  // Lưu dữ liệu vào cả localStorage và Firebase ngay sau khi có thay đổi
   useEffect(() => {
     if (isLoading) return; // Không lưu khi đang tải
 
@@ -76,15 +76,14 @@ const App: React.FC = () => {
         localStorage.setItem('ebus_app_state', JSON.stringify(appState));
         localStorage.setItem('ebus_last_update', new Date().toISOString());
         
-        // Lưu vào Firebase
+        // Lưu vào Firebase ngay để tránh mất dữ liệu khi reload
         await saveAppState(appState);
       } catch (err) {
         console.warn('Failed to persist app state:', err);
       }
     };
 
-    const timer = setTimeout(saveData, 1000); // Debounce 1 giây
-    return () => clearTimeout(timer);
+    void saveData();
   }, [appState, isLoading]);
 
   const addLog = (message: string, type: LogEntry['type'] = 'INFO') => {
