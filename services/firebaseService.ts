@@ -49,10 +49,25 @@ export const saveAppState = async (appState: any): Promise<void> => {
   try {
     await initializeAuth();
     const docRef = doc(db, 'appState', 'main');
+
+    // Normalize state for logging and Firestore (convert Date objects to ISO strings)
+    const safeState = { ...appState };
+    try {
+      if (Array.isArray(safeState.logs)) {
+        safeState.logs = safeState.logs.map((l: any) => ({ ...l, timestamp: l?.timestamp instanceof Date ? l.timestamp.toISOString() : l?.timestamp }));
+      }
+    } catch (e) {
+      // ignore
+    }
+
+    console.log('Saving app state to Firestore', { eventsCount: Array.isArray(safeState.events) ? safeState.events.length : 0, transactionsCount: Array.isArray(safeState.transactions) ? safeState.transactions.length : 0 });
+
     await setDoc(docRef, {
-      ...appState,
+      ...safeState,
       lastUpdated: new Date().toISOString(),
     }, { merge: true });
+
+    console.log('saveAppState: successfully wrote app state to Firestore');
   } catch (error) {
     console.error('Error saving app state to Firebase:', error);
     throw error;

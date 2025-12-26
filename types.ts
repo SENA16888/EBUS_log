@@ -112,6 +112,7 @@ export interface EventStaffAllocation {
   rate: number;
   salary: number; 
   session?: 'MORNING' | 'AFTERNOON' | 'EVENING';
+  sessions?: ('MORNING' | 'AFTERNOON' | 'EVENING')[];
   shiftDate?: string;
   done?: boolean;
 }

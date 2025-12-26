@@ -76,6 +76,10 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
     AFTERNOON: 'Chiều',
     EVENING: 'Tối'
   };
+  const getStaffSessions = (staff: EventStaffAllocation) => {
+    if (staff.sessions && staff.sessions.length > 0) return staff.sessions;
+    return staff.session ? [staff.session] : [];
+  };
 
   const todayStr = new Date().toISOString().slice(0, 10);
   const employeeEventStats = useMemo(() => {
@@ -211,7 +215,10 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
                                <Calendar size={14} /> <span>{u.event.name}</span>
                              </div>
                              <p className="text-xs text-gray-600 mt-1">
-                               {formatDate(u.date)} {u.staff.session ? `• ${sessionLabel[u.staff.session] || u.staff.session}` : ''} {u.staff.task ? `• ${u.staff.task}` : ''}
+                               {formatDate(u.date)} {(() => {
+                                 const sessions = getStaffSessions(u.staff);
+                                 return sessions.length ? `• ${sessions.map((s: string) => sessionLabel[s] || s).join(', ')}` : '';
+                               })()} {u.staff.task ? `• ${u.staff.task}` : ''}
                              </p>
                            </div>
                          ))}
@@ -224,16 +231,19 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
                          <p className="text-xs text-gray-400">Chưa có dữ liệu lịch sử.</p>
                        ) : (
                          <div className="space-y-2">
-                           {stats.history.slice(-3).reverse().map((h: any) => (
-                             <div key={`${h.event.id}-${h.date}-${h.staff.task}`} className="p-2 rounded-lg border border-slate-100 bg-slate-50">
-                               <div className="flex items-center gap-2 text-gray-800 font-semibold">
-                                 <Calendar size={14} /> <span>{h.event.name}</span>
-                               </div>
-                               <p className="text-xs text-gray-600 mt-1">
-                                 {formatDate(h.date)} {h.staff.session ? `• ${sessionLabel[h.staff.session] || h.staff.session}` : ''} {h.staff.task ? `• ${h.staff.task}` : ''}
-                               </p>
-                             </div>
-                           ))}
+                          {stats.history.slice(-3).reverse().map((h: any) => (
+                            <div key={`${h.event.id}-${h.date}-${h.staff.task}`} className="p-2 rounded-lg border border-slate-100 bg-slate-50">
+                              <div className="flex items-center gap-2 text-gray-800 font-semibold">
+                                <Calendar size={14} /> <span>{h.event.name}</span>
+                              </div>
+                              <p className="text-xs text-gray-600 mt-1">
+                                {formatDate(h.date)} {(() => {
+                                  const sessions = getStaffSessions(h.staff);
+                                  return sessions.length ? `• ${sessions.map((s: string) => sessionLabel[s] || s).join(', ')}` : '';
+                                })()} {h.staff.task ? `• ${h.staff.task}` : ''}
+                              </p>
+                            </div>
+                          ))}
                          </div>
                        )}
                      </div>

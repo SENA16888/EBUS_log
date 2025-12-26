@@ -87,6 +87,12 @@ const SESSION_OPTIONS: { value: EventSession; label: string }[] = [
   { value: 'EVENING', label: 'TỐI' }
 ];
 
+const getStaffSessions = (staff?: Pick<EventStaffAllocation, 'session' | 'sessions'>): EventSession[] => {
+  if (!staff) return [];
+  if (staff.sessions && staff.sessions.length > 0) return staff.sessions as EventSession[];
+  return staff.session ? [staff.session as EventSession] : [];
+};
+
 const LAYOUT_COLORS = ['#2563eb', '#0ea5e9', '#16a34a', '#f97316', '#f59e0b', '#a855f7', '#ef4444', '#06b6d4'];
 
 type ResizeDirection = 'right' | 'left' | 'top' | 'bottom' | 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left';
@@ -175,7 +181,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
   const [staffUnit, setStaffUnit] = useState<'HOUR' | 'DAY' | 'FIXED'>('DAY');
   const [staffQty, setStaffQty] = useState(1);
   const [staffRate, setStaffRate] = useState('');
-  const [staffSession, setStaffSession] = useState<'MORNING' | 'AFTERNOON' | 'EVENING'>('MORNING');
+  const [selectedSessions, setSelectedSessions] = useState<EventSession[]>([]);
   const [selectedShiftDate, setSelectedShiftDate] = useState<string | null>(null);
   const [layoutForm, setLayoutForm] = useState({
     name: '',
@@ -337,14 +343,22 @@ export const EventManager: React.FC<EventManagerProps> = ({
       alert("Vui lòng nhập đầy đủ thông tin nhân sự!");
       return;
     }
-    if (!selectedShiftDate) {
-      alert('Vui lòng chọn ngày và ca (shift) trước khi phân công.');
+    const sessionList = selectedSessions.slice(0, 2);
+    if (!selectedShiftDate || sessionList.length === 0) {
+      alert('Vui lòng chọn ngày và tối thiểu 1 ca trước khi phân công.');
       return;
     }
     const rate = Number(staffRate);
-    const qty = Number(staffQty);
+    const qty = staffUnit === 'FIXED' ? 1 : Number(staffQty);
     // Kiểm tra trùng lịch: cùng ngày và cùng ca (so với tất cả các sự kiện)
-    const conflicts = events.flatMap(e => (e.staff || []).filter(s => s.employeeId === selectedStaffId && s.session === staffSession && s.shiftDate === selectedShiftDate).map(s => ({ event: e, staff: s })));
+    const conflicts = events.flatMap(e => (e.staff || [])
+      .filter(s => s.employeeId === selectedStaffId && s.shiftDate === selectedShiftDate)
+      .filter(s => {
+        const existingSessions = getStaffSessions(s);
+        return existingSessions.some(sess => sessionList.includes(sess));
+      })
+      .map(s => ({ event: e, staff: s }))
+    );
     // If conflict found (exclude assigning same person twice to same event/shift)
     const conflictingOther = conflicts.filter(c => c.event.id !== selectedEventId);
     if (conflictingOther.length > 0) {
@@ -359,8 +373,9 @@ export const EventManager: React.FC<EventManagerProps> = ({
       unit: staffUnit,
       quantity: qty,
       rate: rate,
-      salary: rate * qty,
-      session: staffSession,
+      salary: staffUnit === 'FIXED' ? rate : rate * qty,
+      session: sessionList[0],
+      sessions: sessionList,
       shiftDate: selectedShiftDate || undefined
     });
     setSelectedStaffId('');
@@ -368,6 +383,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
     setStaffRate('');
     setStaffQty(1);
     setSelectedShiftDate(null);
+    setSelectedSessions([]);
   };
 
   const handleAddExpenseSubmit = () => {
@@ -396,6 +412,24 @@ export const EventManager: React.FC<EventManagerProps> = ({
       setStaffTask(emp.role);
       setStaffRate(emp.baseRate ? emp.baseRate.toString() : '');
     }
+  };
+
+  const handleSessionToggle = (date: string, session: EventSession) => {
+    if (selectedShiftDate !== date) {
+      setSelectedShiftDate(date);
+      setSelectedSessions([session]);
+      return;
+    }
+    setSelectedSessions(prev => {
+      const exists = prev.includes(session);
+      if (exists) {
+        const next = prev.filter(s => s !== session);
+        if (next.length === 0) setSelectedShiftDate(null);
+        return next;
+      }
+      if (prev.length >= 2) return prev;
+      return [...prev, session];
+    });
   };
 
   const handleLinkQuotation = (qId: string) => {
@@ -983,7 +1017,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
                       {/* Shift picker: show dates between start and end and allow picking Sáng/Chiều/Tối */}
                       {selectedEvent && (
                         <div className="mt-3">
-                          <p className="text-xs font-black text-gray-400 uppercase mb-2">Chọn ngày & ca</p>
+                          <p className="text-xs font-black text-gray-400 uppercase mb-2">Chọn ngày & ca (tối đa 2 ca)</p>
                           <div className="flex gap-2 overflow-auto pb-2">
                             {(() => {
                               const start = new Date(selectedEvent.startDate);
@@ -1005,8 +1039,8 @@ export const EventManager: React.FC<EventManagerProps> = ({
                                               return buttonsToRender.map(sess => (
                                                 <button
                                                   key={sess}
-                                                  onClick={() => { setSelectedShiftDate(iso); setStaffSession(sess); }}
-                                                  className={`flex-1 text-xs py-1 rounded ${selectedShiftDate === iso && staffSession === sess ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700'}`}
+                                                  onClick={() => handleSessionToggle(iso, sess)}
+                                                  className={`flex-1 text-xs py-1 rounded ${selectedShiftDate === iso && selectedSessions.includes(sess) ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700'}`}
                                                 >
                                                   {sess === 'MORNING' ? 'SÁNG' : sess === 'AFTERNOON' ? 'CHIỀU' : 'TỐI'}
                                                 </button>
@@ -1018,23 +1052,40 @@ export const EventManager: React.FC<EventManagerProps> = ({
                               });
                             })()}
                           </div>
-                          {selectedShiftDate && (
-                            <div className="mt-2 text-[12px] text-slate-500">Đang chọn: <span className="font-bold text-slate-700">{new Date(selectedShiftDate).toLocaleDateString('vi-VN')}</span> • <span className="font-black">{staffSession === 'MORNING' ? 'SÁNG' : staffSession === 'AFTERNOON' ? 'CHIỀU' : 'TỐI'}</span></div>
+                          {selectedShiftDate && selectedSessions.length > 0 && (
+                            <div className="mt-2 text-[12px] text-slate-500">
+                              Đang chọn: <span className="font-bold text-slate-700">{new Date(selectedShiftDate).toLocaleDateString('vi-VN')}</span> • <span className="font-black">{selectedSessions.map(s => SESSION_LABELS[s]).join(', ')}</span>
+                            </div>
                           )}
                         </div>
                       )}
-                    <div className="grid grid-cols-4 gap-3">
-                      <select className="border border-slate-200 rounded-lg p-2 text-sm bg-white" value={staffUnit} onChange={e => setStaffUnit(e.target.value as any)}>
+                    <div className="grid grid-cols-4 gap-3 items-center">
+                      <select 
+                        className="border border-slate-200 rounded-lg p-2 text-sm bg-white" 
+                        value={staffUnit} 
+                        onChange={e => {
+                          const value = e.target.value as 'HOUR' | 'DAY' | 'FIXED';
+                          setStaffUnit(value);
+                          if (value === 'FIXED') setStaffQty(1);
+                        }}
+                      >
                         <option value="DAY">Theo Ngày</option>
                         <option value="HOUR">Theo Giờ</option>
                         <option value="FIXED">Trọn gói</option>
                       </select>
-                      <select className="border border-slate-200 rounded-lg p-2 text-sm bg-white" value={staffSession} onChange={e => setStaffSession(e.target.value as any)}>
-                        <option value="MORNING">SÁNG</option>
-                        <option value="AFTERNOON">CHIỀU</option>
-                        <option value="EVENING">TỐI</option>
-                      </select>
-                      <input type="number" className="border border-slate-200 rounded-lg p-2 text-sm text-center" placeholder="SL" value={staffQty} onChange={e => setStaffQty(Number(e.target.value))} />
+                      <div className="border border-slate-200 rounded-lg p-2 bg-slate-50">
+                        <p className="text-[10px] font-black text-slate-500 uppercase leading-tight">Ca đã chọn</p>
+                        <p className="text-xs text-slate-700 font-semibold">
+                          {selectedShiftDate && selectedSessions.length > 0 
+                            ? `${new Date(selectedShiftDate).toLocaleDateString('vi-VN')} • ${selectedSessions.map(s => SESSION_LABELS[s]).join(', ')}`
+                            : 'Chưa chọn'}
+                        </p>
+                      </div>
+                      {staffUnit !== 'FIXED' ? (
+                        <input type="number" className="border border-slate-200 rounded-lg p-2 text-sm text-center" placeholder="SL" value={staffQty} onChange={e => setStaffQty(Number(e.target.value))} />
+                      ) : (
+                        <div className="border border-slate-200 rounded-lg p-2 text-sm text-center text-slate-500 bg-slate-50 font-semibold">Trọn gói</div>
+                      )}
                       <input type="number" className="border border-slate-200 rounded-lg p-2 text-sm font-bold text-blue-600" placeholder="Đơn giá" value={staffRate} onChange={e => setStaffRate(e.target.value)} />
                     </div>
                     <button onClick={handleStaffAssignSubmit} className="w-full bg-slate-800 text-white py-2.5 rounded-lg text-sm font-bold hover:bg-slate-900 transition shadow-sm">Thêm nhân sự</button>
@@ -1043,16 +1094,23 @@ export const EventManager: React.FC<EventManagerProps> = ({
                   <div className="space-y-3">
                     {selectedEvent.staff?.map((s, idx) => {
                       const emp = employees.find(e => e.id === s.employeeId);
+                      const unitLabel = s.unit === 'DAY' ? 'ngày' : s.unit === 'HOUR' ? 'giờ' : 'trọn gói';
+                      const quantityLabel = s.unit === 'FIXED' ? 'Trọn gói' : `${s.quantity} ${unitLabel}`;
+                      const staffSessions = getStaffSessions(s);
                       return (
                         <div key={idx} className="bg-white p-4 rounded-xl border border-slate-200 flex justify-between items-center hover:shadow-md transition">
                            <div className="flex items-center gap-4">
                               <img src={emp?.avatarUrl} className="w-12 h-12 rounded-full border-2 border-slate-100" />
                               <div>
                                 <p className="font-bold text-gray-800">{emp?.name}</p>
-                                <p className="text-xs font-medium text-blue-600">{s.task} • {s.quantity} {s.unit === 'DAY' ? 'ngày' : 'giờ'}</p>
-                                {s.session && (
-                                  <div className="mt-1 inline-flex items-center gap-1 text-[10px] font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full">
-                                    {s.session === 'MORNING' ? 'SÁNG' : s.session === 'AFTERNOON' ? 'CHIỀU' : 'TỐI'}
+                                <p className="text-xs font-medium text-blue-600">{s.task} • {quantityLabel}</p>
+                                {staffSessions.length > 0 && (
+                                  <div className="mt-1 flex flex-wrap gap-1">
+                                    {staffSessions.map(sess => (
+                                      <div key={sess} className="inline-flex items-center gap-1 text-[10px] font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full">
+                                        {SESSION_LABELS[sess]}
+                                      </div>
+                                    ))}
                                   </div>
                                 )}
                                 {s.shiftDate && (
@@ -1772,7 +1830,8 @@ export const EventManager: React.FC<EventManagerProps> = ({
                   <p className="text-sm"><b>Nhân sự:</b> {ev.staff?.length ? ev.staff.map(s => {
                       const emp = employees.find(en => en.id === s.employeeId);
                       const name = emp ? emp.name : s.employeeId;
-                      const sess = s.session ? ` (${s.session === 'MORNING' ? 'SÁNG' : s.session === 'AFTERNOON' ? 'CHIỀU' : 'TỐI'})` : '';
+                      const staffSessions = getStaffSessions(s);
+                      const sess = staffSessions.length ? ` (${staffSessions.map(sess => SESSION_LABELS[sess]).join(', ')})` : '';
                       const date = s.shiftDate ? ` ${new Date(s.shiftDate).toLocaleDateString('vi-VN')}` : '';
                       return `${name}${sess}${date}`;
                     }).join(', ') : 'Không có'}</p>
