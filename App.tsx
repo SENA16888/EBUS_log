@@ -321,8 +321,13 @@ const App: React.FC = () => {
 
   // --- Handlers cho Sự kiện (Full Logic) ---
   const handleCreateEvent = (event: Event) => {
-    setAppState(prev => ({ ...prev, events: [...prev.events, event] }));
-    addLog(`Tạo sự kiện mới: "${event.name}"`, 'SUCCESS');
+     setAppState(prev => {
+      const newState = { ...prev, events: [...prev.events, event] };
+      // Ghi lên Firestore ngay lập tức
+      saveAppState(newState);
+      return newState;
+     });
+     addLog(`Tạo sự kiện mới: "${event.name}"`, 'SUCCESS');
   };
   
   const handleExportToEvent = (eventId: string, itemId: string, qty: number) => {
