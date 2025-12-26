@@ -424,6 +424,30 @@ const App: React.FC = () => {
     addLog(`Nhận lại ${qty} x "${item.name}" từ sự kiện "${event.name}".`, 'INFO');
   };
 
+  const handleRemoveEventItems = (eventId: string, itemIds: string[]) => {
+    setAppState(prev => {
+      const event = prev.events.find(e => e.id === eventId);
+      if (!event) return prev;
+      const idSet = new Set(itemIds);
+
+      const updatedInventory = prev.inventory.map(inv => {
+        const alloc = event.items.find(ai => ai.itemId === inv.id && idSet.has(ai.itemId));
+        if (!alloc) return inv;
+        const outstanding = Math.max(0, (alloc.quantity || 0) - (alloc.returnedQuantity || 0));
+        return {
+          ...inv,
+          availableQuantity: inv.availableQuantity + outstanding,
+          inUseQuantity: Math.max(0, inv.inUseQuantity - outstanding)
+        };
+      });
+
+      const updatedEvents = prev.events.map(e => e.id !== eventId ? e : { ...e, items: e.items.filter(ai => !idSet.has(ai.itemId)) });
+      return { ...prev, inventory: updatedInventory, events: updatedEvents };
+    });
+    const eventName = appState.events.find(e => e.id === eventId)?.name || '';
+    addLog(`Xóa ${itemIds.length} thiết bị khỏi sự kiện "${eventName}" và hoàn kho.`, 'INFO');
+  };
+
   const handleAssignStaff = (eventId: string, staffData: EventStaffAllocation) => {
     setAppState(prev => ({
       ...prev,
@@ -488,35 +512,59 @@ const App: React.FC = () => {
       const targetEvent = prev.events.find(e => e.id === eventId);
       if (!quote || !targetEvent) return prev;
 
-      let inventory = [...prev.inventory];
-      let eventItemsMap = new Map(targetEvent.items.map(item => [item.itemId, {...item}]));
+      const existingMap = new Map(targetEvent.items.map(item => [item.itemId, { ...item }]));
+      const targetMap = new Map<string, number>();
 
-      const processItem = (itemId: string, qty: number) => {
-        const invIdx = inventory.findIndex(i => i.id === itemId);
-        if (invIdx === -1) return;
-        
-        inventory[invIdx] = { ...inventory[invIdx], availableQuantity: inventory[invIdx].availableQuantity - qty, inUseQuantity: inventory[invIdx].inUseQuantity + qty };
-        
-        if (eventItemsMap.has(itemId)) {
-          const existing = eventItemsMap.get(itemId)!;
-          existing.quantity += qty;
-        } else {
-          eventItemsMap.set(itemId, { itemId, quantity: qty, returnedQuantity: 0 });
-        }
+      const addTargetQty = (itemId: string, qty: number) => {
+        targetMap.set(itemId, (targetMap.get(itemId) || 0) + qty);
       };
 
       quote.items.forEach(qItem => {
         if (qItem.type === 'ITEM') {
-          processItem(qItem.id, qItem.quantity);
+          addTargetQty(qItem.id, qItem.quantity);
         } else if (qItem.type === 'PACKAGE') {
           const pkg = prev.packages.find(p => p.id === qItem.id);
-          pkg?.items.forEach(pkgItem => processItem(pkgItem.itemId, pkgItem.quantity * qItem.quantity));
+          pkg?.items.forEach(pkgItem => addTargetQty(pkgItem.itemId, pkgItem.quantity * qItem.quantity));
         }
       });
 
-      const updatedEvents = prev.events.map(e => e.id === eventId ? {...e, items: Array.from(eventItemsMap.values())} : e);
+      // Update inventory based on delta between target qty and current qty (only for quotation items)
+      const inventory = prev.inventory.map(inv => {
+        if (!targetMap.has(inv.id)) return inv;
+        const currentQty = existingMap.get(inv.id)?.quantity || 0;
+        const targetQty = targetMap.get(inv.id) || 0;
+        const delta = targetQty - currentQty;
+        return {
+          ...inv,
+          availableQuantity: inv.availableQuantity - delta,
+          inUseQuantity: inv.inUseQuantity + delta
+        };
+      });
 
-      addLog(`Đồng bộ thiết bị từ báo giá ${quotationId} vào sự kiện "${targetEvent.name}".`, 'SUCCESS');
+      const updatedItems: typeof targetEvent.items = [];
+
+      // Keep non-quotation items unchanged
+      targetEvent.items.forEach(item => {
+        if (!targetMap.has(item.itemId)) {
+          updatedItems.push(item);
+        }
+      });
+
+      // Apply target quantities for quotation items
+      targetMap.forEach((targetQty, itemId) => {
+        const existing = existingMap.get(itemId);
+        const returnedQuantity = Math.min(existing?.returnedQuantity || 0, targetQty);
+        updatedItems.push({
+          itemId,
+          quantity: targetQty,
+          returnedQuantity,
+          done: existing?.done
+        });
+      });
+
+      const updatedEvents = prev.events.map(e => e.id === eventId ? { ...e, items: updatedItems } : e);
+
+      addLog(`Đồng bộ thiết bị từ báo giá ${quotationId} vào sự kiện "${targetEvent.name}" (ghi đè số lượng theo báo giá, giữ lại thiết bị ngoài báo giá).`, 'SUCCESS');
       return { ...prev, inventory, events: updatedEvents };
     });
   };
@@ -597,6 +645,7 @@ const App: React.FC = () => {
           onExportPackageToEvent={handleExportPackageToEvent}
           onSyncQuotation={handleSyncQuotation}
           onReturnFromEvent={handleReturnFromEvent} 
+          onRemoveEventItems={handleRemoveEventItems}
           onCreateEvent={handleCreateEvent} 
           onAssignStaff={handleAssignStaff}
           onRemoveStaff={handleRemoveStaff}

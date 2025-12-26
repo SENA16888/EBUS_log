@@ -19,6 +19,7 @@ interface EventManagerProps {
   onExportToEvent: (eventId: string, itemId: string, qty: number) => void;
   onExportPackageToEvent?: (eventId: string, packageId: string, qty: number) => void;
   onSyncQuotation?: (eventId: string, quotationId: string) => void;
+  onRemoveEventItems?: (eventId: string, itemIds: string[]) => void;
   onReturnFromEvent: (eventId: string, itemId: string, qty: number) => void;
   onToggleItemDone?: (eventId: string, itemId: string, done: boolean) => void;
   onCreateEvent: (newEvent: Event) => void;
@@ -131,6 +132,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
   onExportToEvent,
   onExportPackageToEvent,
   onSyncQuotation,
+  onRemoveEventItems,
   onReturnFromEvent,
   onCreateEvent,
   onAssignStaff,
@@ -204,6 +206,8 @@ export const EventManager: React.FC<EventManagerProps> = ({
   const [expenseDesc, setExpenseDesc] = useState('');
   const [expenseAmount, setExpenseAmount] = useState('');
   const [expenseVatLink, setExpenseVatLink] = useState('');
+  const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
+  const [viewingItem, setViewingItem] = useState<InventoryItem | null>(null);
 
   const selectedEvent = events.find(e => e.id === selectedEventId);
   const linkedQuotation = selectedEvent?.quotationId ? quotations.find(q => q.id === selectedEvent.quotationId) : null;
@@ -222,6 +226,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
     if (selectedEvent && (!selectedEvent.processSteps || selectedEvent.processSteps.length === 0) && onUpdateEvent) {
       onUpdateEvent(selectedEvent.id, { processSteps: createDefaultProcessSteps() });
     }
+    setSelectedItemIds([]);
   }, [selectedEvent, onUpdateEvent]);
 
   const handleCreateEventSubmit = () => {
@@ -436,6 +441,21 @@ export const EventManager: React.FC<EventManagerProps> = ({
     if (selectedEventId && onLinkQuotation) {
       onLinkQuotation(selectedEventId, qId);
     }
+  };
+
+  const toggleSelectedItem = (itemId: string, checked: boolean) => {
+    setSelectedItemIds(prev => {
+      if (checked) return Array.from(new Set([...prev, itemId]));
+      return prev.filter(id => id !== itemId);
+    });
+  };
+
+  const handleRemoveSelectedItems = () => {
+    if (!selectedEventId || selectedItemIds.length === 0 || !onRemoveEventItems) return;
+    const confirmMsg = `Xóa ${selectedItemIds.length} thiết bị khỏi danh sách sự kiện? Những thiết bị này sẽ được trả lại kho.`;
+    if (!window.confirm(confirmMsg)) return;
+    onRemoveEventItems(selectedEventId, selectedItemIds);
+    setSelectedItemIds([]);
   };
 
   const updateProcessSteps = (steps: EventProcessStep[]) => {
@@ -915,12 +935,29 @@ export const EventManager: React.FC<EventManagerProps> = ({
                   <div className="flex gap-2">
                     <button onClick={() => { setExportMode('SINGLE'); setShowExportModal(true); }} className="bg-white border border-blue-600 text-blue-600 px-4 py-2 rounded-lg text-sm font-bold hover:bg-blue-50">+ Thêm lẻ</button>
                     <button onClick={() => { setExportMode('COMBO'); setShowExportModal(true); }} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-blue-700">+ Thêm Combo</button>
+                    <button 
+                      onClick={handleRemoveSelectedItems} 
+                      disabled={selectedItemIds.length === 0}
+                      className={`px-4 py-2 rounded-lg text-sm font-bold border ${selectedItemIds.length === 0 ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed' : 'bg-red-50 text-red-600 border-red-200 hover:bg-red-100'}`}
+                    >
+                      Xóa thiết bị đã chọn ({selectedItemIds.length})
+                    </button>
                   </div>
 
                   <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
                     <table className="w-full text-left text-sm">
                       <thead className="bg-slate-50 border-b">
                         <tr>
+                          <th className="px-3 py-3 font-bold text-gray-500 uppercase text-[10px] text-center">
+                            <input 
+                              type="checkbox" 
+                              checked={selectedEvent?.items.length > 0 && selectedItemIds.length === selectedEvent.items.length}
+                              onChange={e => {
+                                if (!selectedEvent) return;
+                                setSelectedItemIds(e.target.checked ? selectedEvent.items.map(it => it.itemId) : []);
+                              }} 
+                            />
+                          </th>
                           <th className="px-3 py-3 font-bold text-gray-500 uppercase text-[10px] text-center">Đã xong</th>
                           <th className="px-4 py-3 font-bold text-gray-500 uppercase text-[10px]">Thiết bị</th>
                           <th className="px-4 py-3 font-bold text-gray-500 uppercase text-[10px] text-center">Cần</th>
@@ -945,13 +982,27 @@ export const EventManager: React.FC<EventManagerProps> = ({
                           return (
                             <tr key={i} className={`hover:bg-slate-50/50 ${shortage > 0 ? 'bg-amber-50' : ''}`}>
                               <td className="px-4 py-3 text-center">
+                                <input 
+                                  type="checkbox" 
+                                  checked={selectedItemIds.includes(alloc.itemId)}
+                                  onChange={e => toggleSelectedItem(alloc.itemId, e.target.checked)} 
+                                />
+                              </td>
+                              <td className="px-4 py-3 text-center">
                                 <input type="checkbox" checked={!!alloc.done} onChange={e => onToggleItemDone?.(selectedEvent.id, alloc.itemId, e.target.checked)} />
                               </td>
-                              <td className="px-4 py-3">
-                                <div className="flex items-center gap-3">
-                                  <img src={item?.imageUrl} className="w-8 h-8 rounded" />
-                                  <span className="font-bold">{item?.name}</span>
-                                </div>
+                          <td className="px-4 py-3">
+                                <button 
+                                  type="button"
+                                  onClick={() => item && setViewingItem(item)}
+                                  className="flex items-center gap-3 text-left w-full hover:bg-slate-50 rounded-lg px-1 py-0.5"
+                                >
+                                  <img src={item?.imageUrl} className="w-8 h-8 rounded object-cover border border-slate-100" />
+                                  <div>
+                                    <span className="font-bold text-slate-800">{item?.name}</span>
+                                    <p className="text-[11px] text-slate-500">{item?.category}</p>
+                                  </div>
+                                </button>
                               </td>
                               <td className="px-4 py-3 text-center font-black text-blue-600">{alloc.quantity}</td>
                               <td className="px-4 py-3 text-center">
@@ -995,7 +1046,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
                           );
                         })}
                         {selectedEvent.items.length === 0 && (
-                          <tr><td colSpan={5} className="p-10 text-center text-gray-400 italic">Chưa có thiết bị nào trong danh sách xuất.</td></tr>
+                          <tr><td colSpan={8} className="p-10 text-center text-gray-400 italic">Chưa có thiết bị nào trong danh sách xuất.</td></tr>
                         )}
                       </tbody>
                     </table>
@@ -1920,6 +1971,66 @@ export const EventManager: React.FC<EventManagerProps> = ({
                 <button onClick={() => window.print()} className="bg-blue-600 text-white px-8 py-3 rounded-xl font-black flex items-center gap-2 shadow-lg shadow-blue-200 uppercase tracking-widest text-xs transition active:scale-95"><Printer size={18}/> In Lệnh Xuất Kho</button>
                 <button onClick={() => setShowPrintModal(false)} className="bg-slate-100 text-slate-600 px-8 py-3 rounded-xl font-black uppercase tracking-widest text-xs">Đóng</button>
              </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: Item Detail */}
+      {viewingItem && (
+        <div className="fixed inset-0 bg-black/50 z-[70] flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-2xl p-6 shadow-2xl">
+            <div className="flex justify-between items-start mb-4">
+              <div>
+                <p className="text-xs font-black text-slate-500 uppercase">Thông tin thiết bị</p>
+                <h3 className="text-2xl font-black text-gray-800">{viewingItem.name}</h3>
+                <p className="text-sm text-slate-500 mt-1">{viewingItem.category}</p>
+              </div>
+              <button onClick={() => setViewingItem(null)} className="text-gray-400 hover:text-gray-600">
+                <X size={22} />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="md:col-span-1">
+                <img src={viewingItem.imageUrl} alt={viewingItem.name} className="w-full h-48 object-cover rounded-xl border border-slate-100 bg-slate-50" />
+              </div>
+              <div className="md:col-span-2 space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-slate-50 border border-slate-100 rounded-xl p-3">
+                    <p className="text-[11px] font-black text-slate-500 uppercase">Tổng số</p>
+                    <p className="text-xl font-black text-slate-800">{viewingItem.totalQuantity}</p>
+                  </div>
+                  <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3">
+                    <p className="text-[11px] font-black text-emerald-700 uppercase">Đang rảnh</p>
+                    <p className="text-xl font-black text-emerald-700">{viewingItem.availableQuantity}</p>
+                  </div>
+                  <div className="bg-blue-50 border border-blue-100 rounded-xl p-3">
+                    <p className="text-[11px] font-black text-blue-700 uppercase">Đang xuất</p>
+                    <p className="text-xl font-black text-blue-700">{viewingItem.inUseQuantity}</p>
+                  </div>
+                  <div className="bg-amber-50 border border-amber-100 rounded-xl p-3">
+                    <p className="text-[11px] font-black text-amber-700 uppercase">Bảo trì / Hỏng</p>
+                    <p className="text-xl font-black text-amber-700">{(viewingItem.maintenanceQuantity || 0) + (viewingItem.brokenQuantity || 0)}</p>
+                  </div>
+                </div>
+                {viewingItem.description && (
+                  <div className="bg-slate-50 border border-slate-100 rounded-xl p-3">
+                    <p className="text-[11px] font-black text-slate-500 uppercase mb-1">Mô tả</p>
+                    <p className="text-sm text-slate-700 leading-relaxed">{viewingItem.description}</p>
+                  </div>
+                )}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-slate-50 border border-slate-100 rounded-xl p-3">
+                    <p className="text-[11px] font-black text-slate-500 uppercase mb-1">Đơn giá thuê</p>
+                    <p className="text-lg font-black text-blue-600">{viewingItem.rentalPrice.toLocaleString()} đ</p>
+                  </div>
+                  <div className="bg-slate-50 border border-slate-100 rounded-xl p-3">
+                    <p className="text-[11px] font-black text-slate-500 uppercase mb-1">Vị trí kho</p>
+                    <p className="text-sm font-semibold text-slate-800">{viewingItem.location}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}
