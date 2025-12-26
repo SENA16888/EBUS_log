@@ -1,7 +1,6 @@
 import { initializeApp } from 'firebase/app';
-import { getFirestore, doc, getDoc, setDoc, collection, getDocs, query, where, deleteDoc, updateDoc } from 'firebase/firestore';
+import { getFirestore, doc, getDoc, setDoc, collection, getDocs, query, where, deleteDoc, updateDoc, onSnapshot, Unsubscribe } from 'firebase/firestore';
 import { getAuth, onAuthStateChanged, signInAnonymously } from 'firebase/auth';
-import { doc, onSnapshot, Unsubscribe } from 'firebase/firestore';
 
 // Helper to safely get environment variables (same pattern as geminiService)
 const getEnvVar = (key: string): string | undefined => {
@@ -21,6 +20,20 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
 export const auth = getAuth(app);
+
+// Convert state to Firestore-safe JSON (removes undefined, serializes Date)
+const serializeForFirestore = (input: any) => {
+  try {
+    return JSON.parse(JSON.stringify(input, (_key, value) => {
+      if (value === undefined) return null;
+      if (value instanceof Date) return value.toISOString();
+      return value;
+    }));
+  } catch (err) {
+    console.warn('serializeForFirestore failed, returning original object', err);
+    return input;
+  }
+};
 
 // Hàm để đảm bảo người dùng được xác thực (Anonymous Auth)
 export const initializeAuth = (): Promise<void> => {
@@ -50,15 +63,8 @@ export const saveAppState = async (appState: any): Promise<void> => {
     await initializeAuth();
     const docRef = doc(db, 'appState', 'main');
 
-    // Normalize state for logging and Firestore (convert Date objects to ISO strings)
-    const safeState = { ...appState };
-    try {
-      if (Array.isArray(safeState.logs)) {
-        safeState.logs = safeState.logs.map((l: any) => ({ ...l, timestamp: l?.timestamp instanceof Date ? l.timestamp.toISOString() : l?.timestamp }));
-      }
-    } catch (e) {
-      // ignore
-    }
+    // Clean unsupported values before writing
+    const safeState = serializeForFirestore(appState);
 
     console.log('Saving app state to Firestore', { eventsCount: Array.isArray(safeState.events) ? safeState.events.length : 0, transactionsCount: Array.isArray(safeState.transactions) ? safeState.transactions.length : 0 });
 
@@ -82,7 +88,15 @@ export const loadAppState = async (): Promise<any | null> => {
     const docSnap = await getDoc(docRef);
     
     if (docSnap.exists()) {
-      return docSnap.data();
+      const data = docSnap.data();
+      // Restore Date objects for logs (used in UI rendering)
+      if (Array.isArray((data as any).logs)) {
+        (data as any).logs = (data as any).logs.map((l: any) => ({
+          ...l,
+          timestamp: l?.timestamp ? new Date(l.timestamp) : new Date()
+        }));
+      }
+      return data;
     }
     return null;
   } catch (error) {
