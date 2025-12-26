@@ -6,8 +6,9 @@ import {
   Users, DollarSign, Trash2, Truck, BookOpen, 
   Utensils, Wallet, Printer, Coffee, AlertCircle,
   TrendingUp, ArrowRightLeft, UserCheck, Link as LinkIcon,
-  Calculator, ChevronRight, PieChart as PieIcon, FileText, CheckCircle, RefreshCw, Upload
+  Calculator, ChevronRight, PieChart as PieIcon, FileText, CheckCircle, RefreshCw, Upload, Download
 } from 'lucide-react';
+import { EventExportModal } from './EventExportModal';
 
 interface EventManagerProps {
   events: Event[];
@@ -206,6 +207,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
   const [showCreateEventModal, setShowCreateEventModal] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
   const [showPrintModal, setShowPrintModal] = useState(false);
+  const [showExportPDFModal, setShowExportPDFModal] = useState(false);
   
   // Create Event Form State
   const [newEventData, setNewEventData] = useState({
@@ -2055,6 +2057,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
              </div>
 
              <div className="mt-12 flex justify-end gap-3 print:hidden">
+                <button onClick={() => setShowExportPDFModal(true)} className="bg-green-600 text-white px-8 py-3 rounded-xl font-black flex items-center gap-2 shadow-lg shadow-green-200 uppercase tracking-widest text-xs transition active:scale-95"><Download size={18}/> Tải Checklist PDF</button>
                 <button onClick={() => window.print()} className="bg-blue-600 text-white px-8 py-3 rounded-xl font-black flex items-center gap-2 shadow-lg shadow-blue-200 uppercase tracking-widest text-xs transition active:scale-95"><Printer size={18}/> In Lệnh Xuất Kho</button>
                 <button onClick={() => setShowPrintModal(false)} className="bg-slate-100 text-slate-600 px-8 py-3 rounded-xl font-black uppercase tracking-widest text-xs">Đóng</button>
              </div>
@@ -2120,6 +2123,16 @@ export const EventManager: React.FC<EventManagerProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Export PDF Modal */}
+      {selectedEventId && (
+        <EventExportModal
+          isOpen={showExportPDFModal}
+          event={events.find(e => e.id === selectedEventId)!}
+          inventory={inventory}
+          onClose={() => setShowExportPDFModal(false)}
+        />
       )}
     </div>
   );
