@@ -1,10 +1,13 @@
 
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { InventoryItem } from '../types';
 import { 
   Search, Plus, Filter, X, Trash2, AlertTriangle, Wrench, ClipboardList,
   ShoppingCart, Info, ArrowUpCircle, Settings2, Link as LinkIcon, CheckCircle, CalendarClock
 } from 'lucide-react';
+
+const DEFAULT_CATEGORY = 'Khác';
+const BASE_CATEGORY_SUGGESTIONS = ['STEM', 'Âm thanh', 'Ánh sáng', 'Hiệu ứng', 'Hình ảnh', 'Quảng cáo', 'CSVG'];
 
 interface InventoryManagerProps {
   inventory: InventoryItem[];
@@ -46,7 +49,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
 
   const [newItemData, setNewItemData] = useState({
     name: '',
-    category: 'STEM',
+    category: DEFAULT_CATEGORY,
     description: '',
     location: '',
     totalQuantity: 1,
@@ -60,7 +63,31 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
     plannedEta: ''
   });
 
-  const categories = ['All', 'STEM', 'Âm thanh', 'Ánh sáng', 'Hiệu ứng', 'Hình ảnh', 'Quảng cáo', 'CSVG'];
+  const categorySuggestions = useMemo(() => {
+    const suggestionSet = new Set<string>([DEFAULT_CATEGORY, ...BASE_CATEGORY_SUGGESTIONS]);
+    inventory.forEach(item => {
+      if (item.category) {
+        suggestionSet.add(item.category);
+      }
+    });
+    return Array.from(suggestionSet);
+  }, [inventory]);
+
+  const categories = useMemo(() => {
+    const categorySet = new Set<string>();
+    inventory.forEach(item => {
+      if (item.category) {
+        categorySet.add(item.category);
+      }
+    });
+    return ['All', ...Array.from(categorySet)];
+  }, [inventory]);
+
+  useEffect(() => {
+    if (!categories.includes(filterCategory)) {
+      setFilterCategory('All');
+    }
+  }, [categories, filterCategory]);
 
   const filteredInventory = inventory.filter(item => {
     const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
@@ -128,14 +155,20 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
   };
 
   const handleAddNewSubmit = () => {
-    if (!newItemData.name) {
+    const name = newItemData.name.trim();
+    if (!name) {
       alert("Vui lòng điền tên thiết bị");
       return;
     }
+    if (!newItemData.category.trim()) {
+      alert("Vui lòng nhập danh mục thiết bị");
+      return;
+    }
+    const category = newItemData.category.trim();
     const newItem: InventoryItem = {
       id: `ITEM-${Date.now()}`,
-      name: newItemData.name,
-      category: newItemData.category,
+      name,
+      category,
       description: newItemData.description,
       location: newItemData.location || 'Kho tổng',
       totalQuantity: Number(newItemData.totalQuantity),
@@ -162,10 +195,20 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
     if (!editingItemId) return;
     const existingItem = inventory.find(i => i.id === editingItemId);
     if (!existingItem) return;
+    const name = newItemData.name.trim();
+    if (!name) {
+      alert("Vui lòng điền tên thiết bị");
+      return;
+    }
+    if (!newItemData.category.trim()) {
+      alert("Vui lòng nhập danh mục thiết bị");
+      return;
+    }
+    const category = newItemData.category.trim();
     const updatedItem: InventoryItem = {
       ...existingItem,
-      name: newItemData.name,
-      category: newItemData.category,
+      name,
+      category,
       description: newItemData.description,
       location: newItemData.location,
       imageUrl: newItemData.imageUrl,
@@ -213,7 +256,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
       return {
         id: `BULK-${Date.now()}-${idx}`,
         name: name,
-        category: 'STEM',
+        category: DEFAULT_CATEGORY,
         description: 'Nhập nhanh từ trình văn bản',
         totalQuantity: qty,
         availableQuantity: qty,
@@ -234,7 +277,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
 
   const resetForms = () => {
     setNewItemData({
-      name: '', category: 'STEM', description: '', location: '', totalQuantity: 1,
+      name: '', category: DEFAULT_CATEGORY, description: '', location: '', totalQuantity: 1,
       imageUrl: 'https://picsum.photos/200/200', rentalPrice: 0, purchaseLink: '',
       minStock: 5, productionNote: '', plannedPurchase: false, plannedQuantity: 0, plannedEta: ''
     });
@@ -386,9 +429,18 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
                 </div>
                 <div>
                   <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Danh mục</label>
-                  <select className="w-full border-2 border-slate-100 rounded-2xl p-4 text-sm font-bold bg-white" value={newItemData.category} onChange={(e) => setNewItemData({...newItemData, category: e.target.value})}>
-                    {categories.filter(c => c !== 'All').map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                  </select>
+                  <input
+                    list="inventory-category-options"
+                    type="text"
+                    className="w-full border-2 border-slate-100 rounded-2xl p-4 text-sm font-bold bg-white"
+                    placeholder="Nhập hoặc chọn danh mục"
+                    value={newItemData.category}
+                    onChange={(e) => setNewItemData({ ...newItemData, category: e.target.value })}
+                  />
+                  <datalist id="inventory-category-options">
+                    {categorySuggestions.map(cat => <option key={cat} value={cat} />)}
+                  </datalist>
+                  <p className="text-[10px] text-slate-400 mt-1">Gõ để thêm danh mục mới hoặc chọn gợi ý sẵn có.</p>
                 </div>
                 <div>
                   <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Tổng số lượng</label>
