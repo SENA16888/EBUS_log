@@ -2,7 +2,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Event, InventoryItem, EventStatus, ComboPackage, Employee, EventExpense, EventStaffAllocation, Quotation, EventProcessStep, EventLayout, EventLayoutBlock, LayoutPackageSource } from '../types';
 import { 
-  Calendar, MapPin, Box, ArrowLeft, Plus, X, Layers, 
+  Calendar, MapPin, Box, ArrowLeft, Plus, Minus, X, Layers, 
   Users, DollarSign, Trash2, Truck, BookOpen, 
   Utensils, Wallet, Printer, Coffee, AlertCircle,
   TrendingUp, ArrowRightLeft, UserCheck, Link as LinkIcon,
@@ -21,6 +21,7 @@ interface EventManagerProps {
   onSyncQuotation?: (eventId: string, quotationId: string) => void;
   onRemoveEventItems?: (eventId: string, itemIds: string[]) => void;
   onReturnFromEvent: (eventId: string, itemId: string, qty: number) => void;
+  onUpdateEventItemQuantity?: (eventId: string, itemId: string, qty: number) => void;
   onToggleItemDone?: (eventId: string, itemId: string, done: boolean) => void;
   onCreateEvent: (newEvent: Event) => void;
   onAssignStaff?: (eventId: string, staffData: EventStaffAllocation) => void;
@@ -134,6 +135,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
   onSyncQuotation,
   onRemoveEventItems,
   onReturnFromEvent,
+  onUpdateEventItemQuantity,
   onCreateEvent,
   onAssignStaff,
   onRemoveStaff,
@@ -456,6 +458,13 @@ export const EventManager: React.FC<EventManagerProps> = ({
     if (!window.confirm(confirmMsg)) return;
     onRemoveEventItems(selectedEventId, selectedItemIds);
     setSelectedItemIds([]);
+  };
+
+  const handleItemQuantityChange = (itemId: string, qty: number) => {
+    if (!selectedEvent || !onUpdateEventItemQuantity) return;
+    const numericQty = Number.isFinite(qty) ? qty : 0;
+    const safeQty = Math.max(0, Math.round(numericQty));
+    onUpdateEventItemQuantity(selectedEvent.id, itemId, safeQty);
   };
 
   const updateProcessSteps = (steps: EventProcessStep[]) => {
@@ -1004,7 +1013,32 @@ export const EventManager: React.FC<EventManagerProps> = ({
                                   </div>
                                 </button>
                               </td>
-                              <td className="px-4 py-3 text-center font-black text-blue-600">{alloc.quantity}</td>
+                              <td className="px-4 py-3 text-center">
+                                <div className="inline-flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleItemQuantityChange(alloc.itemId, alloc.quantity - 1)}
+                                    disabled={alloc.quantity <= (alloc.returnedQuantity || 0)}
+                                    className="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed"
+                                  >
+                                    <Minus size={14} />
+                                  </button>
+                                  <input
+                                    type="number"
+                                    min={alloc.returnedQuantity || 0}
+                                    className="w-16 text-center border border-slate-200 rounded-lg p-1 font-black text-blue-600"
+                                    value={alloc.quantity}
+                                    onChange={e => handleItemQuantityChange(alloc.itemId, Number(e.target.value))}
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => handleItemQuantityChange(alloc.itemId, alloc.quantity + 1)}
+                                    className="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600"
+                                  >
+                                    <Plus size={14} />
+                                  </button>
+                                </div>
+                              </td>
                               <td className="px-4 py-3 text-center">
                                 <div className="flex flex-col items-center gap-1">
                                   <span className="inline-flex items-center justify-center px-2 py-1 rounded-lg text-[11px] font-black bg-slate-100 text-slate-700">

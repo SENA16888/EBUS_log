@@ -424,6 +424,59 @@ const App: React.FC = () => {
     addLog(`Nhận lại ${qty} x "${item.name}" từ sự kiện "${event.name}".`, 'INFO');
   };
 
+  const handleUpdateEventItemQuantity = (eventId: string, itemId: string, nextQty: number) => {
+    let itemName = '';
+    let eventName = '';
+    let previousQty = 0;
+    let targetQty = 0;
+    let changed = false;
+
+    setAppState(prev => {
+      const event = prev.events.find(e => e.id === eventId);
+      const inventoryItem = prev.inventory.find(inv => inv.id === itemId);
+      if (!event || !inventoryItem) return prev;
+
+      const allocation = event.items.find(ai => ai.itemId === itemId);
+      if (!allocation) return prev;
+
+      const minQty = allocation.returnedQuantity || 0;
+      const numericQty = Number.isFinite(nextQty) ? nextQty : 0;
+      const parsedQty = Math.max(0, Math.round(numericQty));
+      const safeQty = Math.max(minQty, parsedQty);
+
+      if (safeQty === allocation.quantity) return prev;
+
+      changed = true;
+      itemName = inventoryItem.name;
+      eventName = event.name;
+      previousQty = allocation.quantity;
+      targetQty = safeQty;
+
+      const delta = safeQty - allocation.quantity;
+
+      const inventory = prev.inventory.map(inv => {
+        if (inv.id !== itemId) return inv;
+        const availableQuantity = inv.availableQuantity - delta;
+        const inUseQuantity = Math.max(0, inv.inUseQuantity + delta);
+        return { ...inv, availableQuantity, inUseQuantity };
+      });
+
+      const events = prev.events.map(ev => {
+        if (ev.id !== eventId) return ev;
+        return {
+          ...ev,
+          items: ev.items.map(it => it.itemId === itemId ? { ...it, quantity: safeQty } : it)
+        };
+      });
+
+      return { ...prev, inventory, events };
+    });
+
+    if (changed) {
+      addLog(`Điều chỉnh số lượng "${itemName}" trong sự kiện "${eventName}" từ ${previousQty} -> ${targetQty}.`, 'INFO');
+    }
+  };
+
   const handleRemoveEventItems = (eventId: string, itemIds: string[]) => {
     setAppState(prev => {
       const event = prev.events.find(e => e.id === eventId);
@@ -645,6 +698,7 @@ const App: React.FC = () => {
           onExportPackageToEvent={handleExportPackageToEvent}
           onSyncQuotation={handleSyncQuotation}
           onReturnFromEvent={handleReturnFromEvent} 
+          onUpdateEventItemQuantity={handleUpdateEventItemQuantity}
           onRemoveEventItems={handleRemoveEventItems}
           onCreateEvent={handleCreateEvent} 
           onAssignStaff={handleAssignStaff}
