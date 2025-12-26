@@ -257,6 +257,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
   const [resizingBlock, setResizingBlock] = useState<{ id: string; direction: ResizeDirection; rect: DOMRect } | null>(null);
   const [showLayoutFullscreen, setShowLayoutFullscreen] = useState(false);
   const [editingBlockId, setEditingBlockId] = useState<string | null>(null);
+  const [isMobileListCollapsed, setIsMobileListCollapsed] = useState(false);
 
   // Expense State
   const [expenseCat, setExpenseCat] = useState<EventExpense['category']>('TRANSPORT_GOODS');
@@ -894,9 +895,9 @@ export const EventManager: React.FC<EventManagerProps> = ({
   const totalChecklistDone = processSteps.reduce((acc, step) => acc + step.checklist.filter(item => item.checked).length, 0);
 
   return (
-    <div className="flex flex-col lg:flex-row h-[calc(100vh-100px)] gap-6">
+    <div className="flex flex-col lg:flex-row gap-6 lg:h-[calc(100vh-100px)]">
       {/* Sidebar */}
-      <div className="w-full lg:w-1/3 bg-white rounded-xl shadow-sm border border-slate-100 flex flex-col h-full overflow-hidden">
+      <div className={`w-full lg:w-1/3 bg-white rounded-xl shadow-sm border border-slate-100 flex flex-col h-auto lg:h-full overflow-hidden ${isMobileListCollapsed ? 'hidden' : 'flex'} lg:flex`}>
         <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
           <h3 className="font-bold text-gray-800 text-lg">Sự Kiện</h3>
           <div className="flex items-center gap-2">
@@ -913,7 +914,12 @@ export const EventManager: React.FC<EventManagerProps> = ({
           {events.map(event => (
             <div 
               key={event.id}
-              onClick={() => setSelectedEventId(event.id)}
+              onClick={() => {
+                setSelectedEventId(event.id);
+                if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+                  setIsMobileListCollapsed(true);
+                }
+              }}
               className={`p-4 rounded-xl border-2 cursor-pointer transition ${selectedEventId === event.id ? 'border-blue-500 bg-blue-50 shadow-sm' : 'border-transparent bg-white border-slate-100'}`}
             >
               {(() => {
@@ -944,10 +950,20 @@ export const EventManager: React.FC<EventManagerProps> = ({
       </div>
 
       {/* Main Detail Panel */}
-      <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-100 flex flex-col h-full overflow-hidden">
+      <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-100 flex flex-col lg:h-full overflow-visible lg:overflow-hidden">
         {selectedEvent ? (
           <>
-            <div className="p-6 border-b border-slate-100">
+            <div className="p-4 md:p-6 border-b border-slate-100 space-y-3">
+              {isMobileListCollapsed && (
+                <div className="lg:hidden">
+                  <button
+                    onClick={() => setIsMobileListCollapsed(false)}
+                    className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-full bg-slate-100 text-slate-700 border border-slate-200"
+                  >
+                    <ArrowLeft size={14} /> Danh sách sự kiện
+                  </button>
+                </div>
+              )}
               <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-4">
                 <div>
                   <h2 className="text-2xl font-black text-gray-800">{selectedEvent.name}</h2>
@@ -980,7 +996,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-4 md:p-6 bg-slate-50/30">
+            <div className="flex-1 overflow-visible lg:overflow-y-auto p-4 md:p-6 bg-slate-50/30">
               {detailTab === 'EQUIPMENT' && (
                 <div className="space-y-4">
                   {/* Sync From Quotation Banner */}
