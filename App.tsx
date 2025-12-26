@@ -319,15 +319,22 @@ const App: React.FC = () => {
     addLog(`Đã xóa hàng bán: ${name}`, 'SUCCESS');
   };
 
+  // Helper to save state immediately for critical event operations
+  const saveEventStateImmediate = async (newState: AppState) => {
+    try {
+      await saveAppState(newState);
+      console.log('Event state saved immediately to Firestore');
+    } catch (err) {
+      console.error('Failed to save event state immediately:', err);
+    }
+  };
+
   // --- Handlers cho Sự kiện (Full Logic) ---
   const handleCreateEvent = (event: Event) => {
-     setAppState(prev => {
-      const newState = { ...prev, events: [...prev.events, event] };
-      // Ghi lên Firestore ngay lập tức
-      saveAppState(newState);
-      return newState;
-     });
-     addLog(`Tạo sự kiện mới: "${event.name}"`, 'SUCCESS');
+    const newState = { ...appState, events: [...appState.events, event] };
+    setAppState(newState);
+    saveEventStateImmediate(newState); // Save immediately
+    addLog(`Tạo sự kiện mới: "${event.name}"`, 'SUCCESS');
   };
   
   const handleExportToEvent = (eventId: string, itemId: string, qty: number) => {
