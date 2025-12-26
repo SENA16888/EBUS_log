@@ -21,7 +21,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange
       <aside className="w-64 bg-slate-900 text-white flex flex-col hidden md:flex">
         <div className="p-6">
           <h1 className="text-xl font-bold bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">
-            EventStock AI
+            EINSTEIN BUS _ AI
           </h1>
           <p className="text-xs text-slate-400 mt-1">Quản lý kho sự kiện thông minh</p>
         </div>
@@ -109,7 +109,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange
       {/* Main Content */}
       <main className="flex-1 flex flex-col h-screen overflow-hidden">
         <header className="h-16 bg-white border-b border-slate-200 flex justify-between items-center px-6 z-20">
-          <div className="md:hidden font-bold text-gray-800">EventStock AI</div>
+          <div className="md:hidden font-bold text-gray-800">EINSTEIN BUS _ AI</div>
           <div className="flex items-center gap-4 ml-auto">
              <a 
                href="/huong-dan.html" 

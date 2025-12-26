@@ -57,7 +57,7 @@ export const chatWithInventoryAI = async (
     })));
 
     const systemPrompt = `
-      Bạn là trợ lý ảo thông minh cho phần mềm quản lý kho sự kiện (EventStock AI).
+      Bạn là trợ lý ảo thông minh cho phần mềm quản lý kho sự kiện (EINSTEIN BUS _ AI).
 
       Dữ liệu kho hàng hiện tại (JSON): ${inventoryContext}
       Dữ liệu sự kiện đang diễn ra/sắp tới (JSON): ${eventContext}

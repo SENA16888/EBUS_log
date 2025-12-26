@@ -377,11 +377,11 @@ export const QuotationManager: React.FC<QuotationManagerProps> = ({
                        <h1 className="text-3xl font-black text-blue-600 mb-1">BÁO GIÁ DỊCH VỤ</h1>
                        <p className="text-sm font-bold text-slate-500 uppercase tracking-widest">SỐ: {viewingQuotation.id}</p>
                     </div>
-                    <div className="text-right">
-                       <h2 className="text-xl font-bold">EventStock AI Warehouse</h2>
-                       <p className="text-sm text-slate-500">123 Phố Sự Kiện, Hà Nội</p>
-                       <p className="text-sm text-slate-500">Hotline: 09xx-xxx-xxx</p>
-                    </div>
+                <div className="text-right">
+                  <h2 className="text-xl font-bold">EINSTEIN BUS _ AI Warehouse</h2>
+                  <p className="text-sm text-slate-500">123 Phố Sự Kiện, Hà Nội</p>
+                  <p className="text-sm text-slate-500">Hotline: 09xx-xxx-xxx</p>
+                </div>
                  </div>
 
                  <div className="grid grid-cols-2 gap-12 mb-12">
