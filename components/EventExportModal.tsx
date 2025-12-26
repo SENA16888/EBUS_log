@@ -17,7 +17,7 @@ export const EventExportModal: React.FC<EventExportModalProps> = ({
   onClose
 }) => {
   const [isExporting, setIsExporting] = useState(false);
-  const [quality, setQuality] = useState<'medium' | 'high'>('high');
+  const [quality, setQuality] = useState<'medium' | 'high'>('medium');
   const [includeHeader, setIncludeHeader] = useState(true);
 
   const handleExport = async () => {
@@ -40,7 +40,7 @@ export const EventExportModal: React.FC<EventExportModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[80]">
       <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-gray-200">

@@ -19,30 +19,32 @@ export const exportEventChecklist = async (
     includeHeader = true
   } = options;
 
-  try {
-    // Create a temporary container for rendering
-    const container = document.createElement('div');
-    container.style.position = 'absolute';
-    container.style.left = '-9999px';
-    container.style.width = '210mm'; // A4 width
-    container.style.padding = '20px';
-    container.style.backgroundColor = 'white';
-    container.style.fontFamily = 'Arial, sans-serif';
-    container.style.fontSize = '12px';
-    container.style.color = '#000';
+  const container = document.createElement('div');
+  container.style.position = 'absolute';
+  container.style.left = '-9999px';
+  container.style.width = '210mm'; // A4 width
+  container.style.padding = '20px';
+  container.style.backgroundColor = 'white';
+  container.style.fontFamily = 'Arial, sans-serif';
+  container.style.fontSize = '12px';
+  container.style.color = '#000';
+  document.body.appendChild(container);
 
+  try {
     // Header
     if (includeHeader) {
       const header = document.createElement('div');
       header.style.marginBottom = '20px';
       header.style.borderBottom = '2px solid #333';
       header.style.paddingBottom = '10px';
+      const startDate = event.startDate ? new Date(event.startDate).toLocaleDateString('vi-VN') : '--';
+      const endDate = event.endDate ? new Date(event.endDate).toLocaleDateString('vi-VN') : startDate;
       header.innerHTML = `
         <h1 style="margin: 0; font-size: 24px; color: #333;">${event.name}</h1>
         <p style="margin: 5px 0; font-size: 11px; color: #666;">
           <strong>Địa điểm:</strong> ${event.location} | 
           <strong>Khách hàng:</strong> ${event.client}<br/>
-          <strong>Thời gian:</strong> ${new Date(event.startDate).toLocaleDateString('vi-VN')} - ${new Date(event.endDate).toLocaleDateString('vi-VN')}
+          <strong>Thời gian:</strong> ${startDate} - ${endDate}
         </p>
       `;
       container.appendChild(header);
@@ -98,11 +100,11 @@ export const exportEventChecklist = async (
       row.style.borderBottom = '1px solid #ddd';
       row.style.backgroundColor = idx % 2 === 0 ? '#fff' : '#f9f9f9';
 
-      const cells = [
+    const cells = [
         (idx + 1).toString(),
         inv.name,
         item.quantity.toString(),
-        item.done ? '✓ Hoàn tất' : 'Chưa'
+        '' // ghi chú để trống cho đội kho ghi tay
       ];
 
       cells.forEach((cell, cellIdx) => {
@@ -227,14 +229,11 @@ export const exportEventChecklist = async (
         In lúc: ${new Date().toLocaleString('vi-VN')}
       </p>
     `;
-    footerSection.appendChild(footerSection);
     container.appendChild(footerSection);
-
-    document.body.appendChild(container);
 
     // Convert HTML to Canvas
     const canvas = await html2canvas(container, {
-      scale: quality === 'high' ? 2 : quality === 'medium' ? 1.5 : 1,
+      scale: quality === 'high' ? 1.6 : quality === 'medium' ? 1.2 : 1,
       logging: false,
       backgroundColor: '#ffffff'
     });
@@ -266,10 +265,13 @@ export const exportEventChecklist = async (
     pdf.save(filename);
 
     // Cleanup
-    document.body.removeChild(container);
     console.log(`PDF exported: ${filename}`);
   } catch (error) {
     console.error('Error exporting PDF:', error);
     throw error;
+  } finally {
+    if (container && container.parentNode) {
+      container.parentNode.removeChild(container);
+    }
   }
 };
