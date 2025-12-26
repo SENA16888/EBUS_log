@@ -123,19 +123,7 @@ const App: React.FC = () => {
     setAppState(prev => {
       const exists = prev.inventory.some(i => i.id === item.id);
       const newInventory = exists ? prev.inventory : [...prev.inventory, item];
-      const saleId = `SALE-${item.id}`;
-      const existsSale = (prev.saleItems || []).some(s => s.id === saleId);
-      const newSaleItems = existsSale ? prev.saleItems : [...(prev.saleItems || []), {
-        id: saleId,
-        name: item.name,
-        category: item.category,
-        description: item.description,
-        images: item.imageUrl ? [item.imageUrl] : [],
-        price: Number(item.rentalPrice) || 0,
-        link: item.purchaseLink || '',
-        barcode: item.id
-      }];
-      return { ...prev, inventory: newInventory, saleItems: newSaleItems };
+      return { ...prev, inventory: newInventory };
     });
     addLog(`Đã thêm thiết bị mới: ${item.name}`, 'SUCCESS');
   };
@@ -143,8 +131,7 @@ const App: React.FC = () => {
   const handleBulkImport = (items: InventoryItem[]) => {
     setAppState(prev => {
       let currentInv = [...prev.inventory];
-      let currentSales = [...(prev.saleItems || [])];
-      items.forEach((newItem, idx) => {
+      items.forEach((newItem) => {
         const existingIdx = currentInv.findIndex(i => i.name.toLowerCase() === newItem.name.toLowerCase());
         if (existingIdx > -1) {
           currentInv[existingIdx] = {
@@ -154,13 +141,9 @@ const App: React.FC = () => {
           };
         } else {
           currentInv.push(newItem);
-          const saleId = `SALE-${newItem.id}`;
-          if (!currentSales.some(s => s.id === saleId)) {
-            currentSales.push({ id: saleId, name: newItem.name, category: newItem.category, description: newItem.description, images: newItem.imageUrl ? [newItem.imageUrl] : [], price: Number(newItem.rentalPrice) || 0, link: newItem.purchaseLink || '', barcode: newItem.id });
-          }
         }
       });
-      return { ...prev, inventory: currentInv, saleItems: currentSales };
+      return { ...prev, inventory: currentInv };
     });
     addLog(`Đã nhập hàng loạt ${items.length} hạng mục.`, 'INFO');
   };
