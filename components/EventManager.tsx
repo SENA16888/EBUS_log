@@ -101,6 +101,44 @@ type ResizeDirection = 'right' | 'left' | 'top' | 'bottom' | 'bottom-right' | 'b
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 
+const printStyles = `
+@media print {
+  body {
+    margin: 0;
+    -webkit-print-color-adjust: exact;
+  }
+  #print-slip-wrapper {
+    position: static !important;
+    inset: auto !important;
+    height: auto !important;
+    overflow: visible !important;
+    background: white !important;
+    padding: 0 !important;
+  }
+  #print-slip {
+    box-shadow: none !important;
+    border: none !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 24px !important;
+  }
+  #print-slip table th,
+  #print-slip table td {
+    padding: 8px 10px !important;
+  }
+  #print-slip table {
+    page-break-inside: auto;
+  }
+  #print-slip tr {
+    page-break-inside: avoid;
+    page-break-after: auto;
+  }
+  .print\\:hidden {
+    display: none !important;
+  }
+}
+`;
+
 const getEventSchedule = (event: Event): EventScheduleItem[] => {
   if (event.schedule && event.schedule.length > 0) {
     const normalized = (event.schedule as any[]).map(it => {
@@ -1931,8 +1969,9 @@ export const EventManager: React.FC<EventManagerProps> = ({
 
       {/* MODAL: Print Slip */}
       {showPrintModal && selectedEvent && (
-        <div className="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white w-full max-w-3xl p-10 rounded-xl shadow-2xl" id="print-slip">
+        <div id="print-slip-wrapper" className="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4 overflow-y-auto">
+          <style>{printStyles}</style>
+          <div className="bg-white w-full max-w-4xl p-8 rounded-xl shadow-2xl" id="print-slip">
              <div className="flex justify-between items-start border-b-2 border-black pb-6 mb-8">
                 <div>
                    <h1 className="text-2xl font-black uppercase">Phiếu Xuất Kho Thiết Bị</h1>
@@ -1973,7 +2012,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
                       <td className="p-3 text-slate-500">{idx + 1}</td>
                       <td className="p-3 font-bold text-slate-800">{inventory.find(inv => inv.id === it.itemId)?.name}</td>
                       <td className="p-3 text-center font-black text-blue-600">{it.quantity}</td>
-                      <td className="p-3 text-slate-400 italic">Kiểm tra OK</td>
+                      <td className="p-3 text-slate-400 italic">&nbsp;</td>
                     </tr>
                   ))}
                   {selectedEvent.items.length === 0 && (
