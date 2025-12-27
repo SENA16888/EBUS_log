@@ -1,14 +1,15 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { Event, InventoryItem, EventStatus, ComboPackage, Employee, EventExpense, EventStaffAllocation, Quotation, EventProcessStep, EventLayout, EventLayoutBlock, LayoutPackageSource } from '../types';
+import { Event, InventoryItem, EventStatus, ComboPackage, Employee, EventExpense, EventStaffAllocation, Quotation, EventProcessStep, EventLayout, EventLayoutBlock, LayoutPackageSource, ChecklistDirection, ChecklistStatus, ChecklistSignature } from '../types';
 import { 
   Calendar, MapPin, Box, ArrowLeft, Plus, Minus, X, Layers, 
   Users, DollarSign, Trash2, Truck, BookOpen, 
   Utensils, Wallet, Printer, Coffee, AlertCircle,
   TrendingUp, ArrowRightLeft, UserCheck, Link as LinkIcon,
-  Calculator, ChevronRight, PieChart as PieIcon, FileText, CheckCircle, RefreshCw, Upload, Download
+  Calculator, ChevronRight, PieChart as PieIcon, FileText, CheckCircle, RefreshCw, Upload, Download, ScanBarcode
 } from 'lucide-react';
 import { EventExportModal } from './EventExportModal';
+import { EventChecklist } from './EventChecklist';
 
 interface EventManagerProps {
   events: Event[];
@@ -34,6 +35,9 @@ interface EventManagerProps {
   onFinalizeOrder?: (eventId: string) => void;
   onUpdateEvent?: (eventId: string, updates: Partial<Event>) => void;
   onLinkSaleOrder?: (eventId: string, saleOrderId: string, link: boolean) => void;
+  onChecklistScan?: (payload: { eventId: string; barcode: string; direction: ChecklistDirection; status?: ChecklistStatus; quantity?: number; note?: string }) => void;
+  onUpdateChecklistNote?: (eventId: string, itemId: string, note: string) => void;
+  onSaveChecklistSignature?: (eventId: string, signature: ChecklistSignature | null) => void;
 }
 
 const PROCESS_STEPS_TEMPLATE = [
@@ -199,10 +203,13 @@ export const EventManager: React.FC<EventManagerProps> = ({
   onLinkQuotation,
   onFinalizeOrder,
   onUpdateEvent,
-  onLinkSaleOrder
+  onLinkSaleOrder,
+  onChecklistScan,
+  onUpdateChecklistNote,
+  onSaveChecklistSignature
 }) => {
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
-  const [detailTab, setDetailTab] = useState<'EQUIPMENT' | 'STAFF' | 'COSTS' | 'FLOWS' | 'LAYOUT'>('EQUIPMENT');
+  const [detailTab, setDetailTab] = useState<'EQUIPMENT' | 'STAFF' | 'COSTS' | 'FLOWS' | 'LAYOUT' | 'CHECKLIST'>('EQUIPMENT');
   const [selectedLayoutBlockId, setSelectedLayoutBlockId] = useState<string | null>(null);
   
   // Modals
@@ -981,6 +988,9 @@ export const EventManager: React.FC<EventManagerProps> = ({
                 <button onClick={() => setDetailTab('EQUIPMENT')} className={`pb-3 text-sm font-bold border-b-2 transition flex items-center gap-2 ${detailTab === 'EQUIPMENT' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
                   <Box size={16}/> Thiết Bị
                 </button>
+                <button onClick={() => setDetailTab('CHECKLIST')} className={`pb-3 text-sm font-bold border-b-2 transition flex items-center gap-2 ${detailTab === 'CHECKLIST' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
+                  <ScanBarcode size={16}/> Checklist Barcode
+                </button>
                 <button onClick={() => setDetailTab('STAFF')} className={`pb-3 text-sm font-bold border-b-2 transition flex items-center gap-2 ${detailTab === 'STAFF' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
                   <Users size={16}/> Nhân Sự
                 </button>
@@ -1160,6 +1170,16 @@ export const EventManager: React.FC<EventManagerProps> = ({
                     </div>
                   </div>
                 </div>
+              )}
+
+              {detailTab === 'CHECKLIST' && selectedEvent && (
+                <EventChecklist
+                  event={selectedEvent}
+                  inventory={inventory}
+                  onScan={onChecklistScan || (() => {})}
+                  onUpdateNote={onUpdateChecklistNote}
+                  onSaveSignature={onSaveChecklistSignature}
+                />
               )}
 
               {detailTab === 'STAFF' && (

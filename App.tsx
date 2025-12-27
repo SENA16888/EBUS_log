@@ -9,10 +9,12 @@ import { PackageManager } from './components/PackageManager';
 import { EmployeeManager } from './components/EmployeeManager';
 import { QuotationManager } from './components/QuotationManager';
 import { AIChat } from './components/AIChat';
-import { AppState, InventoryItem, Event, EventStatus, Transaction, TransactionType, ComboPackage, Employee, Quotation, EventStaffAllocation, EventExpense, LogEntry } from './types';
+import { AppState, InventoryItem, Event, EventStatus, Transaction, TransactionType, ComboPackage, Employee, Quotation, EventStaffAllocation, EventExpense, LogEntry, ChecklistDirection, ChecklistStatus, ChecklistSignature, EventChecklist } from './types';
 import { MOCK_INVENTORY, MOCK_EVENTS, MOCK_TRANSACTIONS, MOCK_PACKAGES, MOCK_EMPLOYEES } from './constants';
 import { MessageSquare } from 'lucide-react';
 import { saveAppState, loadAppState, initializeAuth } from './services/firebaseService';
+import { ensureInventoryBarcodes, ensureItemBarcode, findItemByBarcode } from './services/barcodeService';
+import { normalizeChecklist } from './services/checklistService';
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'inventory' | 'events' | 'packages' | 'employees' | 'quotations' | 'sales'>('dashboard');
@@ -21,7 +23,7 @@ const App: React.FC = () => {
   
   const [appState, setAppState] = useState<AppState>(() => {
     return {
-      inventory: MOCK_INVENTORY,
+      inventory: ensureInventoryBarcodes(MOCK_INVENTORY),
       events: MOCK_EVENTS,
       transactions: MOCK_TRANSACTIONS,
       packages: MOCK_PACKAGES,
@@ -33,6 +35,16 @@ const App: React.FC = () => {
     };
   });
 
+  const withDefaults = (state: AppState): AppState => ({
+    ...state,
+    inventory: ensureInventoryBarcodes(state.inventory || []),
+    events: (state.events || []).map(ev => ({
+      ...ev,
+      items: ev.items || [],
+      checklist: normalizeChecklist(ev.checklist)
+    }))
+  });
+
   // Tải dữ liệu từ Firebase khi component mount
   useEffect(() => {
     const loadData = async () => {
@@ -42,10 +54,10 @@ const App: React.FC = () => {
         
         const firebaseState = await loadAppState();
         if (firebaseState) {
-          setAppState(firebaseState);
+          setAppState(withDefaults(firebaseState));
         } else {
           // Nếu Firebase trống, lưu dữ liệu mặc định
-          await saveAppState(appState);
+          await saveAppState(withDefaults(appState));
         }
       } catch (error) {
         console.error('Failed to load data from Firebase:', error);
@@ -53,7 +65,7 @@ const App: React.FC = () => {
         try {
           const raw = localStorage.getItem('ebus_app_state');
           if (raw) {
-            setAppState(JSON.parse(raw) as AppState);
+            setAppState(withDefaults(JSON.parse(raw) as AppState));
           }
         } catch (err) {
           console.warn('Failed to parse stored app state', err);
@@ -99,38 +111,202 @@ const App: React.FC = () => {
     }));
   };
 
-  // --- Handlers cho Kho hàng ---
-  const handleUpdateInventory = (updatedItem: InventoryItem) => {
+  const handleChecklistScan = (payload: { eventId: string; barcode: string; direction: ChecklistDirection; status?: ChecklistStatus; quantity?: number; note?: string }) => {
+    const quantity = Math.max(1, Math.round(payload.quantity || 1));
+    setAppState(prev => {
+      const eventIndex = prev.events.findIndex(e => e.id === payload.eventId);
+      if (eventIndex === -1) return prev;
+      const targetEvent = prev.events[eventIndex];
+      const inventoryItem = findItemByBarcode(prev.inventory, payload.barcode);
+      const timestamp = new Date().toISOString();
+
+      // Nếu không tìm thấy mã, chỉ log thiếu
+      if (!inventoryItem) {
+        const checklist = normalizeChecklist(targetEvent.checklist);
+        const missingLog = {
+          id: `scan-${Date.now()}`,
+          barcode: payload.barcode,
+          direction: payload.direction,
+          status: 'MISSING' as ChecklistStatus,
+          quantity,
+          timestamp,
+          note: payload.note || 'Không tìm thấy mã trong kho'
+        };
+        const updatedEvents = [...prev.events];
+        updatedEvents[eventIndex] = {
+          ...targetEvent,
+          checklist: { ...checklist, logs: [missingLog, ...checklist.logs].slice(0, 50) }
+        };
+        return { ...prev, events: updatedEvents };
+      }
+
+      const checklist = normalizeChecklist(targetEvent.checklist);
+      let appliedQty = quantity;
+      let updatedInventory = prev.inventory;
+      const updatedItems = [...targetEvent.items];
+      const existingItemIndex = updatedItems.findIndex(i => i.itemId === inventoryItem.id);
+      if (existingItemIndex === -1) {
+        updatedItems.push({ itemId: inventoryItem.id, quantity: 0, returnedQuantity: 0 });
+      }
+
+      let newChecklist: EventChecklist = { ...checklist };
+
+      if (payload.direction === 'OUT') {
+        newChecklist = {
+          ...newChecklist,
+          outbound: {
+            ...newChecklist.outbound,
+            [inventoryItem.id]: (newChecklist.outbound[inventoryItem.id] || 0) + appliedQty
+          }
+        };
+      } else {
+        const status = payload.status || 'OK';
+        const allocationIndex = updatedItems.findIndex(i => i.itemId === inventoryItem.id);
+        const allocation = allocationIndex > -1 ? updatedItems[allocationIndex] : { itemId: inventoryItem.id, quantity: 0, returnedQuantity: 0 };
+        const remaining = Math.max(0, (allocation.quantity || 0) - (allocation.returnedQuantity || 0));
+        appliedQty = remaining > 0 ? Math.min(quantity, remaining) : quantity;
+
+        newChecklist = {
+          ...newChecklist,
+          inbound: {
+            ...newChecklist.inbound,
+            [inventoryItem.id]: (newChecklist.inbound[inventoryItem.id] || 0) + appliedQty
+          }
+        };
+
+        if (payload.note) {
+          newChecklist.notes = { ...newChecklist.notes, [inventoryItem.id]: payload.note };
+        }
+        if (status === 'DAMAGED') {
+          newChecklist.damaged = { ...newChecklist.damaged, [inventoryItem.id]: (newChecklist.damaged[inventoryItem.id] || 0) + appliedQty };
+        }
+        if (status === 'LOST') {
+          newChecklist.lost = { ...newChecklist.lost, [inventoryItem.id]: (newChecklist.lost[inventoryItem.id] || 0) + appliedQty };
+        }
+
+        // cập nhật số lượng trả và tồn kho
+        updatedInventory = prev.inventory.map(inv => {
+          if (inv.id !== inventoryItem.id) return inv;
+          if (status === 'DAMAGED') {
+            return {
+              ...inv,
+              brokenQuantity: inv.brokenQuantity + appliedQty,
+              inUseQuantity: Math.max(0, inv.inUseQuantity - appliedQty)
+            };
+          }
+          if (status === 'LOST') {
+            return {
+              ...inv,
+              lostQuantity: inv.lostQuantity + appliedQty,
+              inUseQuantity: Math.max(0, inv.inUseQuantity - appliedQty)
+            };
+          }
+          return {
+            ...inv,
+            availableQuantity: inv.availableQuantity + appliedQty,
+            inUseQuantity: Math.max(0, inv.inUseQuantity - appliedQty)
+          };
+        });
+
+        if (allocationIndex > -1) {
+          const currentAllocation = updatedItems[allocationIndex];
+          updatedItems[allocationIndex] = {
+            ...currentAllocation,
+            returnedQuantity: (currentAllocation.returnedQuantity || 0) + appliedQty
+          };
+        }
+      }
+
+      newChecklist = {
+        ...newChecklist,
+        logs: [
+          {
+            id: `scan-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            itemId: inventoryItem.id,
+            itemName: inventoryItem.name,
+            barcode: inventoryItem.barcode,
+            direction: payload.direction,
+            status: payload.direction === 'OUT' ? 'OK' : (payload.status || 'OK'),
+            quantity: appliedQty,
+            note: payload.note,
+            timestamp
+          },
+          ...newChecklist.logs
+        ].slice(0, 50)
+      };
+
+      const updatedEvents = [...prev.events];
+      updatedEvents[eventIndex] = {
+        ...targetEvent,
+        items: updatedItems,
+        checklist: newChecklist
+      };
+
+      return { ...prev, events: updatedEvents, inventory: updatedInventory };
+    });
+
+    const actionLabel = payload.direction === 'OUT' ? 'quét đi' : (payload.status === 'DAMAGED' ? 'báo hỏng' : payload.status === 'LOST' ? 'báo mất' : 'quét về');
+    addLog(`Checklist: ${actionLabel} ${quantity} x ${payload.barcode}`, 'INFO');
+  };
+
+  const handleUpdateChecklistNote = (eventId: string, itemId: string, note: string) => {
     setAppState(prev => ({
       ...prev,
-      inventory: prev.inventory.map(i => i.id === updatedItem.id ? updatedItem : i),
-      saleItems: (prev.saleItems || []).map(s => s.id === `SALE-${updatedItem.id}` ? {
+      events: prev.events.map(ev => {
+        if (ev.id !== eventId) return ev;
+        const checklist = normalizeChecklist(ev.checklist);
+        const nextNotes = { ...checklist.notes };
+        if (note.trim()) nextNotes[itemId] = note.trim(); else delete nextNotes[itemId];
+        return { ...ev, checklist: { ...checklist, notes: nextNotes } };
+      })
+    }));
+  };
+
+  const handleSaveChecklistSignature = (eventId: string, signature: ChecklistSignature | null) => {
+    setAppState(prev => ({
+      ...prev,
+      events: prev.events.map(ev => ev.id !== eventId ? ev : { ...ev, checklist: { ...normalizeChecklist(ev.checklist), signature: signature || undefined } })
+    }));
+    if (signature) {
+      addLog(`Checklist: ${signature.name} đã ký xác nhận (${signature.direction === 'OUT' ? 'Hàng đi' : 'Hàng về'})`, 'INFO');
+    }
+  };
+
+  // --- Handlers cho Kho hàng ---
+  const handleUpdateInventory = (updatedItem: InventoryItem) => {
+    const itemWithBarcode = ensureItemBarcode(updatedItem);
+    setAppState(prev => ({
+      ...prev,
+      inventory: prev.inventory.map(i => i.id === itemWithBarcode.id ? itemWithBarcode : i),
+      saleItems: (prev.saleItems || []).map(s => s.id === `SALE-${itemWithBarcode.id}` ? {
         ...s,
-        name: updatedItem.name,
-        category: updatedItem.category,
-        description: updatedItem.description,
-        images: updatedItem.imageUrl ? [updatedItem.imageUrl] : s.images,
-        price: Number(updatedItem.rentalPrice) || s.price,
-        link: updatedItem.purchaseLink || s.link,
-        barcode: s.barcode || updatedItem.id
+        name: itemWithBarcode.name,
+        category: itemWithBarcode.category,
+        description: itemWithBarcode.description,
+        images: itemWithBarcode.imageUrl ? [itemWithBarcode.imageUrl] : s.images,
+        price: Number(itemWithBarcode.rentalPrice) || s.price,
+        link: itemWithBarcode.purchaseLink || s.link,
+        barcode: s.barcode || itemWithBarcode.barcode || itemWithBarcode.id
       } : s)
     }));
-    addLog(`Cập nhật thông tin thiết bị: ${updatedItem.name}`, 'INFO');
+    addLog(`Cập nhật thông tin thiết bị: ${itemWithBarcode.name}`, 'INFO');
   };
 
   const handleAddNewItem = (item: InventoryItem) => {
+    const itemWithBarcode = ensureItemBarcode(item);
     setAppState(prev => {
-      const exists = prev.inventory.some(i => i.id === item.id);
-      const newInventory = exists ? prev.inventory : [...prev.inventory, item];
+      const exists = prev.inventory.some(i => i.id === itemWithBarcode.id);
+      const newInventory = exists ? prev.inventory : [...prev.inventory, itemWithBarcode];
       return { ...prev, inventory: newInventory };
     });
-    addLog(`Đã thêm thiết bị mới: ${item.name}`, 'SUCCESS');
+    addLog(`Đã thêm thiết bị mới: ${itemWithBarcode.name}`, 'SUCCESS');
   };
   
   const handleBulkImport = (items: InventoryItem[]) => {
     setAppState(prev => {
       let currentInv = [...prev.inventory];
-      items.forEach((newItem) => {
+      items.forEach((incomingItem, idx) => {
+        const newItem = ensureItemBarcode(incomingItem, `-bulk-${idx}`);
         const existingIdx = currentInv.findIndex(i => i.name.toLowerCase() === newItem.name.toLowerCase());
         if (existingIdx > -1) {
           currentInv[existingIdx] = {
@@ -330,7 +506,8 @@ const App: React.FC = () => {
 
   // --- Handlers cho Sự kiện (Full Logic) ---
   const handleCreateEvent = (event: Event) => {
-    const newState = { ...appState, events: [...appState.events, event] };
+    const eventWithChecklist: Event = { ...event, checklist: normalizeChecklist(event.checklist) };
+    const newState = { ...appState, events: [...appState.events, eventWithChecklist] };
     setAppState(newState);
     saveEventStateImmediate(newState); // Save immediately
     addLog(`Tạo sự kiện mới: "${event.name}"`, 'SUCCESS');
@@ -710,6 +887,9 @@ const App: React.FC = () => {
           onToggleStaffDone={handleToggleEventStaffDone}
           onUpdateEvent={handleUpdateEvent}
           onLinkSaleOrder={handleLinkSaleOrderToEvent}
+          onChecklistScan={handleChecklistScan}
+          onUpdateChecklistNote={handleUpdateChecklistNote}
+          onSaveChecklistSignature={handleSaveChecklistSignature}
         />
       )}
       

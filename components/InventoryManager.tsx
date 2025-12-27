@@ -1,13 +1,37 @@
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { InventoryItem } from '../types';
 import { 
   Search, Plus, Filter, X, Trash2, AlertTriangle, Wrench, ClipboardList,
   ShoppingCart, Info, ArrowUpCircle, Settings2, Link as LinkIcon, CheckCircle, CalendarClock
 } from 'lucide-react';
+import JsBarcode from 'jsbarcode';
+import { generateBarcode, normalizeBarcode } from '../services/barcodeService';
 
 const DEFAULT_CATEGORY = 'Khác';
 const BASE_CATEGORY_SUGGESTIONS = ['STEM', 'Âm thanh', 'Ánh sáng', 'Hiệu ứng', 'Hình ảnh', 'Quảng cáo', 'CSVG'];
+
+const BarcodePreview: React.FC<{ value?: string }> = ({ value }) => {
+  const svgRef = useRef<SVGSVGElement | null>(null);
+
+  useEffect(() => {
+    if (!value || !svgRef.current) return;
+    try {
+      JsBarcode(svgRef.current, value, { format: 'CODE128', height: 40, width: 1.4, displayValue: false, margin: 0 });
+    } catch (err) {
+      console.warn('Không thể vẽ mã vạch', err);
+    }
+  }, [value]);
+
+  if (!value) return null;
+
+  return (
+    <div className="flex flex-col items-center gap-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+      <svg ref={svgRef} className="w-full max-w-[180px]"></svg>
+      <span className="text-[11px] font-mono text-slate-600 tracking-widest">{value}</span>
+    </div>
+  );
+};
 
 interface InventoryManagerProps {
   inventory: InventoryItem[];
@@ -48,6 +72,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
   const [restockQty, setRestockQty] = useState(1);
 
   const [newItemData, setNewItemData] = useState({
+    barcode: '',
     name: '',
     category: DEFAULT_CATEGORY,
     description: '',
@@ -90,8 +115,10 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
   }, [categories, filterCategory]);
 
   const filteredInventory = inventory.filter(item => {
-    const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                          item.id.toLowerCase().includes(searchTerm.toLowerCase());
+    const needle = searchTerm.toLowerCase();
+    const matchesSearch = item.name.toLowerCase().includes(needle) || 
+                          item.id.toLowerCase().includes(needle) ||
+                          (item.barcode || '').toLowerCase().includes(needle);
     const matchesCategory = filterCategory === 'All' || item.category === filterCategory;
     const isLowStock = item.availableQuantity <= (item.minStock || 0);
     const matchesLowStock = !showLowStockOnly || isLowStock;
@@ -103,6 +130,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
     e.stopPropagation();
     setEditingItemId(item.id);
     setNewItemData({
+      barcode: item.barcode || '',
       name: item.name,
       category: item.category,
       description: item.description || '',
@@ -165,8 +193,10 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
       return;
     }
     const category = newItemData.category.trim();
+    const finalBarcode = normalizeBarcode(newItemData.barcode) || generateBarcode(newItemData.name);
     const newItem: InventoryItem = {
       id: `ITEM-${Date.now()}`,
+      barcode: finalBarcode,
       name,
       category,
       description: newItemData.description,
@@ -205,8 +235,10 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
       return;
     }
     const category = newItemData.category.trim();
+    const finalBarcode = normalizeBarcode(newItemData.barcode) || existingItem.barcode || generateBarcode(existingItem.name);
     const updatedItem: InventoryItem = {
       ...existingItem,
+      barcode: finalBarcode,
       name,
       category,
       description: newItemData.description,
@@ -255,6 +287,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
       else if (suffixMatch) { name = suffixMatch[1].trim(); qty = parseInt(suffixMatch[2]); }
       return {
         id: `BULK-${Date.now()}-${idx}`,
+        barcode: generateBarcode(name || raw),
         name: name,
         category: DEFAULT_CATEGORY,
         description: 'Nhập nhanh từ trình văn bản',
@@ -277,6 +310,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
 
   const resetForms = () => {
     setNewItemData({
+      barcode: '',
       name: '', category: DEFAULT_CATEGORY, description: '', location: '', totalQuantity: 1,
       imageUrl: 'https://picsum.photos/200/200', rentalPrice: 0, purchaseLink: '',
       minStock: 5, productionNote: '', plannedPurchase: false, plannedQuantity: 0, plannedEta: ''
@@ -373,6 +407,16 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
                   <div className="flex items-center gap-2 bg-slate-50 p-2 rounded-xl border border-slate-100 text-[11px] font-bold text-slate-600 truncate uppercase tracking-tighter">
                     {item.location || 'Chưa định vị'}
                   </div>
+
+                  {item.barcode && (
+                    <div className="bg-white border border-slate-200 rounded-xl p-2 flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Mã barcode</p>
+                        <p className="text-sm font-mono text-slate-700">{item.barcode}</p>
+                      </div>
+                      <BarcodePreview value={item.barcode} />
+                    </div>
+                  )}
                   
                   {/* Status Indicators */}
                   {(item.maintenanceQuantity > 0 || item.brokenQuantity > 0 || item.lostQuantity > 0) && (
@@ -441,6 +485,30 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
                     {categorySuggestions.map(cat => <option key={cat} value={cat} />)}
                   </datalist>
                   <p className="text-[10px] text-slate-400 mt-1">Gõ để thêm danh mục mới hoặc chọn gợi ý sẵn có.</p>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Mã barcode</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      className="w-full border-2 border-slate-100 rounded-2xl p-4 text-sm font-mono tracking-widest"
+                      placeholder="Để trống hệ thống tự tạo"
+                      value={newItemData.barcode}
+                      onChange={e => setNewItemData({ ...newItemData, barcode: e.target.value })}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setNewItemData(prev => ({ ...prev, barcode: generateBarcode(prev.name || prev.category) }))}
+                      className="px-4 py-2 rounded-2xl bg-slate-800 text-white text-xs font-black uppercase tracking-widest hover:bg-black"
+                    >
+                      Tạo
+                    </button>
+                  </div>
+                  {newItemData.barcode && (
+                    <div className="mt-2">
+                      <BarcodePreview value={normalizeBarcode(newItemData.barcode)} />
+                    </div>
+                  )}
                 </div>
                 <div>
                   <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Tổng số lượng</label>

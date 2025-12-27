@@ -29,6 +29,7 @@ export enum TransactionType {
 
 export interface InventoryItem {
   id: string;
+  barcode?: string;
   name: string;
   category: string;
   description: string;
@@ -48,6 +49,40 @@ export interface InventoryItem {
   plannedPurchase?: boolean;
   plannedQuantity?: number;
   plannedEta?: string;
+}
+
+export type ChecklistDirection = 'OUT' | 'IN';
+export type ChecklistStatus = 'OK' | 'DAMAGED' | 'LOST' | 'MISSING';
+
+export interface ChecklistSignature {
+  name: string;
+  title?: string;
+  signedAt: string;
+  dataUrl?: string;
+  note?: string;
+  direction?: ChecklistDirection;
+}
+
+export interface ChecklistLogEntry {
+  id: string;
+  barcode?: string;
+  itemId?: string;
+  itemName?: string;
+  direction: ChecklistDirection;
+  status: ChecklistStatus;
+  quantity: number;
+  note?: string;
+  timestamp: string;
+}
+
+export interface EventChecklist {
+  outbound: Record<string, number>;
+  inbound: Record<string, number>;
+  damaged: Record<string, number>;
+  lost: Record<string, number>;
+  notes: Record<string, string>;
+  logs: ChecklistLogEntry[];
+  signature?: ChecklistSignature;
 }
 
 export interface SaleItem {
@@ -189,6 +224,7 @@ export interface Event {
   processSteps?: EventProcessStep[];
   layout?: EventLayout;
   saleOrderIds?: string[];
+  checklist?: EventChecklist;
 }
 
 export interface Transaction {
