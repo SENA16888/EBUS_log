@@ -518,7 +518,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
 
   const handleRemoveSelectedItems = () => {
     if (!selectedEventId || selectedItemIds.length === 0 || !onRemoveEventItems) return;
-    const confirmMsg = `Xóa ${selectedItemIds.length} thiết bị khỏi danh sách sự kiện? Những thiết bị này sẽ được trả lại kho.`;
+    const confirmMsg = `Xóa ${selectedItemIds.length} thiết bị khỏi danh sách order sự kiện?`;
     if (!window.confirm(confirmMsg)) return;
     onRemoveEventItems(selectedEventId, selectedItemIds);
     setSelectedItemIds([]);
@@ -986,7 +986,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
               
               <div className="flex flex-wrap gap-4 md:gap-8 mt-6">
                 <button onClick={() => setDetailTab('EQUIPMENT')} className={`pb-3 text-sm font-bold border-b-2 transition flex items-center gap-2 ${detailTab === 'EQUIPMENT' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
-                  <Box size={16}/> Thiết Bị
+                  <Box size={16}/> Order Thiết Bị
                 </button>
                 <button onClick={() => setDetailTab('CHECKLIST')} className={`pb-3 text-sm font-bold border-b-2 transition flex items-center gap-2 ${detailTab === 'CHECKLIST' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
                   <ScanBarcode size={16}/> Checklist Barcode
@@ -1051,12 +1051,10 @@ export const EventManager: React.FC<EventManagerProps> = ({
                             />
                           </th>
                           <th className="px-3 py-3 font-bold text-gray-500 uppercase text-[10px] text-center">Đã xong</th>
-                          <th className="px-4 py-3 font-bold text-gray-500 uppercase text-[10px]">Thiết bị</th>
+                          <th className="px-4 py-3 font-bold text-gray-500 uppercase text-[10px]">Order Thiết bị</th>
                           <th className="px-4 py-3 font-bold text-gray-500 uppercase text-[10px] text-center">Cần</th>
                           <th className="px-4 py-3 font-bold text-gray-500 uppercase text-[10px] text-center">Kho đang có</th>
                           <th className="px-4 py-3 font-bold text-gray-500 uppercase text-[10px] text-center">Thiếu</th>
-                          <th className="px-4 py-3 font-bold text-gray-500 uppercase text-[10px] text-center">Đã trả</th>
-                          <th className="px-4 py-3 w-10"></th>
                         </tr>
                       </thead>
                       <tbody className="divide-y">
@@ -1144,26 +1142,11 @@ export const EventManager: React.FC<EventManagerProps> = ({
                                   {shortageLabel}
                                 </span>
                               </td>
-                              <td className="px-4 py-3 text-center font-black text-green-600">{alloc.returnedQuantity}</td>
-                              <td className="px-4 py-3">
-                                <button 
-                                  onClick={() => onReturnFromEvent(selectedEvent.id, alloc.itemId, 1)} 
-                                  disabled={alloc.returnedQuantity >= alloc.quantity}
-                                  className={`p-1 rounded ${
-                                    alloc.returnedQuantity >= alloc.quantity 
-                                      ? 'text-gray-300 cursor-not-allowed bg-gray-50' 
-                                      : 'text-blue-600 hover:bg-blue-100'
-                                  }`}
-                                  title={alloc.returnedQuantity >= alloc.quantity ? `Đã trả hết ${alloc.quantity} sản phẩm` : `Còn có thể trả ${alloc.quantity - alloc.returnedQuantity} sản phẩm`}
-                                >
-                                  <ArrowLeft size={16}/>
-                                </button>
-                              </td>
                             </tr>
                           );
                         })}
                         {selectedEvent.items.length === 0 && (
-                          <tr><td colSpan={8} className="p-10 text-center text-gray-400 italic">Chưa có thiết bị nào trong danh sách xuất.</td></tr>
+                          <tr><td colSpan={6} className="p-10 text-center text-gray-400 italic">Chưa có thiết bị nào trong danh sách xuất.</td></tr>
                         )}
                       </tbody>
                     </table>

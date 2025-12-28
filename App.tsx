@@ -551,8 +551,6 @@ const App: React.FC = () => {
       itemName = item.name;
       eventName = event.name;
 
-      const updatedInventory = prev.inventory.map(i => i.id === itemId ? { ...i, availableQuantity: i.availableQuantity - qty, inUseQuantity: i.inUseQuantity + qty } : i);
-      
       const updatedEvents = prev.events.map(e => {
         if (e.id === eventId) {
           const itemIdx = e.items.findIndex(ai => ai.itemId === itemId);
@@ -563,9 +561,9 @@ const App: React.FC = () => {
         }
         return e;
       });
-      return { ...prev, inventory: updatedInventory, events: updatedEvents };
+      return { ...prev, events: updatedEvents };
     });
-    addLog(`Xuất ${qty} x "${itemName}" cho sự kiện "${eventName}".`, 'INFO');
+    addLog(`Thêm ${qty} x "${itemName}" vào order sự kiện "${eventName}".`, 'INFO');
   };
 
   const handleExportPackageToEvent = (eventId: string, packageId: string, qty: number) => {
@@ -574,7 +572,6 @@ const App: React.FC = () => {
     if (!pkg || !event) return;
     
     setAppState(prev => {
-      let currentInventory = [...prev.inventory];
       let currentEvents = [...prev.events];
       const eventIndex = currentEvents.findIndex(e => e.id === eventId);
       if (eventIndex === -1) return prev;
@@ -582,50 +579,22 @@ const App: React.FC = () => {
       let eventItems = [...currentEvents[eventIndex].items];
       pkg.items.forEach(pkgItem => {
         const totalQtyNeeded = pkgItem.quantity * qty;
-        const invIdx = currentInventory.findIndex(i => i.id === pkgItem.itemId);
-        
-        if (invIdx > -1) {
-          currentInventory[invIdx] = {
-            ...currentInventory[invIdx],
-            availableQuantity: currentInventory[invIdx].availableQuantity - totalQtyNeeded,
-            inUseQuantity: currentInventory[invIdx].inUseQuantity + totalQtyNeeded
-          };
-          const existInEventIdx = eventItems.findIndex(ei => ei.itemId === pkgItem.itemId);
-          if (existInEventIdx > -1) {
-            eventItems[existInEventIdx] = { ...eventItems[existInEventIdx], quantity: eventItems[existInEventIdx].quantity + totalQtyNeeded };
-          } else {
-            eventItems.push({ itemId: pkgItem.itemId, quantity: totalQtyNeeded, returnedQuantity: 0 });
-          }
+        const existInEventIdx = eventItems.findIndex(ei => ei.itemId === pkgItem.itemId);
+        if (existInEventIdx > -1) {
+          eventItems[existInEventIdx] = { ...eventItems[existInEventIdx], quantity: eventItems[existInEventIdx].quantity + totalQtyNeeded };
+        } else {
+          eventItems.push({ itemId: pkgItem.itemId, quantity: totalQtyNeeded, returnedQuantity: 0 });
         }
       });
       currentEvents[eventIndex] = { ...currentEvents[eventIndex], items: eventItems };
-      return { ...prev, inventory: currentInventory, events: currentEvents };
+      return { ...prev, events: currentEvents };
     });
-    addLog(`Xuất ${qty} x Gói "${pkg.name}" cho sự kiện "${event.name}".`, 'INFO');
+    addLog(`Thêm ${qty} x Gói "${pkg.name}" vào order sự kiện "${event.name}".`, 'INFO');
   };
 
   const handleReturnFromEvent = (eventId: string, itemId: string, qty: number) => {
-    const item = appState.inventory.find(i => i.id === itemId);
-    const event = appState.events.find(e => e.id === eventId);
-    if (!item || !event) return;
-    
-    // Find the item allocation to check if return exceeds exported quantity
-    const itemAlloc = event.items.find(ai => ai.itemId === itemId);
-    if (!itemAlloc) return;
-    
-    // Validate: returned quantity + new qty should not exceed exported quantity
-    const maxReturnableQty = itemAlloc.quantity - itemAlloc.returnedQuantity;
-    if (qty > maxReturnableQty) {
-      alert(`Chỉ có thể trả lại tối đa ${maxReturnableQty} sản phẩm (đã trả ${itemAlloc.returnedQuantity}/${itemAlloc.quantity})`);
-      return;
-    }
-    
-    setAppState(prev => ({
-      ...prev,
-      inventory: prev.inventory.map(i => i.id === itemId ? { ...i, availableQuantity: i.availableQuantity + qty, inUseQuantity: i.inUseQuantity - qty } : i),
-      events: prev.events.map(e => e.id === eventId ? { ...e, items: e.items.map(ai => ai.itemId === itemId ? { ...ai, returnedQuantity: ai.returnedQuantity + qty } : ai) } : e)
-    }));
-    addLog(`Nhận lại ${qty} x "${item.name}" từ sự kiện "${event.name}".`, 'INFO');
+    // Manual returns are now handled via checklist scans; keep no-op to avoid affecting inventory.
+    console.warn('handleReturnFromEvent is deprecated; use checklist scans for stock movements.');
   };
 
   const handleUpdateEventItemQuantity = (eventId: string, itemId: string, nextQty: number) => {
@@ -658,13 +627,6 @@ const App: React.FC = () => {
 
       const delta = safeQty - allocation.quantity;
 
-      const inventory = prev.inventory.map(inv => {
-        if (inv.id !== itemId) return inv;
-        const availableQuantity = inv.availableQuantity - delta;
-        const inUseQuantity = Math.max(0, inv.inUseQuantity + delta);
-        return { ...inv, availableQuantity, inUseQuantity };
-      });
-
       const events = prev.events.map(ev => {
         if (ev.id !== eventId) return ev;
         return {
@@ -673,7 +635,7 @@ const App: React.FC = () => {
         };
       });
 
-      return { ...prev, inventory, events };
+      return { ...prev, events };
     });
 
     if (changed) {
@@ -687,22 +649,11 @@ const App: React.FC = () => {
       if (!event) return prev;
       const idSet = new Set(itemIds);
 
-      const updatedInventory = prev.inventory.map(inv => {
-        const alloc = event.items.find(ai => ai.itemId === inv.id && idSet.has(ai.itemId));
-        if (!alloc) return inv;
-        const outstanding = Math.max(0, (alloc.quantity || 0) - (alloc.returnedQuantity || 0));
-        return {
-          ...inv,
-          availableQuantity: inv.availableQuantity + outstanding,
-          inUseQuantity: Math.max(0, inv.inUseQuantity - outstanding)
-        };
-      });
-
       const updatedEvents = prev.events.map(e => e.id !== eventId ? e : { ...e, items: e.items.filter(ai => !idSet.has(ai.itemId)) });
-      return { ...prev, inventory: updatedInventory, events: updatedEvents };
+      return { ...prev, events: updatedEvents };
     });
     const eventName = appState.events.find(e => e.id === eventId)?.name || '';
-    addLog(`Xóa ${itemIds.length} thiết bị khỏi sự kiện "${eventName}" và hoàn kho.`, 'INFO');
+    addLog(`Xóa ${itemIds.length} thiết bị khỏi order sự kiện "${eventName}".`, 'INFO');
   };
 
   const handleAssignStaff = (eventId: string, staffData: EventStaffAllocation) => {
@@ -785,19 +736,6 @@ const App: React.FC = () => {
         }
       });
 
-      // Update inventory based on delta between target qty and current qty (only for quotation items)
-      const inventory = prev.inventory.map(inv => {
-        if (!targetMap.has(inv.id)) return inv;
-        const currentQty = existingMap.get(inv.id)?.quantity || 0;
-        const targetQty = targetMap.get(inv.id) || 0;
-        const delta = targetQty - currentQty;
-        return {
-          ...inv,
-          availableQuantity: inv.availableQuantity - delta,
-          inUseQuantity: inv.inUseQuantity + delta
-        };
-      });
-
       const updatedItems: typeof targetEvent.items = [];
 
       // Keep non-quotation items unchanged
@@ -822,7 +760,7 @@ const App: React.FC = () => {
       const updatedEvents = prev.events.map(e => e.id === eventId ? { ...e, items: updatedItems } : e);
 
       addLog(`Đồng bộ thiết bị từ báo giá ${quotationId} vào sự kiện "${targetEvent.name}" (ghi đè số lượng theo báo giá, giữ lại thiết bị ngoài báo giá).`, 'SUCCESS');
-      return { ...prev, inventory, events: updatedEvents };
+      return { ...prev, events: updatedEvents };
     });
   };
 
