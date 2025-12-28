@@ -63,6 +63,34 @@ export interface ChecklistSignature {
   direction?: ChecklistDirection;
 }
 
+export interface ChecklistSignaturePair {
+  manager?: ChecklistSignature;
+  operator?: ChecklistSignature;
+  note?: string;
+  direction: ChecklistDirection;
+}
+
+export interface ChecklistSlipItem {
+  itemId: string;
+  name?: string;
+  orderQty: number;
+  scannedOut: number;
+  scannedIn: number;
+  damaged: number;
+  lost: number;
+  missing: number;
+}
+
+export interface ChecklistSlip {
+  id: string;
+  direction: ChecklistDirection;
+  createdAt: string;
+  manager?: ChecklistSignature;
+  operator?: ChecklistSignature;
+  note?: string;
+  items: ChecklistSlipItem[];
+}
+
 export interface ChecklistLogEntry {
   id: string;
   barcode?: string;
@@ -82,7 +110,12 @@ export interface EventChecklist {
   lost: Record<string, number>;
   notes: Record<string, string>;
   logs: ChecklistLogEntry[];
-  signature?: ChecklistSignature;
+  signature?: ChecklistSignature; // legacy single signature
+  signatures?: {
+    outbound?: ChecklistSignaturePair;
+    inbound?: ChecklistSignaturePair;
+  };
+  slips?: ChecklistSlip[];
 }
 
 export interface SaleItem {

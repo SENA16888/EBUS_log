@@ -262,13 +262,82 @@ const App: React.FC = () => {
     }));
   };
 
-  const handleSaveChecklistSignature = (eventId: string, signature: ChecklistSignature | null) => {
-    setAppState(prev => ({
-      ...prev,
-      events: prev.events.map(ev => ev.id !== eventId ? ev : { ...ev, checklist: { ...normalizeChecklist(ev.checklist), signature: signature || undefined } })
-    }));
-    if (signature) {
-      addLog(`Checklist: ${signature.name} đã ký xác nhận (${signature.direction === 'OUT' ? 'Hàng đi' : 'Hàng về'})`, 'INFO');
+  const handleSaveChecklistSignature = (eventId: string, payload: { direction: ChecklistDirection; manager: ChecklistSignature; operator: ChecklistSignature; note?: string; itemsSnapshot?: { itemId: string; name?: string; orderQty: number; scannedOut: number; scannedIn: number; damaged: number; lost: number; missing: number; }[]; createSlip?: boolean }) => {
+    setAppState(prev => {
+      const event = prev.events.find(ev => ev.id === eventId);
+      if (!event) return prev;
+      const checklist = normalizeChecklist(event.checklist);
+      const key = payload.direction === 'OUT' ? 'outbound' : 'inbound';
+
+      const snapshot = (payload.itemsSnapshot && payload.itemsSnapshot.length > 0)
+        ? payload.itemsSnapshot
+        : (() => {
+            const ids = new Set<string>();
+            event.items.forEach(it => ids.add(it.itemId));
+            Object.keys(checklist.outbound || {}).forEach(id => ids.add(id));
+            Object.keys(checklist.inbound || {}).forEach(id => ids.add(id));
+            return Array.from(ids).map(id => {
+              const inv = prev.inventory.find(i => i.id === id);
+              const alloc = event.items.find(ai => ai.itemId === id);
+              return {
+                itemId: id,
+                name: inv?.name,
+                orderQty: alloc?.quantity || 0,
+                scannedOut: checklist.outbound[id] || 0,
+                scannedIn: checklist.inbound[id] || 0,
+                damaged: checklist.damaged[id] || 0,
+                lost: checklist.lost[id] || 0,
+                missing: Math.max(0, (alloc?.quantity || 0) - (checklist.inbound[id] || 0) - (checklist.lost[id] || 0))
+              };
+            });
+          })();
+
+      const nextEvents = prev.events.map(ev => {
+        if (ev.id !== eventId) return ev;
+        const nextSignatures = { ...(checklist.signatures || {}), [key]: { manager: payload.manager, operator: payload.operator, note: payload.note, direction: payload.direction } };
+        const slips = payload.createSlip
+          ? [
+              {
+                id: `SLIP-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                direction: payload.direction,
+                createdAt: new Date().toISOString(),
+                manager: payload.manager,
+                operator: payload.operator,
+                note: payload.note,
+                items: snapshot
+              },
+              ...(checklist.slips || [])
+            ]
+          : checklist.slips || [];
+        return { ...ev, checklist: { ...checklist, signatures: nextSignatures, slips } };
+      });
+
+      const updatedInventory = payload.createSlip
+        ? prev.inventory.map(inv => {
+            const itemSnap = snapshot.find(s => s.itemId === inv.id);
+            if (!itemSnap) return inv;
+            const qty = payload.direction === 'OUT' ? itemSnap.scannedOut : itemSnap.scannedIn;
+            if (!qty || qty <= 0) return inv;
+            if (payload.direction === 'OUT') {
+              return {
+                ...inv,
+                availableQuantity: inv.availableQuantity - qty,
+                inUseQuantity: inv.inUseQuantity + qty
+              };
+            }
+            return {
+              ...inv,
+              availableQuantity: inv.availableQuantity + qty,
+              inUseQuantity: Math.max(0, inv.inUseQuantity - qty)
+            };
+          })
+        : prev.inventory;
+
+      return { ...prev, inventory: updatedInventory, events: nextEvents };
+    });
+    addLog(`Checklist: đã lưu chữ ký ${payload.direction === 'OUT' ? 'hàng đi' : 'hàng về'} cho sự kiện ${eventId}.`, 'INFO');
+    if (payload.createSlip) {
+      addLog(`Checklist: tạo phiếu ${payload.direction === 'OUT' ? 'xuất kho' : 'trả kho'} (hai chữ ký) và cập nhật kho.`, 'SUCCESS');
     }
   };
 

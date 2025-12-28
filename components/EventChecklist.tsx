@@ -9,7 +9,7 @@ interface EventChecklistProps {
   inventory: InventoryItem[];
   onScan: (payload: { eventId: string; barcode: string; direction: ChecklistDirection; status?: ChecklistStatus; quantity?: number; note?: string }) => void;
   onUpdateNote?: (eventId: string, itemId: string, note: string) => void;
-  onSaveSignature?: (eventId: string, signature: ChecklistSignature | null) => void;
+  onSaveSignature?: (eventId: string, payload: { direction: ChecklistDirection; manager: ChecklistSignature; operator: ChecklistSignature; note?: string; itemsSnapshot?: { itemId: string; name?: string; orderQty: number; scannedOut: number; scannedIn: number; damaged: number; lost: number; missing: number; }[]; createSlip?: boolean }) => void;
 }
 
 const SignaturePad: React.FC<{ value?: string; onChange: (dataUrl: string | null) => void }> = ({ value, onChange }) => {
@@ -115,9 +115,12 @@ export const EventChecklist: React.FC<EventChecklistProps> = ({ event, inventory
   const [status, setStatus] = useState<ChecklistStatus>('OK');
   const [quantity, setQuantity] = useState(1);
   const [note, setNote] = useState('');
-  const [signerName, setSignerName] = useState('');
-  const [signerTitle, setSignerTitle] = useState('');
-  const [signatureData, setSignatureData] = useState<string | null>(null);
+  const [managerName, setManagerName] = useState('');
+  const [managerTitle, setManagerTitle] = useState('');
+  const [managerSignatureData, setManagerSignatureData] = useState<string | null>(null);
+  const [operatorName, setOperatorName] = useState('');
+  const [operatorTitle, setOperatorTitle] = useState('');
+  const [operatorSignatureData, setOperatorSignatureData] = useState<string | null>(null);
   const [signNote, setSignNote] = useState('');
 
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -132,13 +135,26 @@ export const EventChecklist: React.FC<EventChecklistProps> = ({ event, inventory
   }, [direction]);
 
   useEffect(() => {
-    if (event.checklist?.signature) {
-      setSignerName(event.checklist.signature.name || '');
-      setSignerTitle(event.checklist.signature.title || '');
-      setSignNote(event.checklist.signature.note || '');
-      setSignatureData(event.checklist.signature.dataUrl || null);
+    const key = direction === 'OUT' ? 'outbound' : 'inbound';
+    const pair = event.checklist?.signatures?.[key];
+    if (pair) {
+      setManagerName(pair.manager?.name || '');
+      setManagerTitle(pair.manager?.title || '');
+      setManagerSignatureData(pair.manager?.dataUrl || null);
+      setOperatorName(pair.operator?.name || '');
+      setOperatorTitle(pair.operator?.title || '');
+      setOperatorSignatureData(pair.operator?.dataUrl || null);
+      setSignNote(pair.note || '');
+    } else {
+      setManagerName('');
+      setManagerTitle('');
+      setManagerSignatureData(null);
+      setOperatorName('');
+      setOperatorTitle('');
+      setOperatorSignatureData(null);
+      setSignNote('');
     }
-  }, [event.checklist?.signature]);
+  }, [direction, event.checklist?.signatures]);
 
   const itemIds = useMemo(() => {
     const ids = new Set<string>();
@@ -218,21 +234,110 @@ export const EventChecklist: React.FC<EventChecklistProps> = ({ event, inventory
     onUpdateNote?.(event.id, itemId, value);
   };
 
-  const handleSaveSignature = () => {
+  const handleSaveSignature = (createSlip?: boolean) => {
     if (!onSaveSignature) return;
-    if (!signerName.trim() || !signatureData) {
-      alert('Vui lòng nhập tên người ký và ký vào khung.');
+    if (!managerName.trim() || !managerSignatureData || !operatorName.trim() || !operatorSignatureData) {
+      alert('Vui lòng nhập đủ thông tin và chữ ký của cả Quản lý kho và Người lập phiếu/kiểm hàng.');
       return;
     }
-    const signature: ChecklistSignature = {
-      name: signerName.trim(),
-      title: signerTitle.trim() || undefined,
+    const manager: ChecklistSignature = {
+      name: managerName.trim(),
+      title: managerTitle.trim() || undefined,
       note: signNote.trim() || undefined,
       signedAt: new Date().toISOString(),
-      dataUrl: signatureData,
+      dataUrl: managerSignatureData,
       direction
     };
-    onSaveSignature(event.id, signature);
+    const operator: ChecklistSignature = {
+      name: operatorName.trim(),
+      title: operatorTitle.trim() || undefined,
+      note: signNote.trim() || undefined,
+      signedAt: new Date().toISOString(),
+      dataUrl: operatorSignatureData,
+      direction
+    };
+    const snapshot = rows.map(row => ({
+      itemId: row.itemId,
+      name: row.name,
+      orderQty: row.orderQty,
+      scannedOut: row.scannedOut,
+      scannedIn: row.scannedIn,
+      damaged: row.damaged,
+      lost: row.lost,
+      missing: row.missing
+    }));
+    onSaveSignature(event.id, { direction, manager, operator, note: signNote.trim() || undefined, itemsSnapshot: snapshot, createSlip: createSlip ?? false });
+  };
+  const slips = checklist.slips || [];
+
+  const handleViewSlip = (slipId: string) => {
+    const slip = slips.find(s => s.id === slipId);
+    if (!slip) return;
+    const win = window.open('', '_blank');
+    if (!win) return;
+    const rowsHtml = slip.items.map(item => `
+      <tr>
+        <td style="padding:6px;border:1px solid #e2e8f0">${item.name || item.itemId}</td>
+        <td style="padding:6px;border:1px solid #e2e8f0;text-align:center">${item.orderQty}</td>
+        <td style="padding:6px;border:1px solid #e2e8f0;text-align:center">${item.scannedOut}</td>
+        <td style="padding:6px;border:1px solid #e2e8f0;text-align:center">${item.scannedIn}</td>
+        <td style="padding:6px;border:1px solid #e2e8f0;text-align:center">${item.damaged}</td>
+        <td style="padding:6px;border:1px solid #e2e8f0;text-align:center">${item.lost}</td>
+        <td style="padding:6px;border:1px solid #e2e8f0;text-align:center">${item.missing}</td>
+      </tr>
+    `).join('');
+    win.document.write(`
+      <html>
+        <head>
+          <title>Phiếu ${slip.direction === 'OUT' ? 'xuất kho' : 'trả kho'} - ${event.name}</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 16px; color: #0f172a; }
+            h1 { margin: 0 0 4px 0; }
+            .muted { color: #475569; font-size: 12px; }
+            table { border-collapse: collapse; width: 100%; margin-top: 12px; font-size: 13px; }
+            .sig { display: flex; gap: 32px; margin-top: 20px; }
+            .sig-box { flex:1; text-align: center; }
+            .sig-img { width: 160px; height: 80px; object-fit: contain; border: 1px solid #e2e8f0; }
+          </style>
+        </head>
+        <body>
+          <h1>Phiếu ${slip.direction === 'OUT' ? 'xuất kho' : 'trả kho'}</h1>
+          <div class="muted">${event.name} • ${event.client}</div>
+          <div class="muted">Thời gian: ${new Date(slip.createdAt).toLocaleString('vi-VN')}</div>
+          <div class="muted">Ghi chú: ${slip.note || '---'}</div>
+          <table>
+            <thead>
+              <tr>
+                <th style="padding:6px;border:1px solid #e2e8f0;text-align:left">Thiết bị</th>
+                <th style="padding:6px;border:1px solid #e2e8f0">Order</th>
+                <th style="padding:6px;border:1px solid #e2e8f0">Đã quét đi</th>
+                <th style="padding:6px;border:1px solid #e2e8f0">Đã về</th>
+                <th style="padding:6px;border:1px solid #e2e8f0">Hỏng</th>
+                <th style="padding:6px;border:1px solid #e2e8f0">Mất</th>
+                <th style="padding:6px;border:1px solid #e2e8f0">Thiếu</th>
+              </tr>
+            </thead>
+            <tbody>${rowsHtml}</tbody>
+          </table>
+          <div class="sig">
+            <div class="sig-box">
+              <div class="muted">Quản lý kho</div>
+              ${slip.manager?.dataUrl ? `<img class="sig-img" src="${slip.manager.dataUrl}" />` : '<div class="sig-img"></div>'}
+              <div>${slip.manager?.name || ''}</div>
+              <div class="muted">${slip.manager?.title || ''}</div>
+            </div>
+            <div class="sig-box">
+              <div class="muted">Người lập phiếu / Kiểm hàng</div>
+              ${slip.operator?.dataUrl ? `<img class="sig-img" src="${slip.operator.dataUrl}" />` : '<div class="sig-img"></div>'}
+              <div>${slip.operator?.name || ''}</div>
+              <div class="muted">${slip.operator?.title || ''}</div>
+            </div>
+          </div>
+          <script>window.print();</script>
+        </body>
+      </html>
+    `);
+    win.document.close();
   };
 
   return (
@@ -451,23 +556,45 @@ export const EventChecklist: React.FC<EventChecklistProps> = ({ event, inventory
           <div className="flex items-center justify-between mb-3">
             <div>
               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Chữ ký online</p>
-              <h4 className="font-bold text-slate-800">Xác nhận checklist</h4>
+              <h4 className="font-bold text-slate-800">Xác nhận {direction === 'OUT' ? 'phiếu xuất kho' : 'phiếu trả kho'}</h4>
             </div>
             <PenLine size={18} className="text-slate-400" />
           </div>
-          <div className="space-y-2">
-            <input
-              value={signerName}
-              onChange={e => setSignerName(e.target.value)}
-              className="w-full border border-slate-200 rounded-lg p-2 text-sm"
-              placeholder="Tên người ký"
-            />
-            <input
-              value={signerTitle}
-              onChange={e => setSignerTitle(e.target.value)}
-              className="w-full border border-slate-200 rounded-lg p-2 text-sm"
-              placeholder="Chức vụ / bộ phận"
-            />
+          <div className="space-y-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="p-3 border border-slate-200 rounded-xl">
+                <p className="text-[11px] font-black text-slate-600 uppercase mb-2">Quản lý kho</p>
+                <input
+                  value={managerName}
+                  onChange={e => setManagerName(e.target.value)}
+                  className="w-full border border-slate-200 rounded-lg p-2 text-sm mb-2"
+                  placeholder="Tên quản lý kho"
+                />
+                <input
+                  value={managerTitle}
+                  onChange={e => setManagerTitle(e.target.value)}
+                  className="w-full border border-slate-200 rounded-lg p-2 text-sm mb-2"
+                  placeholder="Chức vụ / bộ phận"
+                />
+                <SignaturePad value={managerSignatureData || undefined} onChange={setManagerSignatureData} />
+              </div>
+              <div className="p-3 border border-slate-200 rounded-xl">
+                <p className="text-[11px] font-black text-slate-600 uppercase mb-2">Người lập phiếu / Kiểm hàng</p>
+                <input
+                  value={operatorName}
+                  onChange={e => setOperatorName(e.target.value)}
+                  className="w-full border border-slate-200 rounded-lg p-2 text-sm mb-2"
+                  placeholder="Tên người lập phiếu/kiểm hàng"
+                />
+                <input
+                  value={operatorTitle}
+                  onChange={e => setOperatorTitle(e.target.value)}
+                  className="w-full border border-slate-200 rounded-lg p-2 text-sm mb-2"
+                  placeholder="Chức vụ / bộ phận"
+                />
+                <SignaturePad value={operatorSignatureData || undefined} onChange={setOperatorSignatureData} />
+              </div>
+            </div>
             <textarea
               value={signNote}
               onChange={e => setSignNote(e.target.value)}
@@ -475,20 +602,43 @@ export const EventChecklist: React.FC<EventChecklistProps> = ({ event, inventory
               placeholder="Ghi chú thêm trên phiếu"
               rows={2}
             />
-            <SignaturePad value={signatureData || undefined} onChange={setSignatureData} />
-            <button
-              type="button"
-              onClick={handleSaveSignature}
-              className="w-full bg-blue-600 text-white py-2 rounded-xl font-bold hover:bg-blue-700 flex items-center justify-center gap-2"
-            >
-              <PenLine size={16}/> Lưu chữ ký
-            </button>
-            {event.checklist?.signature && (
-              <div className="border border-slate-200 rounded-xl p-3 text-xs text-slate-600 bg-slate-50">
-                <div className="font-bold text-slate-800">Đã ký bởi {event.checklist.signature.name}</div>
-                {event.checklist.signature.title && <div>{event.checklist.signature.title}</div>}
-                <div>Thời gian: {new Date(event.checklist.signature.signedAt).toLocaleString('vi-VN')}</div>
-                {event.checklist.signature.note && <div className="mt-1">Ghi chú: {event.checklist.signature.note}</div>}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => handleSaveSignature(false)}
+                className="w-full bg-slate-800 text-white py-2 rounded-xl font-bold hover:bg-black flex items-center justify-center gap-2"
+              >
+                <PenLine size={16}/> Lưu chữ ký (không tạo phiếu)
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSaveSignature(true)}
+                className="w-full bg-blue-600 text-white py-2 rounded-xl font-bold hover:bg-blue-700 flex items-center justify-center gap-2"
+              >
+                <PenLine size={16}/> Lưu &amp; xuất phiếu {direction === 'OUT' ? 'xuất kho' : 'trả kho'}
+              </button>
+            </div>
+            {slips.length > 0 && (
+              <div className="border border-slate-200 rounded-xl p-3 bg-slate-50">
+                <p className="text-[11px] font-black text-slate-600 uppercase mb-2">Lịch sử phiếu</p>
+                <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                  {slips.map(slip => (
+                    <div key={slip.id} className="p-2 rounded-lg bg-white border border-slate-200 flex items-center justify-between">
+                      <div>
+                        <div className="font-semibold text-slate-800">{slip.direction === 'OUT' ? 'Phiếu xuất kho' : 'Phiếu trả kho'}</div>
+                        <div className="text-[11px] text-slate-500">{new Date(slip.createdAt).toLocaleString('vi-VN')}</div>
+                        <div className="text-[12px] text-slate-600">QL kho: {slip.manager?.name || '---'} • Lập phiếu: {slip.operator?.name || '---'}</div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleViewSlip(slip.id)}
+                        className="text-blue-600 text-xs font-bold hover:underline"
+                      >
+                        Xem / In
+                      </button>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>

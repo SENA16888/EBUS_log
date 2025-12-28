@@ -6,7 +6,12 @@ export const createEmptyChecklist = (): EventChecklist => ({
   damaged: {},
   lost: {},
   notes: {},
-  logs: []
+  logs: [],
+  signatures: {
+    outbound: undefined,
+    inbound: undefined
+  },
+  slips: []
 });
 
 export const normalizeChecklist = (raw?: EventChecklist): EventChecklist => {
@@ -18,6 +23,8 @@ export const normalizeChecklist = (raw?: EventChecklist): EventChecklist => {
     lost: raw.lost || {},
     notes: raw.notes || {},
     logs: raw.logs || [],
-    signature: raw.signature
+    signature: raw.signature,
+    signatures: raw.signatures || { outbound: raw.signature ? { manager: raw.signature, direction: 'OUT' } : undefined, inbound: undefined },
+    slips: raw.slips || []
   };
 };

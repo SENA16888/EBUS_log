@@ -37,7 +37,7 @@ interface EventManagerProps {
   onLinkSaleOrder?: (eventId: string, saleOrderId: string, link: boolean) => void;
   onChecklistScan?: (payload: { eventId: string; barcode: string; direction: ChecklistDirection; status?: ChecklistStatus; quantity?: number; note?: string }) => void;
   onUpdateChecklistNote?: (eventId: string, itemId: string, note: string) => void;
-  onSaveChecklistSignature?: (eventId: string, signature: ChecklistSignature | null) => void;
+  onSaveChecklistSignature?: (eventId: string, payload: { direction: ChecklistDirection; manager: ChecklistSignature; operator: ChecklistSignature; note?: string; itemsSnapshot?: { itemId: string; name?: string; orderQty: number; scannedOut: number; scannedIn: number; damaged: number; lost: number; missing: number; }[]; createSlip?: boolean }) => void;
 }
 
 const PROCESS_STEPS_TEMPLATE = [
