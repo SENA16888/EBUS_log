@@ -23,6 +23,14 @@ export const ensureInventoryBarcodes = (items: InventoryItem[]) => {
   return items.map((item, idx) => ensureItemBarcode(item, `-${idx}-${now}`));
 };
 
+export const findDuplicateBarcodeItem = (inventory: InventoryItem[], barcode?: string, excludeId?: string) => {
+  const normalized = normalizeBarcode(barcode || '');
+  if (!normalized) return undefined;
+  return inventory.find(
+    item => item.id !== excludeId && normalizeBarcode(item.barcode || '') === normalized
+  );
+};
+
 export const findItemByBarcode = (inventory: InventoryItem[], code: string) => {
   const normalized = normalizeBarcode(code);
   if (!normalized) return undefined;

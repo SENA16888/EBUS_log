@@ -13,7 +13,7 @@ import { AppState, InventoryItem, Event, EventStatus, Transaction, TransactionTy
 import { MOCK_INVENTORY, MOCK_EVENTS, MOCK_TRANSACTIONS, MOCK_PACKAGES, MOCK_EMPLOYEES } from './constants';
 import { MessageSquare } from 'lucide-react';
 import { saveAppState, loadAppState, initializeAuth } from './services/firebaseService';
-import { ensureInventoryBarcodes, ensureItemBarcode, findItemByBarcode } from './services/barcodeService';
+import { ensureInventoryBarcodes, ensureItemBarcode, findDuplicateBarcodeItem, findItemByBarcode } from './services/barcodeService';
 import { normalizeChecklist } from './services/checklistService';
 
 const App: React.FC = () => {
@@ -275,31 +275,59 @@ const App: React.FC = () => {
   // --- Handlers cho Kho hàng ---
   const handleUpdateInventory = (updatedItem: InventoryItem) => {
     const itemWithBarcode = ensureItemBarcode(updatedItem);
-    setAppState(prev => ({
-      ...prev,
-      inventory: prev.inventory.map(i => i.id === itemWithBarcode.id ? itemWithBarcode : i),
-      saleItems: (prev.saleItems || []).map(s => s.id === `SALE-${itemWithBarcode.id}` ? {
-        ...s,
-        name: itemWithBarcode.name,
-        category: itemWithBarcode.category,
-        description: itemWithBarcode.description,
-        images: itemWithBarcode.imageUrl ? [itemWithBarcode.imageUrl] : s.images,
-        price: Number(itemWithBarcode.rentalPrice) || s.price,
-        link: itemWithBarcode.purchaseLink || s.link,
-        barcode: s.barcode || itemWithBarcode.barcode || itemWithBarcode.id
-      } : s)
-    }));
+    let duplicateOwner = '';
+    setAppState(prev => {
+      const duplicate = findDuplicateBarcodeItem(prev.inventory, itemWithBarcode.barcode, itemWithBarcode.id);
+      if (duplicate) {
+        duplicateOwner = duplicate.name;
+        return prev;
+      }
+      return {
+        ...prev,
+        inventory: prev.inventory.map(i => i.id === itemWithBarcode.id ? itemWithBarcode : i),
+        saleItems: (prev.saleItems || []).map(s => s.id === `SALE-${itemWithBarcode.id}` ? {
+          ...s,
+          name: itemWithBarcode.name,
+          category: itemWithBarcode.category,
+          description: itemWithBarcode.description,
+          images: itemWithBarcode.imageUrl ? [itemWithBarcode.imageUrl] : s.images,
+          price: Number(itemWithBarcode.rentalPrice) || s.price,
+          link: itemWithBarcode.purchaseLink || s.link,
+          barcode: s.barcode || itemWithBarcode.barcode || itemWithBarcode.id
+        } : s)
+      };
+    });
+    if (duplicateOwner) {
+      alert(`Không thể lưu vì mã barcode đã được dùng cho "${duplicateOwner}".`);
+      addLog(`Cập nhật thiết bị thất bại do trùng barcode với "${duplicateOwner}".`, 'WARNING');
+      return;
+    }
     addLog(`Cập nhật thông tin thiết bị: ${itemWithBarcode.name}`, 'INFO');
   };
 
   const handleAddNewItem = (item: InventoryItem) => {
     const itemWithBarcode = ensureItemBarcode(item);
+    let duplicateOwner = '';
+    let added = false;
     setAppState(prev => {
+      const duplicate = findDuplicateBarcodeItem(prev.inventory, itemWithBarcode.barcode, itemWithBarcode.id);
+      if (duplicate) {
+        duplicateOwner = duplicate.name;
+        return prev;
+      }
       const exists = prev.inventory.some(i => i.id === itemWithBarcode.id);
+      added = !exists;
       const newInventory = exists ? prev.inventory : [...prev.inventory, itemWithBarcode];
       return { ...prev, inventory: newInventory };
     });
-    addLog(`Đã thêm thiết bị mới: ${itemWithBarcode.name}`, 'SUCCESS');
+    if (duplicateOwner) {
+      alert(`Mã barcode "${itemWithBarcode.barcode}" đã thuộc về "${duplicateOwner}". Không thể thêm thiết bị mới.`);
+      addLog(`Thêm thiết bị thất bại do trùng barcode với "${duplicateOwner}".`, 'WARNING');
+      return;
+    }
+    if (added) {
+      addLog(`Đã thêm thiết bị mới: ${itemWithBarcode.name}`, 'SUCCESS');
+    }
   };
   
   const handleBulkImport = (items: InventoryItem[]) => {

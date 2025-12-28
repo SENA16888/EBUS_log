@@ -6,7 +6,7 @@ import {
   ShoppingCart, Info, ArrowUpCircle, Settings2, Link as LinkIcon, CheckCircle, CalendarClock
 } from 'lucide-react';
 import JsBarcode from 'jsbarcode';
-import { generateBarcode, normalizeBarcode } from '../services/barcodeService';
+import { findDuplicateBarcodeItem, generateBarcode, normalizeBarcode } from '../services/barcodeService';
 
 const DEFAULT_CATEGORY = 'Khác';
 const BASE_CATEGORY_SUGGESTIONS = ['STEM', 'Âm thanh', 'Ánh sáng', 'Hiệu ứng', 'Hình ảnh', 'Quảng cáo', 'CSVG'];
@@ -194,6 +194,11 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
     }
     const category = newItemData.category.trim();
     const finalBarcode = normalizeBarcode(newItemData.barcode) || generateBarcode(newItemData.name);
+    const duplicateItem = findDuplicateBarcodeItem(inventory, finalBarcode);
+    if (duplicateItem) {
+      alert(`Mã barcode "${finalBarcode}" đã tồn tại cho thiết bị "${duplicateItem.name}". Vui lòng nhập mã khác để đảm bảo duy nhất.`);
+      return;
+    }
     const newItem: InventoryItem = {
       id: `ITEM-${Date.now()}`,
       barcode: finalBarcode,
@@ -235,7 +240,13 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
       return;
     }
     const category = newItemData.category.trim();
-    const finalBarcode = normalizeBarcode(newItemData.barcode) || existingItem.barcode || generateBarcode(existingItem.name);
+    const lockedBarcode = normalizeBarcode(existingItem.barcode || '');
+    const finalBarcode = lockedBarcode || generateBarcode(existingItem.name);
+    const duplicateItem = findDuplicateBarcodeItem(inventory, finalBarcode, existingItem.id);
+    if (duplicateItem) {
+      alert(`Mã barcode "${finalBarcode}" đang được sử dụng bởi "${duplicateItem.name}". Barcode sản phẩm đã khóa để tránh trùng lặp.`);
+      return;
+    }
     const updatedItem: InventoryItem = {
       ...existingItem,
       barcode: finalBarcode,
@@ -491,19 +502,24 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
                   <div className="flex gap-2">
                     <input
                       type="text"
-                      className="w-full border-2 border-slate-100 rounded-2xl p-4 text-sm font-mono tracking-widest"
+                      className="w-full border-2 border-slate-100 rounded-2xl p-4 text-sm font-mono tracking-widest disabled:bg-slate-50 disabled:text-slate-400"
                       placeholder="Để trống hệ thống tự tạo"
                       value={newItemData.barcode}
                       onChange={e => setNewItemData({ ...newItemData, barcode: e.target.value })}
+                      disabled={importMode === 'EDIT'}
                     />
                     <button
                       type="button"
                       onClick={() => setNewItemData(prev => ({ ...prev, barcode: generateBarcode(prev.name || prev.category) }))}
-                      className="px-4 py-2 rounded-2xl bg-slate-800 text-white text-xs font-black uppercase tracking-widest hover:bg-black"
+                      className="px-4 py-2 rounded-2xl bg-slate-800 text-white text-xs font-black uppercase tracking-widest hover:bg-black disabled:opacity-40 disabled:cursor-not-allowed"
+                      disabled={importMode === 'EDIT'}
                     >
                       Tạo
                     </button>
                   </div>
+                  {importMode === 'EDIT' && (
+                    <p className="text-[10px] text-amber-600 mt-1">Barcode đã được khóa sau khi tạo để tránh trùng lặp.</p>
+                  )}
                   {newItemData.barcode && (
                     <div className="mt-2">
                       <BarcodePreview value={normalizeBarcode(newItemData.barcode)} />
