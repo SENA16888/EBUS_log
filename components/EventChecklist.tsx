@@ -9,7 +9,7 @@ interface EventChecklistProps {
   inventory: InventoryItem[];
   onScan: (payload: { eventId: string; barcode: string; direction: ChecklistDirection; status?: ChecklistStatus; quantity?: number; note?: string }) => void;
   onUpdateNote?: (eventId: string, itemId: string, note: string) => void;
-  onSaveSignature?: (eventId: string, payload: { direction: ChecklistDirection; manager: ChecklistSignature; operator: ChecklistSignature; note?: string; itemsSnapshot?: { itemId: string; name?: string; orderQty: number; scannedOut: number; scannedIn: number; damaged: number; lost: number; missing: number; }[]; createSlip?: boolean }) => void;
+  onSaveSignature?: (eventId: string, payload: { direction: ChecklistDirection; manager?: ChecklistSignature; operator?: ChecklistSignature; note?: string; itemsSnapshot?: { itemId: string; name?: string; orderQty: number; scannedOut: number; scannedIn: number; damaged: number; lost: number; missing: number; }[]; createSlip?: boolean }) => void;
 }
 
 const SignaturePad: React.FC<{ value?: string; onChange: (dataUrl: string | null) => void }> = ({ value, onChange }) => {
@@ -234,28 +234,8 @@ export const EventChecklist: React.FC<EventChecklistProps> = ({ event, inventory
     onUpdateNote?.(event.id, itemId, value);
   };
 
-  const handleSaveSignature = (createSlip?: boolean) => {
+  const handleSaveSignature = (role: 'OPERATOR' | 'MANAGER', createSlip?: boolean) => {
     if (!onSaveSignature) return;
-    if (!managerName.trim() || !managerSignatureData || !operatorName.trim() || !operatorSignatureData) {
-      alert('Vui lòng nhập đủ thông tin và chữ ký của cả Quản lý kho và Người lập phiếu/kiểm hàng.');
-      return;
-    }
-    const manager: ChecklistSignature = {
-      name: managerName.trim(),
-      title: managerTitle.trim() || undefined,
-      note: signNote.trim() || undefined,
-      signedAt: new Date().toISOString(),
-      dataUrl: managerSignatureData,
-      direction
-    };
-    const operator: ChecklistSignature = {
-      name: operatorName.trim(),
-      title: operatorTitle.trim() || undefined,
-      note: signNote.trim() || undefined,
-      signedAt: new Date().toISOString(),
-      dataUrl: operatorSignatureData,
-      direction
-    };
     const snapshot = rows.map(row => ({
       itemId: row.itemId,
       name: row.name,
@@ -266,7 +246,75 @@ export const EventChecklist: React.FC<EventChecklistProps> = ({ event, inventory
       lost: row.lost,
       missing: row.missing
     }));
-    onSaveSignature(event.id, { direction, manager, operator, note: signNote.trim() || undefined, itemsSnapshot: snapshot, createSlip: createSlip ?? false });
+    const payload: any = { direction, note: signNote.trim() || undefined, itemsSnapshot: snapshot, createSlip: createSlip ?? false };
+    if (role === 'OPERATOR') {
+      if (!operatorName.trim() || !operatorSignatureData) {
+        alert('Vui lòng nhập tên và chữ ký của Người lập phiếu/kiểm hàng.');
+        return;
+      }
+      payload.operator = {
+        name: operatorName.trim(),
+        title: operatorTitle.trim() || undefined,
+        note: signNote.trim() || undefined,
+        signedAt: new Date().toISOString(),
+        dataUrl: operatorSignatureData,
+        direction
+      };
+    } else {
+      if (!managerName.trim() || !managerSignatureData) {
+        alert('Vui lòng nhập tên và chữ ký của Quản lý kho.');
+        return;
+      }
+      payload.manager = {
+        name: managerName.trim(),
+        title: managerTitle.trim() || undefined,
+        note: signNote.trim() || undefined,
+        signedAt: new Date().toISOString(),
+        dataUrl: managerSignatureData,
+        direction
+      };
+    }
+    onSaveSignature(event.id, payload);
+  };
+
+  const handleCreateSlip = () => {
+    if (!onSaveSignature) return;
+    if (!managerName.trim() || !managerSignatureData || !operatorName.trim() || !operatorSignatureData) {
+      alert('Cần đủ chữ ký của Quản lý kho và Người lập phiếu trước khi xuất phiếu.');
+      return;
+    }
+    const snapshot = rows.map(row => ({
+      itemId: row.itemId,
+      name: row.name,
+      orderQty: row.orderQty,
+      scannedOut: row.scannedOut,
+      scannedIn: row.scannedIn,
+      damaged: row.damaged,
+      lost: row.lost,
+      missing: row.missing
+    }));
+    onSaveSignature(event.id, {
+      direction,
+      manager: {
+        name: managerName.trim(),
+        title: managerTitle.trim() || undefined,
+        note: signNote.trim() || undefined,
+        signedAt: new Date().toISOString(),
+        dataUrl: managerSignatureData,
+        direction
+      },
+      operator: {
+        name: operatorName.trim(),
+        title: operatorTitle.trim() || undefined,
+        note: signNote.trim() || undefined,
+        signedAt: new Date().toISOString(),
+        dataUrl: operatorSignatureData,
+        direction
+      },
+      note: signNote.trim() || undefined,
+      itemsSnapshot: snapshot,
+      createSlip: true
+    });
   };
   const slips = checklist.slips || [];
 
@@ -577,6 +625,13 @@ export const EventChecklist: React.FC<EventChecklistProps> = ({ event, inventory
                   placeholder="Chức vụ / bộ phận"
                 />
                 <SignaturePad value={managerSignatureData || undefined} onChange={setManagerSignatureData} />
+                <button
+                  type="button"
+                  onClick={() => handleSaveSignature('MANAGER', false)}
+                  className="mt-2 w-full bg-slate-700 text-white py-2 rounded-lg text-sm font-bold hover:bg-slate-800"
+                >
+                  Lưu chữ ký Quản lý (chưa xuất phiếu)
+                </button>
               </div>
               <div className="p-3 border border-slate-200 rounded-xl">
                 <p className="text-[11px] font-black text-slate-600 uppercase mb-2">Người lập phiếu / Kiểm hàng</p>
@@ -593,6 +648,13 @@ export const EventChecklist: React.FC<EventChecklistProps> = ({ event, inventory
                   placeholder="Chức vụ / bộ phận"
                 />
                 <SignaturePad value={operatorSignatureData || undefined} onChange={setOperatorSignatureData} />
+                <button
+                  type="button"
+                  onClick={() => handleSaveSignature('OPERATOR', false)}
+                  className="mt-2 w-full bg-slate-700 text-white py-2 rounded-lg text-sm font-bold hover:bg-slate-800"
+                >
+                  Lưu chữ ký Người lập phiếu (chưa xuất phiếu)
+                </button>
               </div>
             </div>
             <textarea
@@ -605,17 +667,10 @@ export const EventChecklist: React.FC<EventChecklistProps> = ({ event, inventory
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
               <button
                 type="button"
-                onClick={() => handleSaveSignature(false)}
-                className="w-full bg-slate-800 text-white py-2 rounded-xl font-bold hover:bg-black flex items-center justify-center gap-2"
-              >
-                <PenLine size={16}/> Lưu chữ ký (không tạo phiếu)
-              </button>
-              <button
-                type="button"
-                onClick={() => handleSaveSignature(true)}
+                onClick={handleCreateSlip}
                 className="w-full bg-blue-600 text-white py-2 rounded-xl font-bold hover:bg-blue-700 flex items-center justify-center gap-2"
               >
-                <PenLine size={16}/> Lưu &amp; xuất phiếu {direction === 'OUT' ? 'xuất kho' : 'trả kho'}
+                <PenLine size={16}/> Xuất phiếu {direction === 'OUT' ? 'xuất kho' : 'trả kho'} (cần đủ 2 chữ ký)
               </button>
             </div>
             {slips.length > 0 && (

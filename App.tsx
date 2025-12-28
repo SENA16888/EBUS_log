@@ -262,12 +262,13 @@ const App: React.FC = () => {
     }));
   };
 
-  const handleSaveChecklistSignature = (eventId: string, payload: { direction: ChecklistDirection; manager: ChecklistSignature; operator: ChecklistSignature; note?: string; itemsSnapshot?: { itemId: string; name?: string; orderQty: number; scannedOut: number; scannedIn: number; damaged: number; lost: number; missing: number; }[]; createSlip?: boolean }) => {
+  const handleSaveChecklistSignature = (eventId: string, payload: { direction: ChecklistDirection; manager?: ChecklistSignature; operator?: ChecklistSignature; note?: string; itemsSnapshot?: { itemId: string; name?: string; orderQty: number; scannedOut: number; scannedIn: number; damaged: number; lost: number; missing: number; }[]; createSlip?: boolean }) => {
     setAppState(prev => {
       const event = prev.events.find(ev => ev.id === eventId);
       if (!event) return prev;
       const checklist = normalizeChecklist(event.checklist);
       const key = payload.direction === 'OUT' ? 'outbound' : 'inbound';
+      const existingPair = checklist.signatures?.[key] || {};
 
       const snapshot = (payload.itemsSnapshot && payload.itemsSnapshot.length > 0)
         ? payload.itemsSnapshot
@@ -294,16 +295,25 @@ const App: React.FC = () => {
 
       const nextEvents = prev.events.map(ev => {
         if (ev.id !== eventId) return ev;
-        const nextSignatures = { ...(checklist.signatures || {}), [key]: { manager: payload.manager, operator: payload.operator, note: payload.note, direction: payload.direction } };
-        const slips = payload.createSlip
+        const nextSignatures = {
+          ...(checklist.signatures || {}),
+          [key]: {
+            manager: payload.manager || existingPair.manager,
+            operator: payload.operator || existingPair.operator,
+            note: payload.note ?? existingPair.note,
+            direction: payload.direction
+          }
+        };
+        const canCreateSlip = payload.createSlip && nextSignatures[key].manager && nextSignatures[key].operator;
+        const slips = canCreateSlip
           ? [
               {
                 id: `SLIP-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
                 direction: payload.direction,
                 createdAt: new Date().toISOString(),
-                manager: payload.manager,
-                operator: payload.operator,
-                note: payload.note,
+                manager: nextSignatures[key].manager,
+                operator: nextSignatures[key].operator,
+                note: payload.note ?? existingPair.note,
                 items: snapshot
               },
               ...(checklist.slips || [])
@@ -312,7 +322,10 @@ const App: React.FC = () => {
         return { ...ev, checklist: { ...checklist, signatures: nextSignatures, slips } };
       });
 
-      const updatedInventory = payload.createSlip
+      const targetPair = nextEvents.find(e => e.id === eventId)?.checklist?.signatures?.[key];
+      const shouldUpdateInventory = payload.createSlip && targetPair?.manager && targetPair?.operator;
+
+      const updatedInventory = shouldUpdateInventory
         ? prev.inventory.map(inv => {
             const itemSnap = snapshot.find(s => s.itemId === inv.id);
             if (!itemSnap) return inv;
