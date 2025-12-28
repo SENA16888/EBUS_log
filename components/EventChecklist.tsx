@@ -344,10 +344,11 @@ export const EventChecklist: React.FC<EventChecklistProps> = ({ event, inventory
         <td style="padding:6px;border:1px solid #e2e8f0;text-align:center">${item.missing}</td>
       </tr>
     `).join('');
+    const slipLabel = `${slip.direction === 'OUT' ? 'Phiếu xuất kho' : 'Phiếu trả kho'}${slip.slipNo ? ` #${slip.slipNo}` : ''}`;
     win.document.write(`
       <html>
         <head>
-          <title>Phiếu ${slip.direction === 'OUT' ? 'xuất kho' : 'trả kho'} - ${event.name}</title>
+          <title>${slipLabel} - ${event.name}</title>
           <style>
             body { font-family: Arial, sans-serif; padding: 16px; color: #0f172a; }
             h1 { margin: 0 0 4px 0; }
@@ -359,7 +360,7 @@ export const EventChecklist: React.FC<EventChecklistProps> = ({ event, inventory
           </style>
         </head>
         <body>
-          <h1>Phiếu ${slip.direction === 'OUT' ? 'xuất kho' : 'trả kho'}</h1>
+          <h1>${slipLabel}</h1>
           <div class="muted">${event.name} • ${event.client}</div>
           <div class="muted">Thời gian: ${new Date(slip.createdAt).toLocaleString('vi-VN')}</div>
           <div class="muted">Ghi chú: ${slip.note || '---'}</div>
@@ -629,6 +630,10 @@ export const EventChecklist: React.FC<EventChecklistProps> = ({ event, inventory
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div className="p-3 border border-slate-200 rounded-xl">
                 <p className="text-[11px] font-black text-slate-600 uppercase mb-2">Quản lý kho</p>
+                {(() => {
+                  const pair = event.checklist?.signatures?.[direction === 'OUT' ? 'outbound' : 'inbound'];
+                  return pair?.manager ? <span className="inline-flex items-center px-2 py-1 rounded-full bg-emerald-100 text-emerald-700 text-[11px] font-bold mb-2">Đã ký</span> : null;
+                })()}
                 <input
                   value={managerName}
                   onChange={e => setManagerName(e.target.value)}
@@ -652,6 +657,10 @@ export const EventChecklist: React.FC<EventChecklistProps> = ({ event, inventory
               </div>
               <div className="p-3 border border-slate-200 rounded-xl">
                 <p className="text-[11px] font-black text-slate-600 uppercase mb-2">Người lập phiếu / Kiểm hàng</p>
+                {(() => {
+                  const pair = event.checklist?.signatures?.[direction === 'OUT' ? 'outbound' : 'inbound'];
+                  return pair?.operator ? <span className="inline-flex items-center px-2 py-1 rounded-full bg-emerald-100 text-emerald-700 text-[11px] font-bold mb-2">Đã ký</span> : null;
+                })()}
                 <input
                   value={operatorName}
                   onChange={e => setOperatorName(e.target.value)}
@@ -697,7 +706,7 @@ export const EventChecklist: React.FC<EventChecklistProps> = ({ event, inventory
                   {slips.map(slip => (
                     <div key={slip.id} className="p-2 rounded-lg bg-white border border-slate-200 flex items-center justify-between">
                       <div>
-                        <div className="font-semibold text-slate-800">{slip.direction === 'OUT' ? 'Phiếu xuất kho' : 'Phiếu trả kho'}</div>
+                        <div className="font-semibold text-slate-800">{slip.direction === 'OUT' ? 'Phiếu xuất kho' : 'Phiếu trả kho'} {slip.slipNo ? `#${slip.slipNo}` : ''}</div>
                         <div className="text-[11px] text-slate-500">{new Date(slip.createdAt).toLocaleString('vi-VN')}</div>
                         <div className="text-[12px] text-slate-600">QL kho: {slip.manager?.name || '---'} • Lập phiếu: {slip.operator?.name || '---'}</div>
                       </div>

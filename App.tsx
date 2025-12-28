@@ -263,12 +263,14 @@ const App: React.FC = () => {
   };
 
   const handleSaveChecklistSignature = (eventId: string, payload: { direction: ChecklistDirection; manager?: ChecklistSignature; operator?: ChecklistSignature; note?: string; itemsSnapshot?: { itemId: string; name?: string; orderQty: number; scannedOut: number; scannedIn: number; damaged: number; lost: number; missing: number; }[]; createSlip?: boolean }) => {
+    let slipGenerated = false;
     setAppState(prev => {
       const event = prev.events.find(ev => ev.id === eventId);
       if (!event) return prev;
       const checklist = normalizeChecklist(event.checklist);
       const key = payload.direction === 'OUT' ? 'outbound' : 'inbound';
       const existingPair = checklist.signatures?.[key] || {};
+      const existingSlips = (checklist.slips || []).filter(s => s.direction === payload.direction);
 
       const snapshot = (payload.itemsSnapshot && payload.itemsSnapshot.length > 0)
         ? payload.itemsSnapshot
@@ -293,6 +295,31 @@ const App: React.FC = () => {
             });
           })();
 
+      const prevTotals = new Map<string, number>();
+      existingSlips.forEach(slip => {
+        slip.items.forEach(it => {
+          const qty = payload.direction === 'OUT' ? it.scannedOut : it.scannedIn;
+          prevTotals.set(it.itemId, (prevTotals.get(it.itemId) || 0) + qty);
+        });
+      });
+
+      const slipItems = snapshot.reduce<typeof snapshot>((acc, item) => {
+        const baseline = prevTotals.get(item.itemId) || 0;
+        const current = payload.direction === 'OUT' ? item.scannedOut : item.scannedIn;
+        const delta = current - baseline;
+        if (delta > 0) {
+          acc.push({
+            ...item,
+            scannedOut: payload.direction === 'OUT' ? delta : 0,
+            scannedIn: payload.direction === 'IN' ? delta : 0,
+            missing: payload.direction === 'OUT'
+              ? Math.max(0, item.orderQty - (baseline + delta) - item.lost)
+              : Math.max(0, item.orderQty - current - item.lost)
+          });
+        }
+        return acc;
+      }, []);
+
       const nextEvents = prev.events.map(ev => {
         if (ev.id !== eventId) return ev;
         const nextSignatures = {
@@ -304,30 +331,33 @@ const App: React.FC = () => {
             direction: payload.direction
           }
         };
-        const canCreateSlip = payload.createSlip && nextSignatures[key].manager && nextSignatures[key].operator;
+        const canCreateSlip = payload.createSlip && nextSignatures[key].manager && nextSignatures[key].operator && slipItems.length > 0;
+        const nextSlipNo = canCreateSlip ? existingSlips.length + 1 : undefined;
         const slips = canCreateSlip
           ? [
               {
                 id: `SLIP-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                slipNo: nextSlipNo,
                 direction: payload.direction,
                 createdAt: new Date().toISOString(),
                 manager: nextSignatures[key].manager,
                 operator: nextSignatures[key].operator,
                 note: payload.note ?? existingPair.note,
-                items: snapshot
+                items: slipItems
               },
               ...(checklist.slips || [])
             ]
           : checklist.slips || [];
+        if (canCreateSlip) slipGenerated = true;
         return { ...ev, checklist: { ...checklist, signatures: nextSignatures, slips } };
       });
 
       const targetPair = nextEvents.find(e => e.id === eventId)?.checklist?.signatures?.[key];
-      const shouldUpdateInventory = payload.createSlip && targetPair?.manager && targetPair?.operator;
+      const shouldUpdateInventory = payload.createSlip && targetPair?.manager && targetPair?.operator && slipItems.length > 0;
 
       const updatedInventory = shouldUpdateInventory
         ? prev.inventory.map(inv => {
-            const itemSnap = snapshot.find(s => s.itemId === inv.id);
+            const itemSnap = slipItems.find(s => s.itemId === inv.id);
             if (!itemSnap) return inv;
             const qty = payload.direction === 'OUT' ? itemSnap.scannedOut : itemSnap.scannedIn;
             if (!qty || qty <= 0) return inv;
@@ -349,7 +379,7 @@ const App: React.FC = () => {
       return { ...prev, inventory: updatedInventory, events: nextEvents };
     });
     addLog(`Checklist: đã lưu chữ ký ${payload.direction === 'OUT' ? 'hàng đi' : 'hàng về'} cho sự kiện ${eventId}.`, 'INFO');
-    if (payload.createSlip) {
+    if (slipGenerated) {
       addLog(`Checklist: tạo phiếu ${payload.direction === 'OUT' ? 'xuất kho' : 'trả kho'} (hai chữ ký) và cập nhật kho.`, 'SUCCESS');
     }
   };

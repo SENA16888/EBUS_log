@@ -84,6 +84,7 @@ export interface ChecklistSlipItem {
 export interface ChecklistSlip {
   id: string;
   direction: ChecklistDirection;
+  slipNo?: number;
   createdAt: string;
   manager?: ChecklistSignature;
   operator?: ChecklistSignature;
