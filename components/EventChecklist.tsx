@@ -201,6 +201,16 @@ export const EventChecklist: React.FC<EventChecklistProps> = ({ event, inventory
     }, { expected: 0, out: 0, in: 0, missing: 0, damaged: 0, lost: 0 });
   }, [rows]);
 
+  const matchedItem = useMemo(() => {
+    if (!scanValue.trim()) return null;
+    const normalized = normalizeBarcode(scanValue.trim());
+    return (
+      inventory.find(inv => inv.barcode && normalizeBarcode(inv.barcode) === normalized) ||
+      inventory.find(inv => normalizeBarcode(inv.id) === normalized) ||
+      null
+    );
+  }, [scanValue, inventory]);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!scanValue.trim()) return;
@@ -423,6 +433,13 @@ export const EventChecklist: React.FC<EventChecklistProps> = ({ event, inventory
                   placeholder="Quét mã hoặc nhập tay..."
                   autoFocus
                 />
+                {matchedItem && (
+                  <div className="mt-1 p-2 rounded-lg border border-slate-200 bg-slate-50 flex items-center gap-2 text-xs">
+                    <div className="font-bold text-slate-800">{matchedItem.name}</div>
+                    <div className="text-slate-500">({matchedItem.id})</div>
+                    <div className="text-[11px] text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">Kho: {matchedItem.availableQuantity}</div>
+                  </div>
+                )}
               </div>
               <div>
                 <label className="text-[10px] font-black text-slate-400 uppercase">Số lượng</label>
