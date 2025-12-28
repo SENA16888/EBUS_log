@@ -325,6 +325,13 @@ export const EventChecklist: React.FC<EventChecklistProps> = ({ event, inventory
       itemsSnapshot: snapshot,
       createSlip: true
     });
+    // Clear signatures after issuing slip
+    setManagerSignatureData(null);
+    setOperatorSignatureData(null);
+    setManagerName('');
+    setManagerTitle('');
+    setOperatorName('');
+    setOperatorTitle('');
   };
   const slips = checklist.slips || [];
 

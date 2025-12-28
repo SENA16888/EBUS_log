@@ -295,27 +295,46 @@ const App: React.FC = () => {
             });
           })();
 
-      const prevTotals = new Map<string, number>();
-      existingSlips.forEach(slip => {
+      const outboundTotals = new Map<string, number>();
+      (checklist.slips || []).filter(s => s.direction === 'OUT').forEach(slip => {
         slip.items.forEach(it => {
-          const qty = payload.direction === 'OUT' ? it.scannedOut : it.scannedIn;
-          prevTotals.set(it.itemId, (prevTotals.get(it.itemId) || 0) + qty);
+          outboundTotals.set(it.itemId, (outboundTotals.get(it.itemId) || 0) + it.scannedOut);
+        });
+      });
+
+      const inboundTotals = new Map<string, number>();
+      (checklist.slips || []).filter(s => s.direction === 'IN').forEach(slip => {
+        slip.items.forEach(it => {
+          inboundTotals.set(it.itemId, (inboundTotals.get(it.itemId) || 0) + it.scannedIn);
         });
       });
 
       const slipItems = snapshot.reduce<typeof snapshot>((acc, item) => {
-        const baseline = prevTotals.get(item.itemId) || 0;
-        const current = payload.direction === 'OUT' ? item.scannedOut : item.scannedIn;
-        const delta = current - baseline;
-        if (delta > 0) {
-          acc.push({
-            ...item,
-            scannedOut: payload.direction === 'OUT' ? delta : 0,
-            scannedIn: payload.direction === 'IN' ? delta : 0,
-            missing: payload.direction === 'OUT'
-              ? Math.max(0, item.orderQty - (baseline + delta) - item.lost)
-              : Math.max(0, item.orderQty - current - item.lost)
-          });
+        if (payload.direction === 'OUT') {
+          const baseline = outboundTotals.get(item.itemId) || 0;
+          const delta = item.scannedOut - baseline;
+          if (delta > 0) {
+            acc.push({
+              ...item,
+              scannedOut: delta,
+              scannedIn: 0,
+              missing: Math.max(0, item.orderQty - (baseline + delta) - item.lost)
+            });
+          }
+        } else {
+          const totalOutbound = outboundTotals.get(item.itemId) || 0;
+          const baselineInbound = inboundTotals.get(item.itemId) || 0;
+          const remainingOut = Math.max(0, totalOutbound - baselineInbound);
+          const currentInbound = item.scannedIn;
+          const deltaIn = Math.min(remainingOut, currentInbound - baselineInbound);
+          if (deltaIn > 0) {
+            acc.push({
+              ...item,
+              scannedOut: totalOutbound, // show total outbound on return slip for context
+              scannedIn: deltaIn,
+              missing: Math.max(0, item.orderQty - totalOutbound - item.lost)
+            });
+          }
         }
         return acc;
       }, []);
