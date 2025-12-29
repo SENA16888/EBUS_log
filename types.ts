@@ -239,6 +239,15 @@ export interface EventLayout {
   blocks: EventLayoutBlock[];
 }
 
+export type EventTimelinePhase = 'BEFORE' | 'DURING' | 'AFTER';
+
+export interface EventTimelineEntry {
+  id: string;
+  phase: EventTimelinePhase;
+  datetime: string;
+  note: string;
+}
+
 export interface Event {
   id: string;
   name: string;
@@ -259,6 +268,7 @@ export interface Event {
   layout?: EventLayout;
   saleOrderIds?: string[];
   checklist?: EventChecklist;
+  timeline?: EventTimelineEntry[];
 }
 
 export interface Transaction {

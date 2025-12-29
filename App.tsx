@@ -41,7 +41,8 @@ const App: React.FC = () => {
     events: (state.events || []).map(ev => ({
       ...ev,
       items: ev.items || [],
-      checklist: normalizeChecklist(ev.checklist)
+      checklist: normalizeChecklist(ev.checklist),
+      timeline: ev.timeline || []
     }))
   });
 

@@ -1,11 +1,11 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { Event, InventoryItem, EventStatus, ComboPackage, Employee, EventExpense, EventStaffAllocation, Quotation, EventProcessStep, EventLayout, EventLayoutBlock, LayoutPackageSource, ChecklistDirection, ChecklistStatus, ChecklistSignature } from '../types';
+import { Event, InventoryItem, EventStatus, ComboPackage, Employee, EventExpense, EventStaffAllocation, Quotation, EventProcessStep, EventLayout, EventLayoutBlock, LayoutPackageSource, ChecklistDirection, ChecklistStatus, ChecklistSignature, EventTimelineEntry, EventTimelinePhase } from '../types';
 import { 
   Calendar, MapPin, Box, ArrowLeft, Plus, Minus, X, Layers, 
   Users, DollarSign, Trash2, Truck, BookOpen, 
   Utensils, Wallet, Printer, Coffee, AlertCircle,
-  TrendingUp, ArrowRightLeft, UserCheck, Link as LinkIcon,
+  TrendingUp, ArrowRightLeft, UserCheck, Link as LinkIcon, Clock3,
   Calculator, ChevronRight, PieChart as PieIcon, FileText, CheckCircle, RefreshCw, Upload, Download, ScanBarcode
 } from 'lucide-react';
 import { EventExportModal } from './EventExportModal';
@@ -92,6 +92,12 @@ const SESSION_OPTIONS: { value: EventSession; label: string }[] = [
   { value: 'MORNING', label: 'SÁNG' },
   { value: 'AFTERNOON', label: 'CHIỀU' },
   { value: 'EVENING', label: 'TỐI' }
+];
+
+const TIMELINE_PHASES: { value: EventTimelinePhase; label: string; color: string; description: string }[] = [
+  { value: 'BEFORE', label: 'Trước sự kiện', color: 'bg-amber-50 border-amber-100', description: 'Công tác chuẩn bị, vận chuyển, set up' },
+  { value: 'DURING', label: 'Trong sự kiện', color: 'bg-emerald-50 border-emerald-100', description: 'Những mốc diễn ra trong chương trình' },
+  { value: 'AFTER', label: 'Sau sự kiện', color: 'bg-slate-50 border-slate-200', description: 'Thu hồi, tổng kết, bàn giao' }
 ];
 
 const getStaffSessions = (staff?: Pick<EventStaffAllocation, 'session' | 'sessions'>): EventSession[] => {
@@ -209,7 +215,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
   onSaveChecklistSignature
 }) => {
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
-  const [detailTab, setDetailTab] = useState<'EQUIPMENT' | 'STAFF' | 'COSTS' | 'FLOWS' | 'LAYOUT' | 'CHECKLIST'>('EQUIPMENT');
+  const [detailTab, setDetailTab] = useState<'EQUIPMENT' | 'STAFF' | 'COSTS' | 'FLOWS' | 'LAYOUT' | 'CHECKLIST' | 'TIMELINE'>('EQUIPMENT');
   const [selectedLayoutBlockId, setSelectedLayoutBlockId] = useState<string | null>(null);
   
   // Modals
@@ -226,6 +232,9 @@ export const EventManager: React.FC<EventManagerProps> = ({
   });
   const [newEventSchedule, setNewEventSchedule] = useState<EventScheduleItem[]>([]);
   const [newScheduleDate, setNewScheduleDate] = useState('');
+  const [timelinePhase, setTimelinePhase] = useState<EventTimelinePhase>('BEFORE');
+  const [timelineDatetime, setTimelineDatetime] = useState('');
+  const [timelineNote, setTimelineNote] = useState('');
   const sortedNewEventSchedule = useMemo(
     () => [...newEventSchedule].sort((a, b) => a.date.localeCompare(b.date)),
     [newEventSchedule]
@@ -315,6 +324,19 @@ export const EventManager: React.FC<EventManagerProps> = ({
     if (!selectedEvent) return [];
     return saleOrders.filter(o => o.eventId === undefined || o.eventId === selectedEvent.id || (selectedEvent.saleOrderIds || []).includes(o.id));
   }, [saleOrders, selectedEvent]);
+  const timelineEntries = useMemo<EventTimelineEntry[]>(() => {
+    if (!selectedEvent?.timeline) return [];
+    return [...selectedEvent.timeline].sort((a, b) => (a.datetime || '').localeCompare(b.datetime || ''));
+  }, [selectedEvent]);
+  const groupedTimeline = useMemo<Record<EventTimelinePhase, EventTimelineEntry[]>>(() => {
+    const groups: Record<EventTimelinePhase, EventTimelineEntry[]> = { BEFORE: [], DURING: [], AFTER: [] };
+    timelineEntries.forEach(entry => {
+      const key = entry.phase || 'BEFORE';
+      const safeKey = (['BEFORE', 'DURING', 'AFTER'].includes(key) ? key : 'BEFORE') as EventTimelinePhase;
+      groups[safeKey].push(entry);
+    });
+    return groups;
+  }, [timelineEntries]);
 
   useEffect(() => {
     if (selectedEvent && (!selectedEvent.processSteps || selectedEvent.processSteps.length === 0) && onUpdateEvent) {
@@ -322,6 +344,18 @@ export const EventManager: React.FC<EventManagerProps> = ({
     }
     setSelectedItemIds([]);
   }, [selectedEvent, onUpdateEvent]);
+  useEffect(() => {
+    if (!selectedEvent) {
+      setTimelineDatetime('');
+      setTimelineNote('');
+      return;
+    }
+    const schedule = getEventSchedule(selectedEvent);
+    const firstDate = schedule[0]?.date || selectedEvent.startDate || '';
+    setTimelinePhase('BEFORE');
+    setTimelineNote('');
+    setTimelineDatetime(firstDate ? `${firstDate}T08:00` : '');
+  }, [selectedEvent, selectedEventId]);
 
   const handleCreateEventSubmit = () => {
     if (!newEventData.name || !newEventData.client || newEventSchedule.length === 0) {
@@ -346,6 +380,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
       staff: [],
       expenses: [],
       processSteps: createDefaultProcessSteps(),
+      timeline: [],
       layout: {
         floorplanImage: '',
         floorplanAspectRatio: undefined,
@@ -379,6 +414,40 @@ export const EventManager: React.FC<EventManagerProps> = ({
 
   const handleRemoveScheduleDate = (date: string) => {
     setNewEventSchedule(prev => prev.filter(item => item.date !== date));
+  };
+
+  const formatTimelineDatetime = (value: string) => {
+    if (!value) return 'Chưa chọn thời gian';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+    return date.toLocaleString('vi-VN', { dateStyle: 'short', timeStyle: 'short' });
+  };
+
+  const handleAddTimelineEntry = () => {
+    if (!selectedEvent || !onUpdateEvent) return;
+    if (!timelineDatetime) {
+      alert('Vui lòng chọn ngày giờ cho mốc timeline.');
+      return;
+    }
+    if (!timelineNote.trim()) {
+      alert('Vui lòng nhập nội dung cần thực hiện.');
+      return;
+    }
+    const entry: EventTimelineEntry = {
+      id: `TL-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      phase: timelinePhase,
+      datetime: timelineDatetime,
+      note: timelineNote.trim()
+    };
+    const nextTimeline = [...(selectedEvent.timeline || []), entry].sort((a, b) => (a.datetime || '').localeCompare(b.datetime || ''));
+    onUpdateEvent(selectedEvent.id, { timeline: nextTimeline });
+    setTimelineNote('');
+  };
+
+  const handleRemoveTimelineEntry = (entryId: string) => {
+    if (!selectedEvent || !onUpdateEvent) return;
+    const nextTimeline = (selectedEvent.timeline || []).filter(entry => entry.id !== entryId);
+    onUpdateEvent(selectedEvent.id, { timeline: nextTimeline });
   };
 
   const handleExportSubmit = () => {
@@ -1019,6 +1088,9 @@ export const EventManager: React.FC<EventManagerProps> = ({
                 <button onClick={() => setDetailTab('CHECKLIST')} className={`pb-3 text-sm font-bold border-b-2 transition flex items-center gap-2 ${detailTab === 'CHECKLIST' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
                   <ScanBarcode size={16}/> Checklist Barcode
                 </button>
+                <button onClick={() => setDetailTab('TIMELINE')} className={`pb-3 text-sm font-bold border-b-2 transition flex items-center gap-2 ${detailTab === 'TIMELINE' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
+                  <Clock3 size={16}/> Timeline
+                </button>
                 <button onClick={() => setDetailTab('STAFF')} className={`pb-3 text-sm font-bold border-b-2 transition flex items-center gap-2 ${detailTab === 'STAFF' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
                   <Users size={16}/> Nhân Sự
                 </button>
@@ -1191,6 +1263,99 @@ export const EventManager: React.FC<EventManagerProps> = ({
                   onUpdateNote={onUpdateChecklistNote}
                   onSaveSignature={onSaveChecklistSignature}
                 />
+              )}
+
+              {detailTab === 'TIMELINE' && selectedEvent && (
+                <div className="space-y-4">
+                  <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Thêm mốc timeline</p>
+                      <p className="text-sm text-slate-600">Chia theo giai đoạn trước / trong / sau để bám sát tiến độ triển khai.</p>
+                    </div>
+                    <div className="flex flex-col md:flex-row gap-3">
+                      <div className="flex-1 space-y-1">
+                        <label className="text-[11px] font-bold text-slate-600 uppercase">Ngày giờ</label>
+                        <input
+                          type="datetime-local"
+                          value={timelineDatetime}
+                          onChange={e => setTimelineDatetime(e.target.value)}
+                          className="w-full border border-slate-200 rounded-xl p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white"
+                        />
+                      </div>
+                      <div className="w-full md:w-44 space-y-1">
+                        <label className="text-[11px] font-bold text-slate-600 uppercase">Giai đoạn</label>
+                        <select
+                          value={timelinePhase}
+                          onChange={e => setTimelinePhase(e.target.value as EventTimelinePhase)}
+                          className="w-full border border-slate-200 rounded-xl p-3 text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none"
+                        >
+                          {TIMELINE_PHASES.map(phase => (
+                            <option key={phase.value} value={phase.value}>{phase.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-bold text-slate-600 uppercase">Nội dung công việc</label>
+                      <textarea
+                        rows={2}
+                        className="w-full border border-slate-200 rounded-xl p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white"
+                        placeholder="VD: 08:00 - Xe rời kho, 10:30 - set up sân khấu, 22:00 - thu hồi thiết bị..."
+                        value={timelineNote}
+                        onChange={e => setTimelineNote(e.target.value)}
+                      />
+                    </div>
+                    <div className="flex justify-end">
+                      <button
+                        onClick={handleAddTimelineEntry}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 shadow-sm flex items-center gap-2"
+                      >
+                        <Plus size={16}/> Lưu mốc
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {TIMELINE_PHASES.map(phase => {
+                      const items = groupedTimeline[phase.value] || [];
+                      return (
+                        <div key={phase.value} className={`p-4 rounded-2xl border shadow-sm ${phase.color}`}>
+                          <div className="flex items-start justify-between gap-2 mb-3">
+                            <div>
+                              <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 flex items-center gap-1">
+                                <Clock3 size={12}/> {phase.label}
+                              </p>
+                              <p className="text-xs text-slate-500">{phase.description}</p>
+                            </div>
+                            <span className="px-2 py-1 rounded-full bg-white text-slate-700 text-[11px] font-black border border-slate-200 shadow-sm">{items.length} mốc</span>
+                          </div>
+                          <div className="space-y-3">
+                            {items.length === 0 && (
+                              <p className="text-sm text-slate-400 italic">Chưa có mốc nào.</p>
+                            )}
+                            {items.map(entry => (
+                              <div key={entry.id} className="bg-white rounded-xl border border-slate-200 p-3 shadow-[0_5px_20px_rgba(15,23,42,0.05)]">
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="space-y-1">
+                                    <p className="text-[11px] font-black text-slate-600 uppercase tracking-wide">{formatTimelineDatetime(entry.datetime)}</p>
+                                    <p className="text-sm text-slate-800 leading-snug">{entry.note}</p>
+                                  </div>
+                                  <button
+                                    onClick={() => handleRemoveTimelineEntry(entry.id)}
+                                    className="text-gray-300 hover:text-red-500 transition"
+                                    title="Xóa mốc"
+                                  >
+                                    <X size={14}/>
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
               )}
 
               {detailTab === 'STAFF' && (
