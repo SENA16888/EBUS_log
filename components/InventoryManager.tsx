@@ -396,13 +396,19 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
     }
 
     const labelHtml = labelChunks.join('');
+    const totalLabels = printSelections.reduce(
+      (sum, sel) => sum + Math.min(500, Math.max(1, Math.round(sel.quantity || 1))),
+      0
+    );
+    const titleItem = itemsMap[printSelections[0]?.itemId || ''];
+    const titleName = titleItem?.name || 'In tem barcode';
 
     const printWindow = window.open('', '_blank', 'width=420,height=680');
     if (!printWindow) return;
     printWindow.document.write(`
       <html>
         <head>
-          <title>In tem: ${target.name}</title>
+          <title>In tem: ${titleName}</title>
           <style>
             @page { size: 40mm 30mm; margin: 2mm; }
             * { box-sizing: border-box; }
@@ -440,22 +446,44 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
               text-align: center;
               margin-top: 2px;
             }
+            .status {
+              position: fixed;
+              top: 6px;
+              right: 6px;
+              background: rgba(15, 23, 42, 0.9);
+              color: white;
+              padding: 6px 10px;
+              border-radius: 8px;
+              font-size: 11px;
+              z-index: 10;
+            }
             @media print {
               body { background: white; }
               .sheet { gap: 1mm; padding: 1mm; }
               .label { border: none; }
+              .status { display: none; }
             }
           </style>
         </head>
         <body>
+          <div id="status" class="status">Đang tải tem (${totalLabels})...</div>
           <div class="sheet">
             ${labelHtml}
           </div>
           <script>
-            window.onload = () => {
-              window.print();
-              setTimeout(() => window.close(), 300);
+            const waitImages = () => {
+              const imgs = Array.from(document.querySelectorAll('img'));
+              return Promise.all(imgs.map(img => img.complete ? Promise.resolve() : new Promise(res => {
+                img.onload = () => res(null);
+                img.onerror = () => res(null);
+              })));
             };
+            waitImages().then(() => {
+              const s = document.getElementById('status');
+              if (s) s.style.display = 'none';
+              window.print();
+              setTimeout(() => window.close(), 400);
+            });
           </script>
         </body>
       </html>
