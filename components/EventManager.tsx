@@ -1,6 +1,6 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { Event, InventoryItem, EventStatus, ComboPackage, Employee, EventExpense, EventStaffAllocation, Quotation, EventProcessStep, EventLayout, EventLayoutBlock, LayoutPackageSource, ChecklistDirection, ChecklistStatus, ChecklistSignature, EventTimelineEntry, EventTimelinePhase } from '../types';
+import { Event, InventoryItem, EventStatus, ComboPackage, Employee, EventExpense, EventAdvanceRequest, EventStaffAllocation, Quotation, EventProcessStep, EventLayout, EventLayoutBlock, LayoutPackageSource, ChecklistDirection, ChecklistStatus, ChecklistSignature, EventTimelineEntry, EventTimelinePhase } from '../types';
 import { 
   Calendar, MapPin, Box, ArrowLeft, Plus, Minus, X, Layers, 
   Users, DollarSign, Trash2, Truck, BookOpen, 
@@ -31,6 +31,8 @@ interface EventManagerProps {
   onToggleStaffDone?: (eventId: string, employeeId: string, done: boolean) => void;
   onAddExpense?: (eventId: string, expense: EventExpense) => void;
   onRemoveExpense?: (eventId: string, expenseId: string) => void;
+  onAddAdvanceRequest?: (eventId: string, request: EventAdvanceRequest) => void;
+  onRemoveAdvanceRequest?: (eventId: string, requestId: string) => void;
   onLinkQuotation?: (eventId: string, quotationId: string) => void;
   onFinalizeOrder?: (eventId: string) => void;
   onUpdateEvent?: (eventId: string, updates: Partial<Event>) => void;
@@ -206,6 +208,8 @@ export const EventManager: React.FC<EventManagerProps> = ({
   onToggleStaffDone,
   onAddExpense,
   onRemoveExpense,
+  onAddAdvanceRequest,
+  onRemoveAdvanceRequest,
   onLinkQuotation,
   onFinalizeOrder,
   onUpdateEvent,
@@ -309,6 +313,9 @@ export const EventManager: React.FC<EventManagerProps> = ({
   const [expenseDesc, setExpenseDesc] = useState('');
   const [expenseAmount, setExpenseAmount] = useState('');
   const [expenseVatLink, setExpenseVatLink] = useState('');
+  const [advanceTitle, setAdvanceTitle] = useState('');
+  const [advanceNote, setAdvanceNote] = useState('');
+  const [advanceAmount, setAdvanceAmount] = useState('');
   const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
   const [viewingItem, setViewingItem] = useState<InventoryItem | null>(null);
 
@@ -343,6 +350,9 @@ export const EventManager: React.FC<EventManagerProps> = ({
       onUpdateEvent(selectedEvent.id, { processSteps: createDefaultProcessSteps() });
     }
     setSelectedItemIds([]);
+    setAdvanceTitle('');
+    setAdvanceNote('');
+    setAdvanceAmount('');
   }, [selectedEvent, onUpdateEvent]);
   useEffect(() => {
     if (!selectedEvent) {
@@ -379,6 +389,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
       items: [],
       staff: [],
       expenses: [],
+      advanceRequests: [],
       processSteps: createDefaultProcessSteps(),
       timeline: [],
       layout: {
@@ -571,6 +582,30 @@ export const EventManager: React.FC<EventManagerProps> = ({
     setExpenseAmount('');
     setExpenseSub('');
     setExpenseVatLink('');
+  };
+
+  const handleAddAdvanceRequestSubmit = () => {
+    if (!selectedEventId || !onAddAdvanceRequest) return;
+    if (!advanceTitle.trim()) {
+      alert('Vui lòng nhập hạng mục tạm ứng.');
+      return;
+    }
+    const parsedAmount = Number(advanceAmount);
+    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+      alert('Số tiền tạm ứng không hợp lệ.');
+      return;
+    }
+    const payload: EventAdvanceRequest = {
+      id: `ADV-${Date.now()}`,
+      title: advanceTitle.trim(),
+      note: advanceNote.trim() || undefined,
+      amount: parsedAmount,
+      createdAt: new Date().toISOString()
+    };
+    onAddAdvanceRequest(selectedEventId, payload);
+    setAdvanceTitle('');
+    setAdvanceNote('');
+    setAdvanceAmount('');
   };
 
   const handleStaffSelect = (empId: string) => {
@@ -987,6 +1022,8 @@ export const EventManager: React.FC<EventManagerProps> = ({
   };
 
   // Tài chính
+  const advanceRequests = selectedEvent?.advanceRequests || [];
+  const totalAdvanceAmount = advanceRequests.reduce((sum, req) => sum + (req.amount || 0), 0);
   const staffCosts = selectedEvent?.staff?.reduce((a, b) => a + b.salary, 0) || 0;
   const otherCosts = selectedEvent?.expenses?.reduce((a, b) => a + b.amount, 0) || 0;
   const totalCosts = staffCosts + otherCosts;
@@ -1766,6 +1803,100 @@ export const EventManager: React.FC<EventManagerProps> = ({
                       </div>
                     ) : (
                       <div className="text-xs text-slate-400 italic">Chưa gán đơn bán nào. Gán để tính doanh thu tổng.</div>
+                    )}
+                  </div>
+
+                  {/* ADVANCE REQUESTS */}
+                  <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+                    <div className="flex items-center justify-between gap-2">
+                      <h4 className="font-bold text-gray-800 text-xs uppercase flex items-center gap-2">
+                        <Wallet size={16} className="text-amber-600" /> Yêu cầu tạm ứng
+                      </h4>
+                      <span className="text-[11px] text-slate-500 font-semibold">Tổng yêu cầu: {totalAdvanceAmount.toLocaleString()}đ</span>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
+                      <div className="md:col-span-4">
+                        <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Hạng mục</label>
+                        <input 
+                          className="w-full border rounded-xl p-3 text-sm outline-none focus:ring-2 focus:ring-amber-500"
+                          placeholder="Ví dụ: Tạm ứng vận chuyển, tạm ứng ăn ở..."
+                          value={advanceTitle}
+                          onChange={e => setAdvanceTitle(e.target.value)}
+                        />
+                      </div>
+                      <div className="md:col-span-5">
+                        <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Ghi chú / Nội dung</label>
+                        <input 
+                          className="w-full border rounded-xl p-3 text-sm outline-none focus:ring-2 focus:ring-amber-500"
+                          placeholder="Mô tả ngắn về lý do tạm ứng"
+                          value={advanceNote}
+                          onChange={e => setAdvanceNote(e.target.value)}
+                        />
+                      </div>
+                      <div className="md:col-span-3">
+                        <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Số tiền (VNĐ)</label>
+                        <input 
+                          type="number"
+                          className="w-full border rounded-xl p-3 text-sm font-bold text-amber-700 outline-none focus:ring-2 focus:ring-amber-500"
+                          placeholder="0"
+                          value={advanceAmount}
+                          onChange={e => setAdvanceAmount(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                    <button onClick={handleAddAdvanceRequestSubmit} className="w-full bg-amber-600 text-white py-3 rounded-xl text-sm font-black hover:bg-amber-700 transition shadow-lg uppercase tracking-widest">
+                      Thêm yêu cầu tạm ứng
+                    </button>
+
+                    {advanceRequests.length > 0 ? (
+                      <div className="overflow-auto border border-slate-200 rounded-xl">
+                        <table className="min-w-full text-sm">
+                          <thead className="bg-slate-50 text-left">
+                            <tr>
+                              <th className="px-4 py-2 font-black text-slate-500 text-[11px] uppercase tracking-widest w-12">#</th>
+                              <th className="px-4 py-2 font-black text-slate-500 text-[11px] uppercase tracking-widest">Hạng mục</th>
+                              <th className="px-4 py-2 font-black text-slate-500 text-[11px] uppercase tracking-widest">Ghi chú</th>
+                              <th className="px-4 py-2 font-black text-slate-500 text-[11px] uppercase tracking-widest text-right">Số tiền</th>
+                              <th className="px-4 py-2"></th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {advanceRequests.map((req, idx) => (
+                              <tr key={req.id} className="border-t border-slate-100 hover:bg-amber-50/40">
+                                <td className="px-4 py-2 text-xs text-slate-500">{idx + 1}</td>
+                                <td className="px-4 py-2">
+                                  <p className="font-bold text-slate-800">{req.title}</p>
+                                  {req.createdAt && (
+                                    <p className="text-[11px] text-slate-400">Ngày yêu cầu: {new Date(req.createdAt).toLocaleDateString('vi-VN')}</p>
+                                  )}
+                                </td>
+                                <td className="px-4 py-2 text-sm text-slate-600">{req.note || '—'}</td>
+                                <td className="px-4 py-2 text-right font-bold text-amber-700">{(req.amount || 0).toLocaleString()}đ</td>
+                                <td className="px-4 py-2 text-right">
+                                  <button 
+                                    onClick={() => onRemoveAdvanceRequest?.(selectedEvent.id, req.id)}
+                                    className="text-gray-300 hover:text-red-500"
+                                    title="Xóa yêu cầu"
+                                  >
+                                    <Trash2 size={16}/>
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          <tfoot className="bg-slate-50 border-t border-slate-200">
+                            <tr>
+                              <td colSpan={3} className="px-4 py-3 text-right font-black text-slate-700 uppercase tracking-widest">Tổng tạm ứng</td>
+                              <td className="px-4 py-3 text-right font-black text-amber-700 text-lg">{totalAdvanceAmount.toLocaleString()}đ</td>
+                              <td></td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    ) : (
+                      <div className="text-xs text-slate-400 italic border border-dashed border-slate-200 rounded-xl p-3">
+                        Chưa có yêu cầu tạm ứng nào. Điền hạng mục, ghi chú và số tiền rồi bấm "Thêm" để lưu.
+                      </div>
                     )}
                   </div>
 

@@ -195,6 +195,14 @@ export interface EventExpense {
   vatInvoiceLink?: string;
 }
 
+export interface EventAdvanceRequest {
+  id: string;
+  title: string;
+  note?: string;
+  amount: number;
+  createdAt?: string;
+}
+
 export interface EventItemAllocation {
   itemId: string;
   quantity: number;
@@ -262,6 +270,7 @@ export interface Event {
   items: EventItemAllocation[];
   staff?: EventStaffAllocation[];
   expenses?: EventExpense[];
+  advanceRequests?: EventAdvanceRequest[];
   quotationId?: string; 
   isOrderCreated?: boolean; 
   processSteps?: EventProcessStep[];

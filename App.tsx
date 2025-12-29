@@ -9,7 +9,7 @@ import { PackageManager } from './components/PackageManager';
 import { EmployeeManager } from './components/EmployeeManager';
 import { QuotationManager } from './components/QuotationManager';
 import { AIChat } from './components/AIChat';
-import { AppState, InventoryItem, Event, EventStatus, Transaction, TransactionType, ComboPackage, Employee, Quotation, EventStaffAllocation, EventExpense, LogEntry, ChecklistDirection, ChecklistStatus, ChecklistSignature, EventChecklist } from './types';
+import { AppState, InventoryItem, Event, EventStatus, Transaction, TransactionType, ComboPackage, Employee, Quotation, EventStaffAllocation, EventExpense, EventAdvanceRequest, LogEntry, ChecklistDirection, ChecklistStatus, ChecklistSignature, EventChecklist } from './types';
 import { MOCK_INVENTORY, MOCK_EVENTS, MOCK_TRANSACTIONS, MOCK_PACKAGES, MOCK_EMPLOYEES } from './constants';
 import { MessageSquare } from 'lucide-react';
 import { saveAppState, loadAppState, initializeAuth } from './services/firebaseService';
@@ -41,6 +41,7 @@ const App: React.FC = () => {
     events: (state.events || []).map(ev => ({
       ...ev,
       items: ev.items || [],
+      advanceRequests: ev.advanceRequests || [],
       checklist: normalizeChecklist(ev.checklist),
       timeline: ev.timeline || []
     }))
@@ -832,6 +833,20 @@ const App: React.FC = () => {
     }));
   };
 
+  const handleAddAdvanceRequest = (eventId: string, request: EventAdvanceRequest) => {
+    setAppState(prev => ({
+      ...prev,
+      events: prev.events.map(e => e.id !== eventId ? e : { ...e, advanceRequests: [...(e.advanceRequests || []), request] })
+    }));
+  };
+
+  const handleRemoveAdvanceRequest = (eventId: string, requestId: string) => {
+    setAppState(prev => ({
+      ...prev,
+      events: prev.events.map(e => e.id !== eventId ? e : { ...e, advanceRequests: (e.advanceRequests || []).filter(req => req.id !== requestId) })
+    }));
+  };
+
   const handleLinkQuotation = (eventId: string, quotationId: string) => {
     setAppState(prev => ({
       ...prev,
@@ -995,6 +1010,8 @@ const App: React.FC = () => {
           onRemoveStaff={handleRemoveStaff}
           onAddExpense={handleAddExpense}
           onRemoveExpense={handleRemoveExpense}
+          onAddAdvanceRequest={handleAddAdvanceRequest}
+          onRemoveAdvanceRequest={handleRemoveAdvanceRequest}
           onLinkQuotation={handleLinkQuotation}
           onFinalizeOrder={handleFinalizeOrder}
           onToggleItemDone={handleToggleEventItemDone}
