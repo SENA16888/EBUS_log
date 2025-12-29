@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ComboPackage, InventoryItem } from '../types';
 import { Layers, Plus, X, Box, Trash2, Check, Package, Pencil } from 'lucide-react';
 
@@ -26,6 +26,34 @@ export const PackageManager: React.FC<PackageManagerProps> = ({
   const [tempItems, setTempItems] = useState<{itemId: string, quantity: number}[]>([]);
   const [selectedItemId, setSelectedItemId] = useState('');
   const [selectedQty, setSelectedQty] = useState(1);
+  const [itemSearchTerm, setItemSearchTerm] = useState('');
+
+  const sortedInventory = useMemo(
+    () => [...inventory].sort((a, b) => a.name.localeCompare(b.name, 'vi', { sensitivity: 'base' })),
+    [inventory]
+  );
+
+  const filteredInventory = useMemo(() => {
+    const term = itemSearchTerm.trim().toLowerCase();
+    let list = sortedInventory;
+    if (term) {
+      list = sortedInventory.filter(i =>
+        i.name.toLowerCase().includes(term) ||
+        (i.barcode || '').toLowerCase().includes(term)
+      );
+    }
+    if (selectedItemId && !list.find(i => i.id === selectedItemId)) {
+      const selected = sortedInventory.find(i => i.id === selectedItemId);
+      if (selected) list = [selected, ...list];
+    }
+    return list;
+  }, [sortedInventory, itemSearchTerm, selectedItemId]);
+
+  useEffect(() => {
+    if (!showCreateModal) {
+      setItemSearchTerm('');
+    }
+  }, [showCreateModal]);
 
   const handleOpenEdit = (e: React.MouseEvent, pkg: ComboPackage) => {
     e.preventDefault();
@@ -161,13 +189,23 @@ export const PackageManager: React.FC<PackageManagerProps> = ({
               <input type="number" className="w-full border p-2 rounded-lg" placeholder="Giá gói" value={newPkgPrice} onChange={(e) => setNewPkgPrice(Number(e.target.value))} />
               <div className="border-t pt-4">
                 <p className="font-bold mb-2">Thêm thiết bị</p>
-                <div className="flex gap-2">
-                  <select className="flex-1 border p-2 rounded-lg" value={selectedItemId} onChange={(e) => setSelectedItemId(e.target.value)}>
-                    <option value="">-- Chọn thiết bị --</option>
-                    {inventory.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
-                  </select>
-                  <input type="number" className="w-20 border p-2 rounded-lg" value={selectedQty} onChange={(e) => setSelectedQty(Number(e.target.value))} />
-                  <button onClick={handleAddItemToPkg} className="bg-slate-800 text-white p-2 rounded-lg"><Plus size={20}/></button>
+                <div className="space-y-2">
+                  <input
+                    type="text"
+                    value={itemSearchTerm}
+                    onChange={(e) => setItemSearchTerm(e.target.value)}
+                    placeholder="Tìm nhanh theo tên hoặc barcode..."
+                    className="w-full border p-2 rounded-lg"
+                  />
+                  <div className="grid grid-cols-[minmax(0,1fr)_90px_52px] gap-2 items-stretch">
+                    <select className="border p-2 rounded-lg min-w-0" value={selectedItemId} onChange={(e) => setSelectedItemId(e.target.value)}>
+                      <option value="">-- Chọn thiết bị --</option>
+                      {filteredInventory.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
+                    </select>
+                    <input type="number" className="border p-2 rounded-lg text-center" value={selectedQty} onChange={(e) => setSelectedQty(Number(e.target.value))} />
+                    <button onClick={handleAddItemToPkg} className="bg-slate-800 text-white rounded-lg flex items-center justify-center"><Plus size={20}/></button>
+                  </div>
+                  <p className="text-[12px] text-slate-500">Đang hiển thị {filteredInventory.length}/{inventory.length} thiết bị (A-Z).</p>
                 </div>
               </div>
               <div className="bg-slate-50 p-4 rounded-lg space-y-2">
