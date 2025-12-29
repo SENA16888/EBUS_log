@@ -125,6 +125,23 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
     return matchesSearch && matchesCategory && matchesLowStock;
   });
 
+  const getStatusMaxQty = (item: InventoryItem | null, type: string) => {
+    if (!item) return 0;
+    if (type === 'FIXED') return item.brokenQuantity || 0;
+    if (type === 'DISPOSE') return (item.availableQuantity || 0) + (item.brokenQuantity || 0);
+    return item.availableQuantity;
+  };
+
+  const statusMaxQty = getStatusMaxQty(statusItem, statusType);
+
+  useEffect(() => {
+    setStatusQty(prev => {
+      if (statusMaxQty <= 0) return 0;
+      const next = prev || 1;
+      return Math.min(Math.max(1, next), statusMaxQty);
+    });
+  }, [statusMaxQty, statusType]);
+
   const handleOpenEdit = (e: React.MouseEvent, item: InventoryItem) => {
     e.preventDefault();
     e.stopPropagation();
@@ -278,11 +295,25 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
   };
 
   const handleStatusSubmit = () => {
-    if (statusItem && statusQty > 0) {
-      onStatusChange(statusItem.id, statusType, statusQty, statusNote);
-      setShowStatusModal(false);
-      setStatusItem(null);
+    if (!statusItem) return;
+    if (statusQty <= 0) return;
+
+    const maxAllowed = getStatusMaxQty(statusItem, statusType);
+    if (maxAllowed <= 0) {
+      if (statusType === 'FIXED') {
+        alert('Chưa có thiết bị hỏng để sửa.');
+      } else if (statusType === 'DISPOSE') {
+        alert('Không còn số lượng khả dụng hoặc hỏng để thanh lý.');
+      }
+      return;
     }
+    if (statusQty > maxAllowed) {
+      alert(`Số lượng tối đa cho thao tác này là ${maxAllowed}.`);
+      return;
+    }
+    onStatusChange(statusItem.id, statusType, statusQty, statusNote);
+    setShowStatusModal(false);
+    setStatusItem(null);
   };
 
   const handleBulkSubmit = () => {
@@ -672,8 +703,22 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
 
                 <div>
                    <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Số lượng xử lý</label>
-                   <input type="number" min="1" max={statusItem.availableQuantity} className="w-full border-2 border-slate-100 rounded-xl p-3 text-xl font-bold text-center" value={statusQty} onChange={e => setStatusQty(Number(e.target.value))} />
-                   <p className="text-[10px] text-right mt-1 text-slate-400">Tối đa khả dụng: {statusItem.availableQuantity}</p>
+                   <input
+                     type="number"
+                     min="1"
+                     max={statusMaxQty || undefined}
+                     disabled={statusMaxQty <= 0}
+                     className="w-full border-2 border-slate-100 rounded-xl p-3 text-xl font-bold text-center disabled:bg-slate-50 disabled:text-slate-400"
+                     value={statusQty || ''}
+                     onChange={e => setStatusQty(Number(e.target.value))}
+                   />
+                   <p className="text-[10px] text-right mt-1 text-slate-400">
+                     {statusType === 'FIXED'
+                       ? `Tối đa sửa: ${statusItem.brokenQuantity} (theo số lượng hỏng)`
+                       : statusType === 'DISPOSE'
+                         ? `Tối đa thanh lý: ${statusMaxQty} (sẵn + hỏng)`
+                         : `Tối đa khả dụng: ${statusItem.availableQuantity}`}
+                   </p>
                 </div>
 
                 <div>

@@ -557,29 +557,45 @@ const App: React.FC = () => {
 
   const handleItemStatusChange = (id: string, action: string, qty: number, note: string) => {
     let itemName = '';
+    let appliedQty = 0;
     setAppState(prev => {
       const inventory = prev.inventory.map(item => {
         if (item.id !== id) return item;
         itemName = item.name;
         let { availableQuantity, maintenanceQuantity, brokenQuantity, lostQuantity, totalQuantity } = item;
-        const safeQty = Math.min(qty, availableQuantity);
 
-        if (action === 'TO_MAINTENANCE') { availableQuantity -= safeQty; maintenanceQuantity += safeQty; }
-        else if (action === 'TO_BROKEN') { availableQuantity -= safeQty; brokenQuantity += safeQty; }
-        else if (action === 'TO_LOST') { availableQuantity -= safeQty; lostQuantity += safeQty; }
-        else if (action === 'FIXED') {
-          if (maintenanceQuantity >= qty) maintenanceQuantity -= qty;
-          else if (brokenQuantity >= qty) brokenQuantity -= qty;
-          availableQuantity += qty;
+        const maxForAction = action === 'FIXED'
+          ? brokenQuantity
+          : action === 'DISPOSE'
+            ? availableQuantity + brokenQuantity
+            : availableQuantity;
+        const appliedQtyLocal = Math.min(qty, maxForAction);
+        appliedQty = appliedQtyLocal;
+
+        if (action === 'TO_MAINTENANCE') {
+          availableQuantity -= appliedQtyLocal;
+          maintenanceQuantity += appliedQtyLocal;
+        } else if (action === 'TO_BROKEN') {
+          availableQuantity -= appliedQtyLocal;
+          brokenQuantity += appliedQtyLocal;
+        } else if (action === 'TO_LOST') {
+          availableQuantity -= appliedQtyLocal;
+          lostQuantity += appliedQtyLocal;
+        } else if (action === 'FIXED') {
+          brokenQuantity -= appliedQtyLocal;
+          availableQuantity += appliedQtyLocal;
         } else if (action === 'DISPOSE') {
-          totalQuantity -= qty;
-          brokenQuantity = Math.max(0, brokenQuantity - qty);
+          const disposeFromAvailable = Math.min(appliedQtyLocal, availableQuantity);
+          const disposeFromBroken = appliedQtyLocal - disposeFromAvailable;
+          availableQuantity -= disposeFromAvailable;
+          brokenQuantity = Math.max(0, brokenQuantity - disposeFromBroken);
+          totalQuantity = Math.max(0, totalQuantity - appliedQtyLocal);
         }
         return { ...item, availableQuantity, maintenanceQuantity, brokenQuantity, lostQuantity, totalQuantity };
       });
       return { ...prev, inventory };
     });
-    addLog(`Cập nhật trạng thái cho ${qty} "${itemName}": ${action}.`, 'INFO');
+    addLog(`Cập nhật trạng thái cho ${appliedQty || qty} "${itemName}": ${action}.`, 'INFO');
   };
 
   // --- Handlers cho Gói thiết bị ---
