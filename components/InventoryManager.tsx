@@ -410,8 +410,8 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
         <head>
           <title>In tem: ${titleName}</title>
           <style>
-            /* Khổ ngang: 2 tem mỗi hàng, mỗi tem 35x22mm cho giấy 70x24mm (HPRT D35E 2 tem/row) */
-            @page { size: 72mm 24mm; margin: 1mm; }
+            /* Khổ 2 tem/row: 35x22mm mỗi tem. Dùng page dọc 24x72mm + xoay nội dung để tránh driver tự xoay. */
+            @page { size: 24mm 72mm; margin: 1mm; }
             * { box-sizing: border-box; }
             body { margin: 0; padding: 0; font-family: Arial, sans-serif; background: #f8fafc; }
             .sheet {
@@ -419,7 +419,10 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
               flex-wrap: wrap;
               gap: 2mm;
               padding: 1mm;
-              max-width: 72mm;
+              width: 72mm;
+              height: 24mm;
+              transform: rotate(90deg) translate(0, -72mm);
+              transform-origin: top left;
             }
             .label {
               width: 35mm;
