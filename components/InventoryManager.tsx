@@ -410,14 +410,21 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
         <head>
           <title>In tem: ${titleName}</title>
           <style>
-            @page { size: 40mm 30mm; margin: 2mm; }
+            /* Khổ ngang: 2 tem mỗi hàng, mỗi tem 35x22mm cho giấy 70x24mm (HPRT D35E 2 tem/row) */
+            @page { size: 72mm 24mm; margin: 1mm; }
             * { box-sizing: border-box; }
             body { margin: 0; padding: 0; font-family: Arial, sans-serif; background: #f8fafc; }
-            .sheet { display: flex; flex-wrap: wrap; gap: 2mm; padding: 2mm; }
+            .sheet {
+              display: flex;
+              flex-wrap: wrap;
+              gap: 2mm;
+              padding: 1mm;
+              max-width: 72mm;
+            }
             .label {
-              width: 40mm;
-              height: 30mm;
-              padding: 2mm 1.5mm 1mm;
+              width: 35mm;
+              height: 22mm;
+              padding: 1.5mm 1mm 1mm;
               background: white;
               border: 1px dashed #e2e8f0;
               display: flex;
@@ -428,23 +435,25 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
             }
             .label__name {
               width: 100%;
-              font-size: 10px;
+              font-size: 8.5px;
               font-weight: 700;
               text-align: center;
               line-height: 1.2;
-              margin-bottom: 2px;
+              margin-bottom: 1mm;
+              padding: 0 2mm;
             }
             .label img {
               width: 100%;
-              max-height: 14mm;
+              max-height: 11mm;
               object-fit: contain;
             }
             .label__code {
               font-family: monospace;
-              font-size: 9px;
+              font-size: 8px;
               letter-spacing: 0.12em;
               text-align: center;
-              margin-top: 2px;
+              margin-top: 1mm;
+              white-space: nowrap;
             }
             .status {
               position: fixed;
