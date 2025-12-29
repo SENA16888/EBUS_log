@@ -236,6 +236,34 @@ export const EventManager: React.FC<EventManagerProps> = ({
   const [selectedItemForExport, setSelectedItemForExport] = useState('');
   const [selectedPackageId, setSelectedPackageId] = useState('');
   const [exportQty, setExportQty] = useState(1);
+  const [exportSearchTerm, setExportSearchTerm] = useState('');
+
+  const sortedInventoryForExport = useMemo(
+    () => [...inventory].sort((a, b) => a.name.localeCompare(b.name, 'vi', { sensitivity: 'base' })),
+    [inventory]
+  );
+
+  const filteredInventoryForExport = useMemo(() => {
+    const term = exportSearchTerm.trim().toLowerCase();
+    let list = sortedInventoryForExport;
+    if (term) {
+      list = sortedInventoryForExport.filter(item =>
+        item.name.toLowerCase().includes(term) ||
+        (item.barcode || '').toLowerCase().includes(term)
+      );
+    }
+    if (selectedItemForExport && !list.find(item => item.id === selectedItemForExport)) {
+      const selectedItem = sortedInventoryForExport.find(item => item.id === selectedItemForExport);
+      if (selectedItem) list = [selectedItem, ...list];
+    }
+    return list;
+  }, [sortedInventoryForExport, exportSearchTerm, selectedItemForExport]);
+
+  useEffect(() => {
+    if (!showExportModal) {
+      setExportSearchTerm('');
+    }
+  }, [showExportModal]);
 
   // Calendar view state
   const [showCalendarModal, setShowCalendarModal] = useState(false);
@@ -1846,14 +1874,29 @@ export const EventManager: React.FC<EventManagerProps> = ({
             </div>
             <div className="space-y-4">
               {exportMode === 'SINGLE' ? (
-                <select className="w-full border rounded-xl p-3 bg-white" value={selectedItemForExport} onChange={e => setSelectedItemForExport(e.target.value)}>
-                  <option value="">-- Chọn thiết bị --</option>
-                  {inventory.map(item => (
-                    <option key={item.id} value={item.id}>
-                      {item.name} (Sẵn: {item.availableQuantity})
-                    </option>
-                  ))}
-                </select>
+                <>
+                  <div className="space-y-2">
+                    <label className="text-xs font-semibold text-slate-500 uppercase">Tìm thiết bị nhanh</label>
+                    <input
+                      type="text"
+                      value={exportSearchTerm}
+                      onChange={(e) => setExportSearchTerm(e.target.value)}
+                      placeholder="Nhập tên, barcode hoặc mã SP..."
+                      className="w-full border rounded-xl p-3 bg-white"
+                    />
+                    <p className="text-[11px] text-slate-500">
+                      Đang hiển thị {filteredInventoryForExport.length}/{inventory.length} thiết bị (xếp A-Z)
+                    </p>
+                  </div>
+                  <select className="w-full border rounded-xl p-3 bg-white" value={selectedItemForExport} onChange={e => setSelectedItemForExport(e.target.value)}>
+                    <option value="">-- Chọn thiết bị --</option>
+                    {filteredInventoryForExport.map(item => (
+                      <option key={item.id} value={item.id}>
+                        {item.name} (Sẵn: {item.availableQuantity})
+                      </option>
+                    ))}
+                  </select>
+                </>
               ) : (
                 <select className="w-full border rounded-xl p-3 bg-white" value={selectedPackageId} onChange={e => setSelectedPackageId(e.target.value)}>
                   <option value="">-- Chọn gói combo --</option>
