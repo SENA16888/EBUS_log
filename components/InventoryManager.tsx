@@ -3,7 +3,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { InventoryItem } from '../types';
 import { 
   Search, Plus, Filter, X, Trash2, AlertTriangle, Wrench, ClipboardList,
-  ShoppingCart, Info, ArrowUpCircle, Settings2, Link as LinkIcon, CheckCircle, CalendarClock
+  ShoppingCart, Info, ArrowUpCircle, Settings2, Link as LinkIcon, CheckCircle, CalendarClock, Printer
 } from 'lucide-react';
 import JsBarcode from 'jsbarcode';
 import { findDuplicateBarcodeItem, generateBarcode, normalizeBarcode } from '../services/barcodeService';
@@ -60,6 +60,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [showBulkModal, setShowBulkModal] = useState(false);
   const [showRestockModal, setShowRestockModal] = useState(false);
+  const [showPrintModal, setShowPrintModal] = useState(false);
   
   const [bulkText, setBulkText] = useState('');
   const [importMode, setImportMode] = useState<'NEW' | 'EDIT'>('NEW');
@@ -70,6 +71,9 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
   const [statusQty, setStatusQty] = useState(1);
   const [statusNote, setStatusNote] = useState('');
   const [restockQty, setRestockQty] = useState(1);
+  const [selectedPrintItemId, setSelectedPrintItemId] = useState('');
+  const [printQuantity, setPrintQuantity] = useState(1);
+  const [printPreviewUrl, setPrintPreviewUrl] = useState('');
 
   const [newItemData, setNewItemData] = useState({
     barcode: '',
@@ -141,6 +145,26 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
       return Math.min(Math.max(1, next), statusMaxQty);
     });
   }, [statusMaxQty, statusType]);
+
+  const generateBarcodeDataUrl = (value: string) => {
+    const canvas = document.createElement('canvas');
+    try {
+      JsBarcode(canvas, value, { format: 'CODE128', height: 40, width: 1.6, displayValue: false, margin: 0 });
+      return canvas.toDataURL('image/png');
+    } catch (err) {
+      console.warn('Không thể tạo ảnh barcode', err);
+      return '';
+    }
+  };
+
+  useEffect(() => {
+    const target = inventory.find(i => i.id === selectedPrintItemId);
+    if (target?.barcode) {
+      setPrintPreviewUrl(generateBarcodeDataUrl(target.barcode));
+    } else {
+      setPrintPreviewUrl('');
+    }
+  }, [selectedPrintItemId, inventory]);
 
   const handleOpenEdit = (e: React.MouseEvent, item: InventoryItem) => {
     e.preventDefault();
@@ -294,6 +318,109 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
     }
   };
 
+  const handleOpenPrintModal = (item?: InventoryItem) => {
+    const defaultId = item?.id || inventory.find(i => i.barcode)?.id || '';
+    setSelectedPrintItemId(defaultId);
+    setPrintQuantity(1);
+    setShowPrintModal(true);
+  };
+
+  const handlePrintLabels = () => {
+    const target = inventory.find(i => i.id === selectedPrintItemId);
+    if (!target) {
+      alert('Vui lòng chọn thiết bị cần in.');
+      return;
+    }
+    const code = normalizeBarcode(target.barcode || '');
+    if (!code) {
+      alert('Thiết bị chưa có mã barcode. Vui lòng cập nhật trước khi in.');
+      return;
+    }
+    const safeQty = Math.min(500, Math.max(1, Math.round(printQuantity || 1)));
+    const barcodeImg = generateBarcodeDataUrl(code);
+    if (!barcodeImg) {
+      alert('Không thể tạo ảnh barcode để in.');
+      return;
+    }
+
+    const safeName = (target.name || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const safeCode = code.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+    const labelHtml = Array.from({ length: safeQty }).map(() => `
+      <div class="label">
+        <div class="label__name">${safeName}</div>
+        <img src="${barcodeImg}" alt="${safeCode}" />
+        <div class="label__code">${safeCode}</div>
+      </div>
+    `).join('');
+
+    const printWindow = window.open('', '_blank', 'width=420,height=680');
+    if (!printWindow) return;
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>In tem: ${target.name}</title>
+          <style>
+            @page { size: 40mm 30mm; margin: 2mm; }
+            * { box-sizing: border-box; }
+            body { margin: 0; padding: 0; font-family: Arial, sans-serif; background: #f8fafc; }
+            .sheet { display: flex; flex-wrap: wrap; gap: 2mm; padding: 2mm; }
+            .label {
+              width: 40mm;
+              height: 30mm;
+              padding: 2mm 1.5mm 1mm;
+              background: white;
+              border: 1px dashed #e2e8f0;
+              display: flex;
+              flex-direction: column;
+              justify-content: center;
+              align-items: center;
+              overflow: hidden;
+            }
+            .label__name {
+              width: 100%;
+              font-size: 10px;
+              font-weight: 700;
+              text-align: center;
+              line-height: 1.2;
+              margin-bottom: 2px;
+            }
+            .label img {
+              width: 100%;
+              max-height: 14mm;
+              object-fit: contain;
+            }
+            .label__code {
+              font-family: monospace;
+              font-size: 9px;
+              letter-spacing: 0.12em;
+              text-align: center;
+              margin-top: 2px;
+            }
+            @media print {
+              body { background: white; }
+              .sheet { gap: 1mm; padding: 1mm; }
+              .label { border: none; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="sheet">
+            ${labelHtml}
+          </div>
+          <script>
+            window.onload = () => {
+              window.print();
+              setTimeout(() => window.close(), 300);
+            };
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.focus();
+  };
+
   const handleStatusSubmit = () => {
     if (!statusItem) return;
     if (statusQty <= 0) return;
@@ -372,6 +499,9 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
           <button onClick={() => setShowBulkModal(true)} className="flex-1 sm:flex-none bg-slate-800 text-white px-4 py-2.5 rounded-xl hover:bg-black transition flex items-center justify-center gap-2 text-[11px] font-black uppercase tracking-widest shadow-md">
             <ClipboardList size={16} /> Nhập Hàng Loạt
           </button>
+          <button onClick={() => handleOpenPrintModal()} className="flex-1 sm:flex-none bg-white text-slate-700 border border-slate-200 px-4 py-2.5 rounded-xl hover:bg-slate-100 transition flex items-center justify-center gap-2 text-[11px] font-black uppercase tracking-widest shadow-md">
+            <Printer size={16} /> In mã
+          </button>
           <button onClick={() => { setImportMode('NEW'); setShowImportModal(true); }} className="flex-1 sm:flex-none bg-blue-600 text-white px-4 py-2.5 rounded-xl hover:bg-blue-700 transition flex items-center justify-center gap-2 text-[11px] font-black uppercase tracking-widest shadow-md">
             <Plus size={16} /> Thêm Thiết Bị
           </button>
@@ -415,6 +545,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
               <div className="absolute top-3 right-3 flex flex-col gap-1.5 z-50 opacity-0 group-hover:opacity-100 transition-all transform translate-x-3 group-hover:translate-x-0">
                  <button onClick={(e) => handleOpenStatus(e, item)} title="Bảo trì / Báo hỏng" className="p-2 bg-white/95 backdrop-blur shadow text-slate-700 rounded-xl hover:text-orange-500 transition-colors"><Wrench size={16} /></button>
                  <button onClick={(e) => handleOpenRestock(e, item)} title="Nhập thêm hàng" className="p-2 bg-white/95 backdrop-blur shadow text-slate-700 rounded-xl hover:text-green-600 transition-colors"><ArrowUpCircle size={16} /></button>
+                 <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleOpenPrintModal(item); }} title="In tem mã vạch" className="p-2 bg-white/95 backdrop-blur shadow text-slate-700 rounded-xl hover:text-slate-900 transition-colors"><Printer size={16} /></button>
                  <button onClick={(e) => handleOpenEdit(e, item)} title="Chỉnh sửa thông tin" className="p-2 bg-white/95 backdrop-blur shadow text-slate-700 rounded-xl hover:text-blue-600 transition-colors"><Settings2 size={16} /></button>
                  <button onClick={(e) => handleDeleteClick(e, item)} title="Xóa thiết bị" className="p-2 bg-white/95 backdrop-blur shadow text-red-400 rounded-xl hover:bg-red-500 hover:text-white transition-all"><Trash2 size={16} /></button>
               </div>
@@ -642,6 +773,79 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
               <textarea className="w-full h-64 border-2 border-slate-100 rounded-xl p-4 font-mono text-sm" value={bulkText} onChange={e => setBulkText(e.target.value)} placeholder="10 x Đèn Par Led&#10;5 bộ Micro Shure&#10;Màn hình LED: 20m2"></textarea>
               <button onClick={handleBulkSubmit} className="w-full mt-4 bg-slate-800 text-white py-3 rounded-xl font-bold">Xử lý & Nhập kho</button>
            </div>
+        </div>
+      )}
+
+      {/* 2.5 Modal Print Barcode */}
+      {showPrintModal && (
+        <div className="fixed inset-0 bg-black/60 z-[120] flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-lg p-6 shadow-2xl">
+            <div className="flex justify-between items-center mb-6">
+              <div>
+                <h3 className="text-xl font-bold text-slate-800">In tem mã vạch</h3>
+                <p className="text-sm text-slate-500">Chọn thiết bị và số lượng tem. Khổ mặc định 40x30mm (máy HPRT D35E).</p>
+              </div>
+              <button onClick={() => setShowPrintModal(false)}><X size={24}/></button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Sản phẩm</label>
+                <select
+                  value={selectedPrintItemId}
+                  onChange={e => setSelectedPrintItemId(e.target.value)}
+                  className="w-full border-2 border-slate-100 rounded-xl p-3 text-sm font-bold bg-white"
+                >
+                  <option value="">-- Chọn thiết bị --</option>
+                  {inventory.map(item => (
+                    <option key={item.id} value={item.id}>
+                      {item.name} {item.barcode ? `• ${item.barcode}` : '(chưa có mã)'}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="md:col-span-1">
+                  <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Số lượng tem</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={500}
+                    value={printQuantity}
+                    onChange={e => setPrintQuantity(Number(e.target.value))}
+                    className="w-full border-2 border-slate-100 rounded-xl p-3 text-2xl font-black text-center text-blue-600"
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1 text-center">Giới hạn 500 tem/lần in.</p>
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Xem trước tem</label>
+                  <div className="border border-slate-200 rounded-xl p-3 flex items-center justify-center bg-slate-50 min-h-[120px]">
+                    {printPreviewUrl && selectedPrintItemId ? (
+                      <div className="w-[160px] h-[120px] border border-dashed border-slate-300 bg-white rounded-lg p-2 flex flex-col items-center justify-center text-center">
+                        <p className="text-[11px] font-bold text-slate-700 line-clamp-2 mb-1">
+                          {inventory.find(i => i.id === selectedPrintItemId)?.name}
+                        </p>
+                        <img src={printPreviewUrl} alt="barcode preview" className="w-full h-[50px] object-contain" />
+                        <p className="text-[10px] font-mono text-slate-500 tracking-[0.12em] mt-1">
+                          {inventory.find(i => i.id === selectedPrintItemId)?.barcode}
+                        </p>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-slate-400">Chọn thiết bị để xem trước tem.</p>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-slate-500 mt-2">Đặt khổ giấy 40x30mm trong hộp thoại in của trình duyệt, căn giữa để phù hợp máy D35E.</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 flex justify-end gap-3">
+              <button onClick={() => setShowPrintModal(false)} className="px-5 py-3 text-slate-500 font-black uppercase tracking-widest text-xs hover:bg-slate-100 rounded-xl">Đóng</button>
+              <button onClick={handlePrintLabels} className="px-8 py-3 bg-slate-900 text-white rounded-xl font-black uppercase tracking-widest text-xs shadow-lg hover:bg-black">In tem</button>
+            </div>
+          </div>
         </div>
       )}
 
