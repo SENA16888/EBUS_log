@@ -71,8 +71,9 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
   const [statusQty, setStatusQty] = useState(1);
   const [statusNote, setStatusNote] = useState('');
   const [restockQty, setRestockQty] = useState(1);
-  const [selectedPrintItemId, setSelectedPrintItemId] = useState('');
-  const [printQuantity, setPrintQuantity] = useState(1);
+  const [printSelections, setPrintSelections] = useState<{ itemId: string; quantity: number }[]>([]);
+  const [printDraftItemId, setPrintDraftItemId] = useState('');
+  const [printDraftQty, setPrintDraftQty] = useState(1);
   const [printPreviewUrl, setPrintPreviewUrl] = useState('');
 
   const [newItemData, setNewItemData] = useState({
@@ -158,13 +159,14 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
   };
 
   useEffect(() => {
-    const target = inventory.find(i => i.id === selectedPrintItemId);
+    const first = printSelections[0];
+    const target = first ? inventory.find(i => i.id === first.itemId) : undefined;
     if (target?.barcode) {
       setPrintPreviewUrl(generateBarcodeDataUrl(target.barcode));
     } else {
       setPrintPreviewUrl('');
     }
-  }, [selectedPrintItemId, inventory]);
+  }, [printSelections, inventory]);
 
   const handleOpenEdit = (e: React.MouseEvent, item: InventoryItem) => {
     e.preventDefault();
@@ -319,40 +321,81 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
   };
 
   const handleOpenPrintModal = (item?: InventoryItem) => {
-    const defaultId = item?.id || inventory.find(i => i.barcode)?.id || '';
-    setSelectedPrintItemId(defaultId);
-    setPrintQuantity(1);
+    const defaultItemId = item?.id || inventory.find(i => i.barcode)?.id || '';
+    const initialSelection = defaultItemId ? [{ itemId: defaultItemId, quantity: 1 }] : [];
+    setPrintSelections(initialSelection);
+    setPrintDraftItemId('');
+    setPrintDraftQty(1);
     setShowPrintModal(true);
   };
 
-  const handlePrintLabels = () => {
-    const target = inventory.find(i => i.id === selectedPrintItemId);
+  const handleAddPrintSelection = () => {
+    const itemId = printDraftItemId || printSelections[0]?.itemId || '';
+    const target = inventory.find(i => i.id === itemId);
     if (!target) {
-      alert('Vui lòng chọn thiết bị cần in.');
+      alert('Vui lòng chọn thiết bị.');
       return;
     }
-    const code = normalizeBarcode(target.barcode || '');
-    if (!code) {
-      alert('Thiết bị chưa có mã barcode. Vui lòng cập nhật trước khi in.');
+    if (!normalizeBarcode(target.barcode || '')) {
+      alert('Thiết bị chưa có barcode. Vui lòng cập nhật barcode trước khi in.');
       return;
     }
-    const safeQty = Math.min(500, Math.max(1, Math.round(printQuantity || 1)));
-    const barcodeImg = generateBarcodeDataUrl(code);
-    if (!barcodeImg) {
-      alert('Không thể tạo ảnh barcode để in.');
+    const qty = Math.max(1, Math.round(printDraftQty || 1));
+    setPrintSelections(prev => {
+      const idx = prev.findIndex(p => p.itemId === itemId);
+      if (idx > -1) {
+        const next = [...prev];
+        next[idx] = { ...next[idx], quantity: qty };
+        return next;
+      }
+      return [...prev, { itemId, quantity: qty }];
+    });
+    setPrintDraftItemId('');
+    setPrintDraftQty(1);
+  };
+
+  const handlePrintLabels = () => {
+    if (!printSelections.length) {
+      alert('Vui lòng thêm thiết bị cần in.');
       return;
     }
 
-    const safeName = (target.name || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    const safeCode = code.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const itemsMap: Record<string, InventoryItem> = {};
+    inventory.forEach(i => { itemsMap[i.id] = i; });
 
-    const labelHtml = Array.from({ length: safeQty }).map(() => `
-      <div class="label">
-        <div class="label__name">${safeName}</div>
-        <img src="${barcodeImg}" alt="${safeCode}" />
-        <div class="label__code">${safeCode}</div>
-      </div>
-    `).join('');
+    const missingBarcode = printSelections.filter(sel => !normalizeBarcode(itemsMap[sel.itemId]?.barcode || ''));
+    if (missingBarcode.length) {
+      alert('Một số thiết bị chưa có barcode, vui lòng cập nhật trước khi in.');
+      return;
+    }
+
+    const labelChunks: string[] = [];
+    printSelections.forEach(sel => {
+      const target = itemsMap[sel.itemId];
+      if (!target) return;
+      const code = normalizeBarcode(target.barcode || '');
+      const safeQty = Math.min(500, Math.max(1, Math.round(sel.quantity || 1)));
+      const barcodeImg = generateBarcodeDataUrl(code);
+      if (!barcodeImg) return;
+      const safeName = (target.name || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const safeCode = code.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+      const labels = Array.from({ length: safeQty }).map(() => `
+        <div class="label">
+          <div class="label__name">${safeName}</div>
+          <img src="${barcodeImg}" alt="${safeCode}" />
+          <div class="label__code">${safeCode}</div>
+        </div>
+      `).join('');
+      labelChunks.push(labels);
+    });
+
+    if (!labelChunks.length) {
+      alert('Không thể tạo tem in (có thể mã barcode không hợp lệ).');
+      return;
+    }
+
+    const labelHtml = labelChunks.join('');
 
     const printWindow = window.open('', '_blank', 'width=420,height=680');
     if (!printWindow) return;
@@ -789,55 +832,94 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
             </div>
 
             <div className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Sản phẩm</label>
-                <select
-                  value={selectedPrintItemId}
-                  onChange={e => setSelectedPrintItemId(e.target.value)}
-                  className="w-full border-2 border-slate-100 rounded-xl p-3 text-sm font-bold bg-white"
-                >
-                  <option value="">-- Chọn thiết bị --</option>
-                  {inventory.map(item => (
-                    <option key={item.id} value={item.id}>
-                      {item.name} {item.barcode ? `• ${item.barcode}` : '(chưa có mã)'}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <div className="md:col-span-1">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+                <div className="md:col-span-2">
+                  <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Chọn sản phẩm</label>
+                  <select
+                    value={printDraftItemId}
+                    onChange={e => setPrintDraftItemId(e.target.value)}
+                    className="w-full border-2 border-slate-100 rounded-xl p-3 text-sm font-bold bg-white"
+                  >
+                    <option value="">-- Chọn thiết bị --</option>
+                    {inventory.map(item => (
+                      <option key={item.id} value={item.id}>
+                        {item.name} {item.barcode ? `• ${item.barcode}` : '(chưa có mã)'}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
                   <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Số lượng tem</label>
                   <input
                     type="number"
                     min={1}
                     max={500}
-                    value={printQuantity}
-                    onChange={e => setPrintQuantity(Number(e.target.value))}
-                    className="w-full border-2 border-slate-100 rounded-xl p-3 text-2xl font-black text-center text-blue-600"
+                    value={printDraftQty}
+                    onChange={e => setPrintDraftQty(Number(e.target.value))}
+                    className="w-full border-2 border-slate-100 rounded-xl p-3 text-xl font-black text-center text-blue-600"
                   />
-                  <p className="text-[10px] text-slate-400 mt-1 text-center">Giới hạn 500 tem/lần in.</p>
+                  <p className="text-[10px] text-slate-400 mt-1 text-center">Giới hạn 500 tem/thiết bị.</p>
                 </div>
+              </div>
 
-                <div className="md:col-span-2">
-                  <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Xem trước tem</label>
-                  <div className="border border-slate-200 rounded-xl p-3 flex items-center justify-center bg-slate-50 min-h-[120px]">
-                    {printPreviewUrl && selectedPrintItemId ? (
-                      <div className="w-[160px] h-[120px] border border-dashed border-slate-300 bg-white rounded-lg p-2 flex flex-col items-center justify-center text-center">
-                        <p className="text-[11px] font-bold text-slate-700 line-clamp-2 mb-1">
-                          {inventory.find(i => i.id === selectedPrintItemId)?.name}
-                        </p>
-                        <img src={printPreviewUrl} alt="barcode preview" className="w-full h-[50px] object-contain" />
-                        <p className="text-[10px] font-mono text-slate-500 tracking-[0.12em] mt-1">
-                          {inventory.find(i => i.id === selectedPrintItemId)?.barcode}
-                        </p>
-                      </div>
-                    ) : (
-                      <p className="text-sm text-slate-400">Chọn thiết bị để xem trước tem.</p>
-                    )}
-                  </div>
-                  <p className="text-[11px] text-slate-500 mt-2">Đặt khổ giấy 40x30mm trong hộp thoại in của trình duyệt, căn giữa để phù hợp máy D35E.</p>
+              <div className="flex justify-between items-center">
+                <div className="text-sm text-slate-500">
+                  Đã chọn: <b>{printSelections.length}</b> thiết bị, tổng <b>{printSelections.reduce((s, it) => s + it.quantity, 0)}</b> tem.
                 </div>
+                <button onClick={handleAddPrintSelection} className="px-4 py-2 bg-slate-800 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-black">
+                  Thêm vào danh sách
+                </button>
+              </div>
+
+              {printSelections.length > 0 && (
+                <div className="border border-slate-100 rounded-xl overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead className="bg-slate-50 text-[11px] uppercase text-slate-500">
+                      <tr>
+                        <th className="py-2 px-3 text-left">Thiết bị</th>
+                        <th className="py-2 px-3 text-left">Barcode</th>
+                        <th className="py-2 px-3 text-center">Tem</th>
+                        <th className="py-2 px-3 text-right"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {printSelections.map(sel => {
+                        const item = inventory.find(i => i.id === sel.itemId);
+                        if (!item) return null;
+                        return (
+                          <tr key={sel.itemId} className="border-t border-slate-100">
+                            <td className="py-2 px-3 font-bold text-slate-800">{item.name}</td>
+                            <td className="py-2 px-3 font-mono text-xs text-slate-500">{item.barcode || 'Chưa có mã'}</td>
+                            <td className="py-2 px-3 text-center font-black text-blue-600">{sel.quantity}</td>
+                            <td className="py-2 px-3 text-right">
+                              <button onClick={() => setPrintSelections(prev => prev.filter(p => p.itemId !== sel.itemId))} className="text-red-500 text-xs font-bold hover:underline">Xóa</button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Xem trước tem (mẫu)</label>
+                <div className="border border-slate-200 rounded-xl p-3 flex items-center justify-center bg-slate-50 min-h-[120px]">
+                  {printPreviewUrl && printSelections.length > 0 ? (
+                    <div className="w-[160px] h-[120px] border border-dashed border-slate-300 bg-white rounded-lg p-2 flex flex-col items-center justify-center text-center">
+                      <p className="text-[11px] font-bold text-slate-700 line-clamp-2 mb-1">
+                        {inventory.find(i => i.id === printSelections[0].itemId)?.name}
+                      </p>
+                      <img src={printPreviewUrl} alt="barcode preview" className="w-full h-[50px] object-contain" />
+                      <p className="text-[10px] font-mono text-slate-500 tracking-[0.12em] mt-1">
+                        {inventory.find(i => i.id === printSelections[0].itemId)?.barcode}
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-slate-400">Chọn thiết bị để xem trước tem.</p>
+                  )}
+                </div>
+                <p className="text-[11px] text-slate-500 mt-2">Đặt khổ giấy 40x30mm trong hộp thoại in của trình duyệt, căn giữa để phù hợp máy D35E.</p>
               </div>
             </div>
 
