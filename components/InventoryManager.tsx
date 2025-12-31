@@ -75,7 +75,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
   const [printDraftItemId, setPrintDraftItemId] = useState('');
   const [printDraftQty, setPrintDraftQty] = useState(1);
   const [printPreviewUrl, setPrintPreviewUrl] = useState('');
-  const [printRowGap, setPrintRowGap] = useState(3); // mm
+  const [printLabelHeight, setPrintLabelHeight] = useState(22); // mm
 
   const [newItemData, setNewItemData] = useState({
     barcode: '',
@@ -404,7 +404,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
     );
     const titleItem = itemsMap[printSelections[0]?.itemId || ''];
     const titleName = titleItem?.name || 'In tem barcode';
-    const safeRowGap = Math.min(20, Math.max(0, Number.isFinite(printRowGap) ? printRowGap : 0));
+    const safeLabelHeight = Math.min(40, Math.max(16, Number.isFinite(printLabelHeight) ? printLabelHeight : 22));
 
     const printWindow = window.open('', '_blank', 'width=420,height=680');
     if (!printWindow) return;
@@ -422,12 +422,12 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
               display: grid;
               grid-template-columns: repeat(2, 35mm);
               column-gap: 4mm;
-              row-gap: ${safeRowGap}mm;
+              row-gap: 3mm;
               padding: 1mm 0 1mm 2mm; /* chừa 2mm trái để đủ 74mm */
             }
             .label {
               width: 35mm;
-              height: 22mm;
+              height: ${safeLabelHeight}mm;
               padding: 1.5mm 1mm 1mm;
               background: white;
               border: 1px dashed #e2e8f0;
@@ -448,7 +448,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
             }
             .label img {
               width: 100%;
-              max-height: 11mm;
+              max-height: ${Math.max(6, Math.round(safeLabelHeight - 10))}mm;
               object-fit: contain;
             }
             .label__code {
@@ -918,13 +918,13 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
                 </div>
                 <div className="flex items-center gap-3">
                   <div className="flex items-center gap-2 text-xs text-slate-600">
-                    <label className="font-bold uppercase tracking-widest">Khoảng cách hàng</label>
+                    <label className="font-bold uppercase tracking-widest">Chiều cao ô</label>
                     <input
                       type="number"
-                      min={0}
-                      max={20}
-                      value={printRowGap}
-                      onChange={e => setPrintRowGap(Number(e.target.value))}
+                      min={16}
+                      max={40}
+                      value={printLabelHeight}
+                      onChange={e => setPrintLabelHeight(Number(e.target.value))}
                       className="w-16 border border-slate-200 rounded-lg px-2 py-1 text-sm text-center"
                     />
                     <span className="text-[11px] text-slate-500">mm</span>
@@ -966,24 +966,27 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
                 </div>
               )}
 
-              <div>
-                <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Xem trước tem (mẫu)</label>
-                <div className="border border-slate-200 rounded-xl p-3 flex items-center justify-center bg-slate-50 min-h-[120px]">
-                  {printPreviewUrl && printSelections.length > 0 ? (
-                    <div className="w-[160px] h-[120px] border border-dashed border-slate-300 bg-white rounded-lg p-2 flex flex-col items-center justify-center text-center">
-                      <p className="text-[11px] font-bold text-slate-700 line-clamp-2 mb-1">
-                        {inventory.find(i => i.id === printSelections[0].itemId)?.name}
-                      </p>
-                      <img src={printPreviewUrl} alt="barcode preview" className="w-full h-[50px] object-contain" />
-                      <p className="text-[10px] font-mono text-slate-500 tracking-[0.12em] mt-1">
-                        {inventory.find(i => i.id === printSelections[0].itemId)?.barcode}
-                      </p>
-                    </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Xem trước tem (mẫu)</label>
+                  <div className="border border-slate-200 rounded-xl p-3 flex items-center justify-center bg-slate-50 min-h-[120px]">
+                    {printPreviewUrl && printSelections.length > 0 ? (
+                      <div
+                        className="w-[160px] border border-dashed border-slate-300 bg-white rounded-lg p-2 flex flex-col items-center justify-center text-center"
+                        style={{ height: `${printLabelHeight * 4}px`, minHeight: '100px' }}
+                      >
+                        <p className="text-[11px] font-bold text-slate-700 line-clamp-2 mb-1">
+                          {inventory.find(i => i.id === printSelections[0].itemId)?.name}
+                        </p>
+                        <img src={printPreviewUrl} alt="barcode preview" className="w-full h-[50px] object-contain" />
+                        <p className="text-[10px] font-mono text-slate-500 tracking-[0.12em] mt-1">
+                          {inventory.find(i => i.id === printSelections[0].itemId)?.barcode}
+                        </p>
+                      </div>
                   ) : (
                     <p className="text-sm text-slate-400">Chọn thiết bị để xem trước tem.</p>
                   )}
                 </div>
-                <p className="text-[11px] text-slate-500 mt-2">Đặt khổ giấy 40x30mm trong hộp thoại in của trình duyệt, căn giữa để phù hợp máy D35E.</p>
+                <p className="text-[11px] text-slate-500 mt-2">Khổ 2 tem/row: 35x22mm (đặt giấy 74mm x chiều dài), tăng “Chiều cao ô” để giãn hàng.</p>
               </div>
             </div>
 
