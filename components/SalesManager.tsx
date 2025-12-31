@@ -139,12 +139,12 @@ export const SalesManager: React.FC<SalesManagerProps> = ({ saleItems, events = 
       {/* Export modal */}
       {showExport && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl w-full max-w-2xl p-6">
+          <div className="bg-white rounded-xl w-full max-w-2xl p-6 max-h-[85vh] flex flex-col shadow-2xl">
             <div className="flex justify-between items-center mb-4">
               <h3 className="font-bold">Danh mục hàng bán xuất</h3>
               <button onClick={() => setShowExport(false)}><X size={20}/></button>
             </div>
-            <div className="space-y-2">
+            <div className="space-y-2 flex-1 overflow-y-auto pr-1">
               <div className="flex flex-col md:flex-row md:items-center gap-3">
                 <div className="flex gap-2">
                   <button
