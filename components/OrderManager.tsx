@@ -118,13 +118,29 @@ export const OrderManager: React.FC<OrderManagerProps> = ({ saleOrders = [], onC
       <h1>${mode === 'EXPORT' ? 'Phiếu xuất hàng bán' : mode === 'SOLD' ? 'Phiếu xác nhận hàng đã bán' : 'Phiếu hàng trả về'}</h1>
       <div class="meta">Mã đơn: ${order.id} • Khách hàng: ${order.customerName || '-'} • ${new Date(order.date).toLocaleString()}</div>
     `;
+    const signatureBlock = `
+      <div style="display:flex; justify-content:space-between; margin-top:32px; gap:16px;">
+        <div style="flex:1; text-align:center;">
+          <div style="font-weight:700; margin-bottom:60px;">Người lập phiếu</div>
+          <div style="border-top:1px solid #e2e8f0; padding-top:8px; color:#64748b; font-size:12px;">Ký và ghi rõ họ tên</div>
+        </div>
+        <div style="flex:1; text-align:center;">
+          <div style="font-weight:700; margin-bottom:60px;">Người giao hàng</div>
+          <div style="border-top:1px solid #e2e8f0; padding-top:8px; color:#64748b; font-size:12px;">Ký và ghi rõ họ tên</div>
+        </div>
+        <div style="flex:1; text-align:center;">
+          <div style="font-weight:700; margin-bottom:60px;">Quản lý</div>
+          <div style="border-top:1px solid #e2e8f0; padding-top:8px; color:#64748b; font-size:12px;">Ký và ghi rõ họ tên</div>
+        </div>
+      </div>
+    `;
     if (mode === 'EXPORT') {
       const rows = (order.items || []).map((item, index) => {
         const lineValue = (item.price || 0) * (item.quantity || 0);
         return `
           <tr>
             <td>${index + 1}</td>
-            <td>${item.itemId || '-'}</td>
+            <td>${item.barcode || item.itemId || '-'}</td>
             <td>${item.name}</td>
             <td class="right">${item.quantity || 0}</td>
             <td class="right">${(item.price || 0).toLocaleString()}đ</td>
@@ -158,6 +174,7 @@ export const OrderManager: React.FC<OrderManagerProps> = ({ saleOrders = [], onC
           </tbody>
         </table>
         <div class="total">Tổng giá trị đơn hàng: ${totalValue.toLocaleString()}đ</div>
+        ${signatureBlock}
       `;
       openPrintWindow('In thông tin đơn hàng xuất', body);
       return;
@@ -170,7 +187,7 @@ export const OrderManager: React.FC<OrderManagerProps> = ({ saleOrders = [], onC
         return `
           <tr>
             <td>${index + 1}</td>
-            <td>${item.itemId || '-'}</td>
+            <td>${item.barcode || item.itemId || '-'}</td>
             <td>${item.name}</td>
             <td class="right">${soldQty}</td>
             <td class="right">${discount.toLocaleString()}đ</td>
@@ -204,6 +221,7 @@ export const OrderManager: React.FC<OrderManagerProps> = ({ saleOrders = [], onC
           </tbody>
         </table>
         <div class="total">Tổng doanh thu: ${totalRevenue.toLocaleString()}đ</div>
+        ${signatureBlock}
       `;
       openPrintWindow('In thông tin hàng đã bán', body);
       return;
@@ -213,11 +231,12 @@ export const OrderManager: React.FC<OrderManagerProps> = ({ saleOrders = [], onC
       alert('Chưa có đơn trả hàng để in.');
       return;
     }
-    const returnItemsMap = new Map<string, { itemId: string; name: string; price: number; discount: number; quantity: number }>();
+    const returnItemsMap = new Map<string, { itemId: string; barcode?: string; name: string; price: number; discount: number; quantity: number }>();
     returnOrders.forEach(ret => {
       (ret.items || []).forEach(item => {
         const entry = returnItemsMap.get(item.itemId) || {
           itemId: item.itemId,
+          barcode: item.barcode,
           name: item.name,
           price: item.price,
           discount: item.discount || 0,
@@ -234,12 +253,12 @@ export const OrderManager: React.FC<OrderManagerProps> = ({ saleOrders = [], onC
       return `
         <tr>
           <td>${index + 1}</td>
-          <td>${item.itemId || '-'}</td>
+          <td>${item.barcode || item.itemId || '-'}</td>
           <td>${item.name}</td>
           <td class="right">${qty}</td>
           <td class="right">${discount.toLocaleString()}đ</td>
-            <td class="right">${lineValue.toLocaleString()}đ</td>
-            <td class="right">${lineValue.toLocaleString()}đ</td>
+          <td class="right">${lineValue.toLocaleString()}đ</td>
+          <td class="right">${lineValue.toLocaleString()}đ</td>
         </tr>
       `;
     }).join('');
@@ -271,6 +290,7 @@ export const OrderManager: React.FC<OrderManagerProps> = ({ saleOrders = [], onC
         </tbody>
       </table>
       <div class="total">Tổng giá trị hàng trả: ${totalReturn.toLocaleString()}đ</div>
+      ${signatureBlock}
     `;
     openPrintWindow('In thông tin hàng trả về', body);
   };
@@ -709,7 +729,7 @@ export const OrderManager: React.FC<OrderManagerProps> = ({ saleOrders = [], onC
                       if (qty > maxAllowed) { alert(`Số lượng trả cho "${it.name}" vượt quá số đã xuất còn lại (${maxAllowed}).`); return; }
                       const discount = it.discount || 0;
                       const lineTotal = -Math.max(0, (it.price - discount) * qty);
-                      built.push({ itemId: it.itemId, name: it.name, price: it.price, quantity: qty, discount, lineTotal });
+                      built.push({ itemId: it.itemId, barcode: it.barcode, name: it.name, price: it.price, quantity: qty, discount, lineTotal });
                     }
                   }
                   const canComplete = (openOrder.items || []).every((it: any) => {

@@ -271,7 +271,7 @@ export const SalesManager: React.FC<SalesManagerProps> = ({ saleItems, events = 
                   const qty = selection[item!.id] || 0;
                   const discount = lineDiscounts[item!.id] || 0;
                   const lineTotal = Math.max(0, (item!.price - discount) * qty);
-                  return { itemId: item!.id, name: item!.name, price: item!.price, quantity: qty, discount, lineTotal };
+                  return { itemId: item!.id, barcode: item!.barcode, name: item!.name, price: item!.price, quantity: qty, discount, lineTotal };
                 }).filter(i => i.quantity > 0);
                 if (orderItems.length === 0) { alert('Chưa có sản phẩm bán.'); return; }
                 const subtotal = orderItems.reduce((a,b) => a + (b.lineTotal || 0), 0);
