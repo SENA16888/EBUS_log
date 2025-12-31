@@ -1,15 +1,16 @@
 import React, { useMemo, useState } from 'react';
-import { ChevronDown, ChevronUp, Printer, X } from 'lucide-react';
+import { ChevronDown, ChevronUp, Printer, Trash2, X } from 'lucide-react';
 import { SaleOrder } from '../types';
 
 interface OrderManagerProps {
   saleOrders: SaleOrder[];
   onCreateSaleReturn?: (order: SaleOrder) => void;
   onCreateSaleOrder?: (order: SaleOrder) => void;
+  onDeleteSaleOrder?: (orderId: string) => void;
   onClose?: () => void;
 }
 
-export const OrderManager: React.FC<OrderManagerProps> = ({ saleOrders = [], onCreateSaleReturn, onCreateSaleOrder, onClose }) => {
+export const OrderManager: React.FC<OrderManagerProps> = ({ saleOrders = [], onCreateSaleReturn, onCreateSaleOrder, onDeleteSaleOrder, onClose }) => {
   const [openOrder, setOpenOrder] = useState<SaleOrder | null>(null);
   const [showDetail, setShowDetail] = useState(false);
   const [editingItems, setEditingItems] = useState<Record<string, { quantity: number; discount: number }>>({});
@@ -456,6 +457,17 @@ export const OrderManager: React.FC<OrderManagerProps> = ({ saleOrders = [], onC
                                 className="px-3 py-1 bg-yellow-100 rounded"
                               >
                                 Tạo trả hàng
+                              </button>
+                              <button
+                                onClick={() => {
+                                  if (!onDeleteSaleOrder) return;
+                                  const confirmDelete = window.confirm(`Xóa đơn ${order.id}? Các đơn trả liên quan sẽ bị xóa cùng.`);
+                                  if (!confirmDelete) return;
+                                  onDeleteSaleOrder(order.id);
+                                }}
+                                className="px-3 py-1 bg-red-50 text-red-600 border border-red-100 rounded"
+                              >
+                                <Trash2 size={14} className="inline mr-1" /> Xóa đơn
                               </button>
                             </div>
                           </div>

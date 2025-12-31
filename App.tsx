@@ -531,6 +531,16 @@ const App: React.FC = () => {
     addLog(`Tạo đơn trả kho: ${ret.id} (liên quan ${ret.relatedOrderId})`, 'INFO');
   };
 
+  const handleDeleteSaleOrder = (orderId: string) => {
+    setAppState(prev => {
+      const target = (prev.saleOrders || []).find(o => o.id === orderId);
+      if (!target) return prev;
+      const remaining = (prev.saleOrders || []).filter(o => o.id !== orderId && o.relatedOrderId !== orderId);
+      return { ...prev, saleOrders: remaining };
+    });
+    addLog(`Đã xóa đơn bán hàng: ${orderId}`, 'WARNING');
+  };
+
   const handleToggleEventItemDone = (eventId: string, itemId: string, done: boolean) => {
     setAppState(prev => ({
       ...prev,
@@ -990,6 +1000,7 @@ const App: React.FC = () => {
           onUpdateSaleItem={handleUpdateSaleItem}
           onDeleteSaleItem={handleDeleteSaleItem}
           onCreateSaleOrder={handleCreateSaleOrder}
+          onDeleteSaleOrder={handleDeleteSaleOrder}
           saleOrders={appState.saleOrders || []}
           onCreateSaleReturn={handleCreateSaleReturn}
         />

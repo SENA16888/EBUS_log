@@ -12,9 +12,10 @@ interface SalesManagerProps {
   onCreateSaleOrder: (order: SaleOrder) => void;
   saleOrders?: SaleOrder[];
   onCreateSaleReturn?: (order: SaleOrder) => void;
+  onDeleteSaleOrder?: (orderId: string) => void;
 }
 
-export const SalesManager: React.FC<SalesManagerProps> = ({ saleItems, events = [], onAddSaleItem, onUpdateSaleItem, onDeleteSaleItem, onCreateSaleOrder, saleOrders = [], onCreateSaleReturn }) => {
+export const SalesManager: React.FC<SalesManagerProps> = ({ saleItems, events = [], onAddSaleItem, onUpdateSaleItem, onDeleteSaleItem, onCreateSaleOrder, saleOrders = [], onCreateSaleReturn, onDeleteSaleOrder }) => {
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState({ name: '', category: '', description: '', imageUrl: '', price: 0, link: '', barcode: '' });
@@ -306,7 +307,13 @@ export const SalesManager: React.FC<SalesManagerProps> = ({ saleItems, events = 
       )}
 
       {showHistory && (
-        <OrderManager saleOrders={saleOrders} onCreateSaleReturn={onCreateSaleReturn} onCreateSaleOrder={onCreateSaleOrder} onClose={() => setShowHistory(false)} />
+        <OrderManager
+          saleOrders={saleOrders}
+          onCreateSaleReturn={onCreateSaleReturn}
+          onCreateSaleOrder={onCreateSaleOrder}
+          onDeleteSaleOrder={onDeleteSaleOrder}
+          onClose={() => setShowHistory(false)}
+        />
       )}
 
       {/* Order detail / return modal */}
