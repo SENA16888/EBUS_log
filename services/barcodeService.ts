@@ -12,10 +12,11 @@ export const generateBarcode = (seed?: string) => {
 };
 
 export const ensureItemBarcode = (item: InventoryItem, salt: string = ''): InventoryItem => {
+  const usageCount = typeof item.usageCount === 'number' ? item.usageCount : 0;
   if (item.barcode && normalizeBarcode(item.barcode).length >= 6) {
-    return { ...item, barcode: normalizeBarcode(item.barcode) };
+    return { ...item, barcode: normalizeBarcode(item.barcode), usageCount };
   }
-  return { ...item, barcode: generateBarcode(`${item.id}${salt}`) };
+  return { ...item, barcode: generateBarcode(`${item.id}${salt}`), usageCount };
 };
 
 export const ensureInventoryBarcodes = (items: InventoryItem[]) => {

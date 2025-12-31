@@ -3,7 +3,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { InventoryItem } from '../types';
 import { 
   Search, Plus, Filter, X, Trash2, AlertTriangle, Wrench, ClipboardList,
-  ShoppingCart, Info, ArrowUpCircle, Settings2, Link as LinkIcon, CheckCircle, CalendarClock, Printer
+  ShoppingCart, Info, ArrowUpCircle, Settings2, Link as LinkIcon, CheckCircle, CalendarClock, Printer, History
 } from 'lucide-react';
 import JsBarcode from 'jsbarcode';
 import { findDuplicateBarcodeItem, generateBarcode, normalizeBarcode } from '../services/barcodeService';
@@ -255,6 +255,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
       maintenanceQuantity: 0,
       brokenQuantity: 0,
       lostQuantity: 0,
+      usageCount: 0,
       imageUrl: newItemData.imageUrl,
       rentalPrice: Number(newItemData.rentalPrice),
       purchaseLink: newItemData.purchaseLink,
@@ -547,6 +548,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
         maintenanceQuantity: 0,
         brokenQuantity: 0,
         lostQuantity: 0,
+        usageCount: 0,
         location: 'Kho tổng',
         rentalPrice: 0,
         imageUrl: `https://picsum.photos/200/200?random=${idx}`,
@@ -660,6 +662,14 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
                   </div>
                   <div className="flex items-center gap-2 bg-slate-50 p-2 rounded-xl border border-slate-100 text-[11px] font-bold text-slate-600 truncate uppercase tracking-tighter">
                     {item.location || 'Chưa định vị'}
+                  </div>
+
+                  <div className="flex items-center justify-between bg-blue-50 border border-blue-100 p-2 rounded-xl text-[11px] font-bold text-blue-700">
+                    <div className="flex items-center gap-2">
+                      <History size={14} />
+                      <span>Đã sử dụng</span>
+                    </div>
+                    <span className="text-sm text-slate-800">{(item.usageCount || 0).toLocaleString()} lần</span>
                   </div>
 
                   {item.barcode && (

@@ -40,6 +40,7 @@ export interface InventoryItem {
   maintenanceQuantity: number;
   brokenQuantity: number;
   lostQuantity: number;
+  usageCount: number;
   location: string;
   rentalPrice: number;
   // Bổ sung quản lý nhập hàng/sản xuất

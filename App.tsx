@@ -382,17 +382,20 @@ const App: React.FC = () => {
             if (!itemSnap) return inv;
             const qty = payload.direction === 'OUT' ? itemSnap.scannedOut : itemSnap.scannedIn;
             if (!qty || qty <= 0) return inv;
+            const nextUsage = payload.direction === 'OUT' ? (inv.usageCount || 0) + qty : inv.usageCount || 0;
             if (payload.direction === 'OUT') {
               return {
                 ...inv,
                 availableQuantity: inv.availableQuantity - qty,
-                inUseQuantity: inv.inUseQuantity + qty
+                inUseQuantity: inv.inUseQuantity + qty,
+                usageCount: nextUsage
               };
             }
             return {
               ...inv,
               availableQuantity: inv.availableQuantity + qty,
-              inUseQuantity: Math.max(0, inv.inUseQuantity - qty)
+              inUseQuantity: Math.max(0, inv.inUseQuantity - qty),
+              usageCount: nextUsage
             };
           })
         : prev.inventory;
