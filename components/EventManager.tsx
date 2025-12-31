@@ -6,7 +6,7 @@ import {
   Users, DollarSign, Trash2, Truck, BookOpen, 
   Utensils, Wallet, Printer, Coffee, AlertCircle,
   TrendingUp, ArrowRightLeft, UserCheck, Link as LinkIcon, Clock3,
-  Calculator, ChevronRight, PieChart as PieIcon, FileText, CheckCircle, RefreshCw, Upload, Download, ScanBarcode
+  Calculator, ChevronRight, ChevronLeft, PieChart as PieIcon, FileText, CheckCircle, RefreshCw, Upload, Download, ScanBarcode
 } from 'lucide-react';
 import { EventExportModal } from './EventExportModal';
 import { EventChecklist } from './EventChecklist';
@@ -188,6 +188,17 @@ const getSessionsForDate = (event: Event, date: string): EventSession[] | null =
   return match ? match.sessions : null;
 };
 
+const getEventPrimaryDate = (event: Event): string | null => {
+  const schedule = getEventSchedule(event);
+  return schedule[0]?.date || event.startDate || event.endDate || null;
+};
+
+const formatMonthLabel = (key: string) => {
+  const parsed = new Date(`${key}-01`);
+  if (Number.isNaN(parsed.getTime())) return key;
+  return parsed.toLocaleDateString('vi-VN', { month: 'long', year: 'numeric' });
+};
+
 export const EventManager: React.FC<EventManagerProps> = ({ 
   events, 
   inventory,
@@ -282,6 +293,14 @@ export const EventManager: React.FC<EventManagerProps> = ({
   const [showCalendarModal, setShowCalendarModal] = useState(false);
   const [calendarSelectedEventId, setCalendarSelectedEventId] = useState<string | null>(null);
   const [showEventDetailModal, setShowEventDetailModal] = useState(false);
+  const [calendarView, setCalendarView] = useState(() => {
+    const now = new Date();
+    return { year: now.getFullYear(), month: now.getMonth() };
+  });
+  const calendarMonthLabel = useMemo(
+    () => new Date(calendarView.year, calendarView.month, 1).toLocaleDateString('vi-VN', { month: 'long', year: 'numeric' }),
+    [calendarView]
+  );
 
   // Assign Staff State
   const [selectedStaffId, setSelectedStaffId] = useState('');
@@ -331,6 +350,38 @@ export const EventManager: React.FC<EventManagerProps> = ({
     if (!selectedEvent) return [];
     return saleOrders.filter(o => o.eventId === undefined || o.eventId === selectedEvent.id || (selectedEvent.saleOrderIds || []).includes(o.id));
   }, [saleOrders, selectedEvent]);
+  const groupedEventsByMonth = useMemo(() => {
+    const buckets: Record<string, Event[]> = {};
+    const others: Event[] = [];
+    events.forEach(ev => {
+      const primary = getEventPrimaryDate(ev);
+      if (!primary) {
+        others.push(ev);
+        return;
+      }
+      const parsed = new Date(primary);
+      const key = Number.isNaN(parsed.getTime())
+        ? primary.slice(0, 7)
+        : `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}`;
+      if (!buckets[key]) buckets[key] = [];
+      buckets[key].push(ev);
+    });
+    const groups = Object.keys(buckets)
+      .sort((a, b) => a.localeCompare(b))
+      .map(key => ({
+        key,
+        label: formatMonthLabel(key),
+        events: buckets[key].sort((a, b) => {
+          const da = getEventPrimaryDate(a) || '';
+          const db = getEventPrimaryDate(b) || '';
+          return da.localeCompare(db);
+        })
+      }));
+    if (others.length) {
+      groups.push({ key: 'others', label: 'Khác', events: others });
+    }
+    return groups;
+  }, [events]);
   const timelineEntries = useMemo<EventTimelineEntry[]>(() => {
     if (!selectedEvent?.timeline) return [];
     return [...selectedEvent.timeline].sort((a, b) => (a.datetime || '').localeCompare(b.datetime || ''));
@@ -425,6 +476,18 @@ export const EventManager: React.FC<EventManagerProps> = ({
 
   const handleRemoveScheduleDate = (date: string) => {
     setNewEventSchedule(prev => prev.filter(item => item.date !== date));
+  };
+
+  const handleCalendarMonthChange = (delta: number) => {
+    setCalendarView(prev => {
+      const next = new Date(prev.year, prev.month + delta, 1);
+      return { year: next.getFullYear(), month: next.getMonth() };
+    });
+  };
+
+  const resetCalendarToCurrentMonth = () => {
+    const now = new Date();
+    setCalendarView({ year: now.getFullYear(), month: now.getMonth() });
   };
 
   const formatTimelineDatetime = (value: string) => {
@@ -1052,39 +1115,44 @@ export const EventManager: React.FC<EventManagerProps> = ({
         </div>
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
           {events.length === 0 && <div className="text-center py-10 text-gray-400 italic text-sm">Chưa có sự kiện nào.</div>}
-          {events.map(event => (
-            <div 
-              key={event.id}
-              onClick={() => {
-                setSelectedEventId(event.id);
-                if (typeof window !== 'undefined' && window.innerWidth < 1024) {
-                  setIsMobileListCollapsed(true);
-                }
-              }}
-              className={`p-4 rounded-xl border-2 cursor-pointer transition ${selectedEventId === event.id ? 'border-blue-500 bg-blue-50 shadow-sm' : 'border-transparent bg-white border-slate-100'}`}
-            >
-              {(() => {
-                const schedule = getEventSchedule(event);
-                const uniqueSessions = Array.from(new Set(schedule.flatMap(item => item.sessions)));
-                const start = schedule[0]?.date || event.startDate;
-                const end = schedule[schedule.length - 1]?.date || event.endDate;
-                return (
-                  <>
-                    <h4 className="font-bold text-gray-800">{event.name}</h4>
-                    <p className="text-xs text-gray-500 flex items-center gap-1 mt-1">
-                      <Calendar size={12}/> {start}{end && end !== start ? ` → ${end}` : ''}
-                    </p>
-                    <div className="mt-2 flex items-center gap-2 flex-wrap">
-                      {uniqueSessions.map(session => (
-                        <div key={session} className="inline-flex items-center gap-1 text-[10px] font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full">
-                          {SESSION_LABELS[session]}
+          {groupedEventsByMonth.map(group => (
+            <div key={group.key} className="space-y-2">
+              <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest">{group.label}</p>
+              {group.events.map(event => (
+                <div 
+                  key={event.id}
+                  onClick={() => {
+                    setSelectedEventId(event.id);
+                    if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+                      setIsMobileListCollapsed(true);
+                    }
+                  }}
+                  className={`p-4 rounded-xl border-2 cursor-pointer transition ${selectedEventId === event.id ? 'border-blue-500 bg-blue-50 shadow-sm' : 'border-transparent bg-white border-slate-100'}`}
+                >
+                  {(() => {
+                    const schedule = getEventSchedule(event);
+                    const uniqueSessions = Array.from(new Set(schedule.flatMap(item => item.sessions)));
+                    const start = schedule[0]?.date || event.startDate;
+                    const end = schedule[schedule.length - 1]?.date || event.endDate;
+                    return (
+                      <>
+                        <h4 className="font-bold text-gray-800">{event.name}</h4>
+                        <p className="text-xs text-gray-500 flex items-center gap-1 mt-1">
+                          <Calendar size={12}/> {start}{end && end !== start ? ` → ${end}` : ''}
+                        </p>
+                        <div className="mt-2 flex items-center gap-2 flex-wrap">
+                          {uniqueSessions.map(session => (
+                            <div key={session} className="inline-flex items-center gap-1 text-[10px] font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full">
+                              {SESSION_LABELS[session]}
+                            </div>
+                          ))}
+                          {event.quotationId && <div className="inline-flex items-center gap-1 text-[10px] font-bold bg-green-100 text-green-700 px-2 py-0.5 rounded-full"><LinkIcon size={10}/> Đã gắn báo giá</div>}
                         </div>
-                      ))}
-                      {event.quotationId && <div className="inline-flex items-center gap-1 text-[10px] font-bold bg-green-100 text-green-700 px-2 py-0.5 rounded-full"><LinkIcon size={10}/> Đã gắn báo giá</div>}
-                    </div>
-                  </>
-                );
-              })()}
+                      </>
+                    );
+                  })()}
+                </div>
+              ))}
             </div>
           ))}
         </div>
@@ -2212,8 +2280,20 @@ export const EventManager: React.FC<EventManagerProps> = ({
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl w-full max-w-4xl p-6 shadow-2xl max-h-[90vh] overflow-auto">
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-xl font-bold">Lịch Sự Kiện</h3>
+              <div>
+                <h3 className="text-xl font-bold">Lịch Sự Kiện</h3>
+                <p className="text-sm text-slate-500">{calendarMonthLabel}</p>
+              </div>
               <div className="flex items-center gap-2">
+                <button onClick={() => handleCalendarMonthChange(-1)} className="px-3 py-2 bg-slate-100 rounded-lg hover:bg-slate-200 transition">
+                  <ChevronLeft size={16} />
+                </button>
+                <button onClick={resetCalendarToCurrentMonth} className="px-3 py-2 bg-blue-50 text-blue-700 rounded-lg border border-blue-100 hover:bg-blue-100 transition text-sm font-semibold">
+                  Hôm nay
+                </button>
+                <button onClick={() => handleCalendarMonthChange(1)} className="px-3 py-2 bg-slate-100 rounded-lg hover:bg-slate-200 transition">
+                  <ChevronRight size={16} />
+                </button>
                 <button onClick={() => setShowCalendarModal(false)} className="px-3 py-2 bg-slate-100 rounded-lg"><X size={18} /></button>
               </div>
             </div>
@@ -2223,11 +2303,10 @@ export const EventManager: React.FC<EventManagerProps> = ({
                 <div key={d} className="text-center font-black text-xs text-slate-500 uppercase">{d}</div>
               ))}
 
-              {/* Simple month grid for current month */}
+              {/* Month grid with navigation */}
               {(() => {
-                const now = new Date();
-                const year = now.getFullYear();
-                const month = now.getMonth();
+                const year = calendarView.year;
+                const month = calendarView.month;
                 const first = new Date(year, month, 1);
                 const startDay = first.getDay();
                 const daysInMonth = new Date(year, month+1, 0).getDate();

@@ -75,6 +75,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
   const [printDraftItemId, setPrintDraftItemId] = useState('');
   const [printDraftQty, setPrintDraftQty] = useState(1);
   const [printPreviewUrl, setPrintPreviewUrl] = useState('');
+  const [printRowGap, setPrintRowGap] = useState(3); // mm
 
   const [newItemData, setNewItemData] = useState({
     barcode: '',
@@ -403,6 +404,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
     );
     const titleItem = itemsMap[printSelections[0]?.itemId || ''];
     const titleName = titleItem?.name || 'In tem barcode';
+    const safeRowGap = Math.min(20, Math.max(0, Number.isFinite(printRowGap) ? printRowGap : 0));
 
     const printWindow = window.open('', '_blank', 'width=420,height=680');
     if (!printWindow) return;
@@ -420,7 +422,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
               display: grid;
               grid-template-columns: repeat(2, 35mm);
               column-gap: 4mm;
-              row-gap: 3mm;
+              row-gap: ${safeRowGap}mm;
               padding: 1mm 0 1mm 2mm; /* chừa 2mm trái để đủ 74mm */
             }
             .label {
@@ -914,9 +916,23 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
                 <div className="text-sm text-slate-500">
                   Đã chọn: <b>{printSelections.length}</b> thiết bị, tổng <b>{printSelections.reduce((s, it) => s + it.quantity, 0)}</b> tem.
                 </div>
-                <button onClick={handleAddPrintSelection} className="px-4 py-2 bg-slate-800 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-black">
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2 text-xs text-slate-600">
+                    <label className="font-bold uppercase tracking-widest">Khoảng cách hàng</label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={20}
+                      value={printRowGap}
+                      onChange={e => setPrintRowGap(Number(e.target.value))}
+                      className="w-16 border border-slate-200 rounded-lg px-2 py-1 text-sm text-center"
+                    />
+                    <span className="text-[11px] text-slate-500">mm</span>
+                  </div>
+                  <button onClick={handleAddPrintSelection} className="px-4 py-2 bg-slate-800 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-black">
                   Thêm vào danh sách
-                </button>
+                  </button>
+                </div>
               </div>
 
               {printSelections.length > 0 && (
