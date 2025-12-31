@@ -431,7 +431,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
     if (!value) return 'Chưa chọn thời gian';
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return value;
-    return date.toLocaleString('vi-VN', { dateStyle: 'short', timeStyle: 'short' });
+    return date.toLocaleString('vi-VN', { dateStyle: 'short', timeStyle: 'short', hour12: false });
   };
 
   const handleAddTimelineEntry = () => {
@@ -1314,6 +1314,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
                         <label className="text-[11px] font-bold text-slate-600 uppercase">Ngày giờ</label>
                         <input
                           type="datetime-local"
+                          lang="vi"
                           value={timelineDatetime}
                           onChange={e => setTimelineDatetime(e.target.value)}
                           className="w-full border border-slate-200 rounded-xl p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white"
