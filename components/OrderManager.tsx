@@ -86,7 +86,7 @@ export const OrderManager: React.FC<OrderManagerProps> = ({ saleOrders = [], onC
     return Math.max(0, subtotal - orderDiscount);
   };
 
-  const openPrintWindow = (title: string, bodyHtml: string) => {
+  const openPrintWindow = (title: string, bodyHtml: string, autoPrint = true) => {
     const printWindow = window.open('', '_blank', 'width=900,height=700');
     if (!printWindow) return;
     printWindow.document.write(`
@@ -111,7 +111,9 @@ export const OrderManager: React.FC<OrderManagerProps> = ({ saleOrders = [], onC
     `);
     printWindow.document.close();
     printWindow.focus();
-    printWindow.print();
+    if (autoPrint) {
+      printWindow.print();
+    }
   };
 
   const getBarcode = (itemId?: string, itemBarcode?: string) => {
@@ -120,7 +122,7 @@ export const OrderManager: React.FC<OrderManagerProps> = ({ saleOrders = [], onC
     return found?.barcode || '';
   };
 
-  const handlePrint = (order: SaleOrder, mode: 'EXPORT' | 'SOLD' | 'RETURN') => {
+  const handlePrint = (order: SaleOrder, mode: 'EXPORT' | 'SOLD' | 'RETURN', autoPrint = true) => {
     const header = `
       <h1>${mode === 'EXPORT' ? 'Phiếu xuất hàng bán' : mode === 'SOLD' ? 'Phiếu xác nhận hàng đã bán' : 'Phiếu hàng trả về'}</h1>
       <div class="meta">Mã đơn: ${order.id} • Khách hàng: ${order.customerName || '-'} • ${new Date(order.date).toLocaleString()}</div>
@@ -221,7 +223,7 @@ export const OrderManager: React.FC<OrderManagerProps> = ({ saleOrders = [], onC
         <div class="total">Tổng giá trị đơn hàng: ${totalValue.toLocaleString()}đ</div>
         ${signatureBlock}
       `;
-      openPrintWindow('In thông tin đơn hàng xuất', body);
+      openPrintWindow('In thông tin đơn hàng xuất', body, autoPrint);
       return;
     }
     if (mode === 'SOLD') {
@@ -268,7 +270,7 @@ export const OrderManager: React.FC<OrderManagerProps> = ({ saleOrders = [], onC
         <div class="total">Tổng doanh thu: ${totalRevenue.toLocaleString()}đ</div>
         ${signatureBlock}
       `;
-      openPrintWindow('In thông tin hàng đã bán', body);
+      openPrintWindow('In thông tin hàng đã bán', body, autoPrint);
       return;
     }
     const returnOrders = returnsByOrderId[order.id] || [];
@@ -337,7 +339,7 @@ export const OrderManager: React.FC<OrderManagerProps> = ({ saleOrders = [], onC
       <div class="total">Tổng giá trị hàng trả: ${totalReturn.toLocaleString()}đ</div>
       ${signatureBlock}
     `;
-    openPrintWindow('In thông tin hàng trả về', body);
+    openPrintWindow('In thông tin hàng trả về', body, autoPrint);
   };
 
   return (
@@ -492,6 +494,12 @@ export const OrderManager: React.FC<OrderManagerProps> = ({ saleOrders = [], onC
                                     >
                                       3. In thông tin hàng trả về
                                     </button>
+                                    <button
+                                      onClick={() => { handlePrint(order, 'EXPORT', true); setPrintMenuOrderId(null); }}
+                                      className="w-full text-left px-3 py-2 text-xs hover:bg-slate-50 border-t"
+                                    >
+                                      Xuất PDF (Xuất hàng)
+                                    </button>
                                   </div>
                                 )}
                               </div>
@@ -603,6 +611,12 @@ export const OrderManager: React.FC<OrderManagerProps> = ({ saleOrders = [], onC
                           className="w-full text-left px-3 py-2 text-xs hover:bg-slate-50"
                         >
                           3. In thông tin hàng trả về
+                        </button>
+                        <button
+                          onClick={() => { handlePrint(openOrder, 'EXPORT', true); setPrintMenuOrderId(null); }}
+                          className="w-full text-left px-3 py-2 text-xs hover:bg-slate-50 border-t"
+                        >
+                          Xuất PDF (Xuất hàng)
                         </button>
                       </div>
                     )}
@@ -758,6 +772,12 @@ export const OrderManager: React.FC<OrderManagerProps> = ({ saleOrders = [], onC
                         className="w-full text-left px-3 py-2 text-xs hover:bg-slate-50"
                       >
                         2. In thông tin hàng đã bán
+                      </button>
+                      <button
+                        onClick={() => { handlePrint(openOrder, 'EXPORT', true); setPrintMenuOrderId(null); }}
+                        className="w-full text-left px-3 py-2 text-xs hover:bg-slate-50 border-t"
+                      >
+                        Xuất PDF (Xuất hàng)
                       </button>
                     </div>
                   )}
