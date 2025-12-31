@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { Download, X } from 'lucide-react';
-import { Event, InventoryItem } from '../types';
+import { Event, InventoryItem, Employee } from '../types';
 import { exportEventChecklist } from '../services/exportService';
 
 interface EventExportModalProps {
   isOpen: boolean;
   event: Event;
   inventory: InventoryItem[];
+  employees?: Employee[];
   onClose: () => void;
 }
 
@@ -14,6 +15,7 @@ export const EventExportModal: React.FC<EventExportModalProps> = ({
   isOpen,
   event,
   inventory,
+  employees = [],
   onClose
 }) => {
   const [isExporting, setIsExporting] = useState(false);
@@ -26,7 +28,8 @@ export const EventExportModal: React.FC<EventExportModalProps> = ({
       await exportEventChecklist(event, inventory, {
         filename: `Checklist_${event.name}_${new Date().toLocaleDateString('vi-VN')}.pdf`,
         quality,
-        includeHeader
+        includeHeader,
+        employees
       });
       onClose();
     } catch (error) {

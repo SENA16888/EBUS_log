@@ -18,7 +18,7 @@ export const SalesManager: React.FC<SalesManagerProps> = ({ saleItems, events = 
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState({ name: '', category: '', description: '', imageUrl: '', price: 0, link: '', barcode: '' });
-  const [selection, setSelection] = useState<Record<string, number>>({});
+  const [selection, setSelection] = useState<Record<string, number | undefined>>({});
   const [lineDiscounts, setLineDiscounts] = useState<Record<string, number>>({});
   const [showExport, setShowExport] = useState(false);
   const [groupType, setGroupType] = useState<'EVENT' | 'CUSTOMER'>(() => (events.length > 0 ? 'EVENT' : 'CUSTOMER'));
@@ -38,7 +38,14 @@ export const SalesManager: React.FC<SalesManagerProps> = ({ saleItems, events = 
   };
 
   const toggleSelect = (id: string) => {
-    setSelection(prev => ({ ...prev, [id]: prev[id] ? 0 : 1 }));
+    setSelection(prev => {
+      if (prev[id]) {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      }
+      return { ...prev, [id]: 1 };
+    });
   };
 
   const selectedList = Object.entries(selection).filter(([_, qty]) => qty > 0).map(([id, qty]) => ({ item: saleItems.find(s => s.id === id), qty }));
@@ -101,10 +108,33 @@ export const SalesManager: React.FC<SalesManagerProps> = ({ saleItems, events = 
               <div className="font-black">{s.price.toLocaleString()}đ</div>
               <div className="flex items-center gap-2">
                 <input type="checkbox" checked={Boolean(selection[s.id] && selection[s.id] > 0)} onChange={e => {
-                  if (e.target.checked) setSelection(prev => ({ ...prev, [s.id]: prev[s.id] && prev[s.id] > 0 ? prev[s.id] : 1 }));
-                  else setSelection(prev => ({ ...prev, [s.id]: 0 }));
+                  if (e.target.checked) {
+                    setSelection(prev => ({ ...prev, [s.id]: prev[s.id] && prev[s.id] > 0 ? prev[s.id] : 1 }));
+                  } else {
+                    setSelection(prev => {
+                      const next = { ...prev };
+                      delete next[s.id];
+                      return next;
+                    });
+                  }
                 }} className="h-4 w-4" />
-                <input type="number" min={1} value={selection[s.id] || 1} onChange={e => setSelection(prev => ({ ...prev, [s.id]: Number(e.target.value) }))} className="w-20 border rounded p-1 text-sm" />
+                <input
+                  type="number"
+                  min={1}
+                  value={selection[s.id] ?? ''}
+                  onChange={e => {
+                    const val = e.target.value;
+                    setSelection(prev => {
+                      if (val === '') {
+                        const next = { ...prev };
+                        delete next[s.id];
+                        return next;
+                      }
+                      return { ...prev, [s.id]: Number(val) };
+                    });
+                  }}
+                  className="w-20 border rounded p-1 text-sm"
+                />
               </div>
             </div>
           </div>

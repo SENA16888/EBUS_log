@@ -1084,13 +1084,32 @@ export const EventManager: React.FC<EventManagerProps> = ({
     );
   };
 
+  const calculateSaleOrderRevenue = (order: any) => {
+    const items = order.items || [];
+    const subtotal = items.reduce((sum: number, item: any) => {
+      const soldQty = item.soldQuantity ?? 0;
+      const discount = item.discount || 0;
+      const price = item.price || 0;
+      const lineRevenue = Math.max(0, (price - discount) * soldQty);
+      return sum + lineRevenue;
+    }, 0);
+    const orderDiscount = order.orderDiscount || 0;
+    return Math.max(0, subtotal - orderDiscount);
+  };
+
   // Tài chính
   const advanceRequests = selectedEvent?.advanceRequests || [];
   const totalAdvanceAmount = advanceRequests.reduce((sum, req) => sum + (req.amount || 0), 0);
   const staffCosts = selectedEvent?.staff?.reduce((a, b) => a + b.salary, 0) || 0;
   const otherCosts = selectedEvent?.expenses?.reduce((a, b) => a + b.amount, 0) || 0;
   const totalCosts = staffCosts + otherCosts;
-  const saleOrdersRevenue = linkedSaleOrders.reduce((sum, order) => sum + (order.total || 0), 0);
+  const saleOrderRevenueTotal = linkedSaleOrders
+    .filter(order => (order.type || 'SALE') !== 'RETURN' && order.status === 'FINALIZED')
+    .reduce((sum, order) => sum + calculateSaleOrderRevenue(order), 0);
+  const saleOrderReturnTotal = linkedSaleOrders
+    .filter(order => (order.type || '') === 'RETURN')
+    .reduce((sum, order) => sum + Math.abs(order.total || order.subtotal || 0), 0);
+  const saleOrdersRevenue = Math.max(0, saleOrderRevenueTotal - saleOrderReturnTotal);
   const quotationRevenue = linkedQuotation?.totalAmount || 0;
   const revenue = quotationRevenue + saleOrdersRevenue;
   const grossProfit = revenue - totalCosts;
@@ -2573,6 +2592,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
           isOpen={showExportPDFModal}
           event={events.find(e => e.id === selectedEventId)!}
           inventory={inventory}
+          employees={employees || []}
           onClose={() => setShowExportPDFModal(false)}
         />
       )}

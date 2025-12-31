@@ -1,11 +1,12 @@
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
-import { Event, InventoryItem } from '../types';
+import { Event, InventoryItem, Employee, EventStaffAllocation } from '../types';
 
 interface ExportOptions {
   filename?: string;
   quality?: 'low' | 'medium' | 'high';
   includeHeader?: boolean;
+  employees?: Employee[];
 }
 
 export const exportEventChecklist = async (
@@ -16,8 +17,25 @@ export const exportEventChecklist = async (
   const { 
     filename = `Event_${event.name}_Checklist.pdf`,
     quality = 'high',
-    includeHeader = true
+    includeHeader = true,
+    employees = []
   } = options;
+
+  const SESSION_LABELS: Record<'MORNING' | 'AFTERNOON' | 'EVENING', string> = {
+    MORNING: 'SÁNG',
+    AFTERNOON: 'CHIỀU',
+    EVENING: 'TỐI'
+  };
+
+  const formatShift = (staff: EventStaffAllocation) => {
+    const sessions = staff.sessions?.length ? staff.sessions : staff.session ? [staff.session] : [];
+    const sessionLabel = sessions.length ? sessions.map(s => SESSION_LABELS[s] || s).join(', ') : '---';
+    if (staff.shiftDate) {
+      const dateLabel = new Date(staff.shiftDate).toLocaleDateString('vi-VN');
+      return `${dateLabel} • ${sessionLabel}`;
+    }
+    return sessionLabel;
+  };
 
   const container = document.createElement('div');
   container.style.position = 'absolute';
@@ -178,15 +196,19 @@ export const exportEventChecklist = async (
 
       const staffBody = document.createElement('tbody');
       event.staff.forEach((staff, idx) => {
+        const employee = employees.find(e => e.id === staff.employeeId);
+        const name = employee?.name || staff.employeeId || '---';
+        const position = staff.task || employee?.role || '---';
+        const shiftLabel = formatShift(staff);
         const row = document.createElement('tr');
         row.style.borderBottom = '1px solid #ddd';
         row.style.backgroundColor = idx % 2 === 0 ? '#fff' : '#f9f9f9';
 
         const staffCells = [
           (idx + 1).toString(),
-          staff.task || 'N/A',
-          `${staff.quantity} ${staff.unit}`,
-          staff.session || staff.sessions?.join(', ') || 'N/A',
+          name,
+          position,
+          shiftLabel,
           staff.done ? '✓' : ''
         ];
 
