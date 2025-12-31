@@ -410,19 +410,17 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
         <head>
           <title>In tem: ${titleName}</title>
           <style>
-            /* Khổ 2 tem/row: 35x22mm mỗi tem. Dùng page dọc 24x72mm + xoay nội dung để tránh driver tự xoay. */
-            @page { size: 24mm 72mm; margin: 1mm; }
+            /* Khổ 2 tem/row: 35x22mm mỗi tem. Trang rộng 74mm, 2 cột, khoảng cách hàng 3mm, cột 4mm. */
+            @page { size: 74mm auto; margin: 1mm; }
             * { box-sizing: border-box; }
             body { margin: 0; padding: 0; font-family: Arial, sans-serif; background: #f8fafc; }
             .sheet {
-              display: flex;
-              flex-wrap: wrap;
-              gap: 2mm;
-              padding: 1mm;
-              width: 72mm;
-              height: 24mm;
-              transform: rotate(90deg) translate(0, -72mm);
-              transform-origin: top left;
+              width: 74mm;
+              display: grid;
+              grid-template-columns: repeat(2, 35mm);
+              column-gap: 4mm;
+              row-gap: 3mm;
+              padding: 1mm 0 1mm 2mm; /* chừa 2mm trái để đủ 74mm */
             }
             .label {
               width: 35mm;
@@ -471,7 +469,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
             }
             @media print {
               body { background: white; }
-              .sheet { gap: 1mm; padding: 1mm; }
+              .sheet { column-gap: 4mm; row-gap: 3mm; padding: 1mm 0 1mm 2mm; }
               .label { border: none; }
               .status { display: none; }
             }
