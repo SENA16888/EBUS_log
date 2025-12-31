@@ -133,6 +133,7 @@ export interface SaleItem {
 
 export interface SaleOrderLine {
   itemId: string;
+  barcode?: string;
   name: string;
   price: number;
   quantity: number;

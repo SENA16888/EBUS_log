@@ -118,22 +118,60 @@ export const OrderManager: React.FC<OrderManagerProps> = ({ saleOrders = [], onC
       <h1>${mode === 'EXPORT' ? 'Phiếu xuất hàng bán' : mode === 'SOLD' ? 'Phiếu xác nhận hàng đã bán' : 'Phiếu hàng trả về'}</h1>
       <div class="meta">Mã đơn: ${order.id} • Khách hàng: ${order.customerName || '-'} • ${new Date(order.date).toLocaleString()}</div>
     `;
-    const signatureBlock = `
-      <div style="display:flex; justify-content:space-between; margin-top:32px; gap:16px;">
-        <div style="flex:1; text-align:center;">
-          <div style="font-weight:700; margin-bottom:60px;">Người lập phiếu</div>
-          <div style="border-top:1px solid #e2e8f0; padding-top:8px; color:#64748b; font-size:12px;">Ký và ghi rõ họ tên</div>
+    const signatureBlock = (() => {
+      if (mode === 'EXPORT') {
+        return `
+          <div style="display:flex; justify-content:space-between; margin-top:32px; gap:12px; text-align:center;">
+            <div style="flex:1;">
+              <div style="font-weight:700; margin-bottom:60px;">Người lập phiếu</div>
+              <div style="border-top:1px solid #e2e8f0; padding-top:8px; color:#64748b; font-size:12px;">Ký và ghi rõ họ tên</div>
+            </div>
+            <div style="flex:1;">
+              <div style="font-weight:700; margin-bottom:60px;">Người giao hàng</div>
+              <div style="border-top:1px solid #e2e8f0; padding-top:8px; color:#64748b; font-size:12px;">Ký và ghi rõ họ tên</div>
+            </div>
+            <div style="flex:1;">
+              <div style="font-weight:700; margin-bottom:60px;">Người nhận hàng</div>
+              <div style="border-top:1px solid #e2e8f0; padding-top:8px; color:#64748b; font-size:12px;">Ký và ghi rõ họ tên</div>
+            </div>
+            <div style="flex:1;">
+              <div style="font-weight:700; margin-bottom:60px;">Quản lý</div>
+              <div style="border-top:1px solid #e2e8f0; padding-top:8px; color:#64748b; font-size:12px;">Ký và ghi rõ họ tên</div>
+            </div>
+          </div>
+        `;
+      }
+      if (mode === 'SOLD') {
+        return `
+          <div style="display:flex; justify-content:space-between; margin-top:32px; gap:12px; text-align:center;">
+            <div style="flex:1;">
+              <div style="font-weight:700; margin-bottom:60px;">Nhân viên bán hàng</div>
+              <div style="border-top:1px solid #e2e8f0; padding-top:8px; color:#64748b; font-size:12px;">Ký và ghi rõ họ tên</div>
+            </div>
+            <div style="flex:1;">
+              <div style="font-weight:700; margin-bottom:60px;">Quản lý sự kiện</div>
+              <div style="border-top:1px solid #e2e8f0; padding-top:8px; color:#64748b; font-size:12px;">Ký và ghi rõ họ tên</div>
+            </div>
+          </div>
+        `;
+      }
+      return `
+        <div style="display:flex; justify-content:space-between; margin-top:32px; gap:12px; text-align:center;">
+          <div style="flex:1;">
+            <div style="font-weight:700; margin-bottom:60px;">Người lập phiếu</div>
+            <div style="border-top:1px solid #e2e8f0; padding-top:8px; color:#64748b; font-size:12px;">Ký và ghi rõ họ tên</div>
+          </div>
+          <div style="flex:1;">
+            <div style="font-weight:700; margin-bottom:60px;">Người giao hàng</div>
+            <div style="border-top:1px solid #e2e8f0; padding-top:8px; color:#64748b; font-size:12px;">Ký và ghi rõ họ tên</div>
+          </div>
+          <div style="flex:1;">
+            <div style="font-weight:700; margin-bottom:60px;">Quản lý kho</div>
+            <div style="border-top:1px solid #e2e8f0; padding-top:8px; color:#64748b; font-size:12px;">Ký và ghi rõ họ tên</div>
+          </div>
         </div>
-        <div style="flex:1; text-align:center;">
-          <div style="font-weight:700; margin-bottom:60px;">Người giao hàng</div>
-          <div style="border-top:1px solid #e2e8f0; padding-top:8px; color:#64748b; font-size:12px;">Ký và ghi rõ họ tên</div>
-        </div>
-        <div style="flex:1; text-align:center;">
-          <div style="font-weight:700; margin-bottom:60px;">Quản lý</div>
-          <div style="border-top:1px solid #e2e8f0; padding-top:8px; color:#64748b; font-size:12px;">Ký và ghi rõ họ tên</div>
-        </div>
-      </div>
-    `;
+      `;
+    })();
     if (mode === 'EXPORT') {
       const rows = (order.items || []).map((item, index) => {
         const lineValue = (item.price || 0) * (item.quantity || 0);
