@@ -116,13 +116,19 @@ export const OrderManager: React.FC<OrderManagerProps> = ({ saleOrders = [], onC
     }
   };
 
+  const loadPdfLib = async () => {
+    if ((window as any).html2pdf) return (window as any).html2pdf;
+    const mod: any = await import('html2pdf.js');
+    return (window as any).html2pdf || mod?.default || mod;
+  };
+
   const getBarcode = (itemId?: string, itemBarcode?: string) => {
     if (itemBarcode) return itemBarcode;
     const found = saleItems.find(s => s.id === itemId);
     return found?.barcode || '';
   };
 
-  const handlePrint = (order: SaleOrder, mode: 'EXPORT' | 'SOLD' | 'RETURN', autoPrint = true) => {
+  const buildPrintContent = (order: SaleOrder, mode: 'EXPORT' | 'SOLD' | 'RETURN') => {
     const header = `
       <h1>${mode === 'EXPORT' ? 'Phiếu xuất hàng bán' : mode === 'SOLD' ? 'Phiếu xác nhận hàng đã bán' : 'Phiếu hàng trả về'}</h1>
       <div class="meta">Mã đơn: ${order.id} • Khách hàng: ${order.customerName || '-'} • ${new Date(order.date).toLocaleString()}</div>
@@ -181,6 +187,7 @@ export const OrderManager: React.FC<OrderManagerProps> = ({ saleOrders = [], onC
         </div>
       `;
     })();
+    const title = mode === 'EXPORT' ? 'In thông tin đơn hàng xuất' : mode === 'SOLD' ? 'In thông tin hàng đã bán' : 'In thông tin hàng trả về';
     if (mode === 'EXPORT') {
       const rows = (order.items || []).map((item, index) => {
         const lineValue = (item.price || 0) * (item.quantity || 0);
@@ -223,8 +230,7 @@ export const OrderManager: React.FC<OrderManagerProps> = ({ saleOrders = [], onC
         <div class="total">Tổng giá trị đơn hàng: ${totalValue.toLocaleString()}đ</div>
         ${signatureBlock}
       `;
-      openPrintWindow('In thông tin đơn hàng xuất', body, autoPrint);
-      return;
+      return { body, title };
     }
     if (mode === 'SOLD') {
       const rows = (order.items || []).map((item, index) => {
@@ -270,13 +276,12 @@ export const OrderManager: React.FC<OrderManagerProps> = ({ saleOrders = [], onC
         <div class="total">Tổng doanh thu: ${totalRevenue.toLocaleString()}đ</div>
         ${signatureBlock}
       `;
-      openPrintWindow('In thông tin hàng đã bán', body, autoPrint);
-      return;
+      return { body, title };
     }
     const returnOrders = returnsByOrderId[order.id] || [];
     if (returnOrders.length == 0) {
       alert('Chưa có đơn trả hàng để in.');
-      return;
+      return null;
     }
     const returnItemsMap = new Map<string, { itemId: string; barcode?: string; name: string; price: number; discount: number; quantity: number }>();
     returnOrders.forEach(ret => {
@@ -339,7 +344,33 @@ export const OrderManager: React.FC<OrderManagerProps> = ({ saleOrders = [], onC
       <div class="total">Tổng giá trị hàng trả: ${totalReturn.toLocaleString()}đ</div>
       ${signatureBlock}
     `;
-    openPrintWindow('In thông tin hàng trả về', body, autoPrint);
+    return { body, title };
+  };
+
+  const handlePrint = (order: SaleOrder, mode: 'EXPORT' | 'SOLD' | 'RETURN', autoPrint = true) => {
+    const content = buildPrintContent(order, mode);
+    if (!content) return;
+    openPrintWindow(content.title, content.body, autoPrint);
+  };
+
+  const handleExportPdf = async (order: SaleOrder, mode: 'EXPORT' | 'SOLD' | 'RETURN') => {
+    try {
+      const content = buildPrintContent(order, mode);
+      if (!content) return;
+      const html2pdf = await loadPdfLib();
+      const wrapper = document.createElement('div');
+      wrapper.innerHTML = content.body;
+      const filename = `${order.id}-${mode.toLowerCase()}.pdf`;
+      await html2pdf().set({
+        filename,
+        html2canvas: { scale: 2 },
+        pagebreak: { mode: ['css', 'legacy'] },
+        margin: [10, 10, 20, 10]
+      }).from(wrapper).save();
+    } catch (err) {
+      console.error('Export PDF error', err);
+      alert('Không thể xuất PDF. Vui lòng thử lại hoặc kiểm tra kết nối.');
+    }
   };
 
   return (
@@ -494,11 +525,23 @@ export const OrderManager: React.FC<OrderManagerProps> = ({ saleOrders = [], onC
                                     >
                                       3. In thông tin hàng trả về
                                     </button>
-                                    <button
-                                      onClick={() => { handlePrint(order, 'EXPORT', true); setPrintMenuOrderId(null); }}
+                                  <button
+                                      onClick={() => { handleExportPdf(order, 'EXPORT'); setPrintMenuOrderId(null); }}
                                       className="w-full text-left px-3 py-2 text-xs hover:bg-slate-50 border-t"
                                     >
                                       Xuất PDF (Xuất hàng)
+                                    </button>
+                                    <button
+                                      onClick={() => { handleExportPdf(order, 'SOLD'); setPrintMenuOrderId(null); }}
+                                      className="w-full text-left px-3 py-2 text-xs hover:bg-slate-50"
+                                    >
+                                      Xuất PDF (Đã bán)
+                                    </button>
+                                    <button
+                                      onClick={() => { handleExportPdf(order, 'RETURN'); setPrintMenuOrderId(null); }}
+                                      className="w-full text-left px-3 py-2 text-xs hover:bg-slate-50"
+                                    >
+                                      Xuất PDF (Trả hàng)
                                     </button>
                                   </div>
                                 )}
@@ -613,10 +656,22 @@ export const OrderManager: React.FC<OrderManagerProps> = ({ saleOrders = [], onC
                           3. In thông tin hàng trả về
                         </button>
                         <button
-                          onClick={() => { handlePrint(openOrder, 'EXPORT', true); setPrintMenuOrderId(null); }}
+                          onClick={() => { handleExportPdf(openOrder, 'EXPORT'); setPrintMenuOrderId(null); }}
                           className="w-full text-left px-3 py-2 text-xs hover:bg-slate-50 border-t"
                         >
                           Xuất PDF (Xuất hàng)
+                        </button>
+                        <button
+                          onClick={() => { handleExportPdf(openOrder, 'SOLD'); setPrintMenuOrderId(null); }}
+                          className="w-full text-left px-3 py-2 text-xs hover:bg-slate-50"
+                        >
+                          Xuất PDF (Đã bán)
+                        </button>
+                        <button
+                          onClick={() => { handleExportPdf(openOrder, 'RETURN'); setPrintMenuOrderId(null); }}
+                          className="w-full text-left px-3 py-2 text-xs hover:bg-slate-50"
+                        >
+                          Xuất PDF (Trả hàng)
                         </button>
                       </div>
                     )}
