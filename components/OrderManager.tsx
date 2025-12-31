@@ -1,16 +1,17 @@
 import React, { useMemo, useState } from 'react';
 import { ChevronDown, ChevronUp, Printer, Trash2, X } from 'lucide-react';
-import { SaleOrder } from '../types';
+import { SaleItem, SaleOrder } from '../types';
 
 interface OrderManagerProps {
   saleOrders: SaleOrder[];
   onCreateSaleReturn?: (order: SaleOrder) => void;
   onCreateSaleOrder?: (order: SaleOrder) => void;
   onDeleteSaleOrder?: (orderId: string) => void;
+  saleItems?: SaleItem[];
   onClose?: () => void;
 }
 
-export const OrderManager: React.FC<OrderManagerProps> = ({ saleOrders = [], onCreateSaleReturn, onCreateSaleOrder, onDeleteSaleOrder, onClose }) => {
+export const OrderManager: React.FC<OrderManagerProps> = ({ saleOrders = [], onCreateSaleReturn, onCreateSaleOrder, onDeleteSaleOrder, saleItems = [], onClose }) => {
   const [openOrder, setOpenOrder] = useState<SaleOrder | null>(null);
   const [showDetail, setShowDetail] = useState(false);
   const [editingItems, setEditingItems] = useState<Record<string, { quantity: number; discount: number }>>({});
@@ -113,6 +114,12 @@ export const OrderManager: React.FC<OrderManagerProps> = ({ saleOrders = [], onC
     printWindow.print();
   };
 
+  const getBarcode = (itemId?: string, itemBarcode?: string) => {
+    if (itemBarcode) return itemBarcode;
+    const found = saleItems.find(s => s.id === itemId);
+    return found?.barcode || '';
+  };
+
   const handlePrint = (order: SaleOrder, mode: 'EXPORT' | 'SOLD' | 'RETURN') => {
     const header = `
       <h1>${mode === 'EXPORT' ? 'Phiếu xuất hàng bán' : mode === 'SOLD' ? 'Phiếu xác nhận hàng đã bán' : 'Phiếu hàng trả về'}</h1>
@@ -178,7 +185,7 @@ export const OrderManager: React.FC<OrderManagerProps> = ({ saleOrders = [], onC
         return `
           <tr>
             <td>${index + 1}</td>
-            <td>${item.barcode || item.itemId || '-'}</td>
+            <td>${getBarcode(item.itemId, item.barcode) || '-'}</td>
             <td>${item.name}</td>
             <td class="right">${item.quantity || 0}</td>
             <td class="right">${(item.price || 0).toLocaleString()}đ</td>
@@ -225,7 +232,7 @@ export const OrderManager: React.FC<OrderManagerProps> = ({ saleOrders = [], onC
         return `
           <tr>
             <td>${index + 1}</td>
-            <td>${item.barcode || item.itemId || '-'}</td>
+            <td>${getBarcode(item.itemId, item.barcode) || '-'}</td>
             <td>${item.name}</td>
             <td class="right">${soldQty}</td>
             <td class="right">${discount.toLocaleString()}đ</td>
@@ -291,7 +298,7 @@ export const OrderManager: React.FC<OrderManagerProps> = ({ saleOrders = [], onC
       return `
         <tr>
           <td>${index + 1}</td>
-          <td>${item.barcode || item.itemId || '-'}</td>
+          <td>${getBarcode(item.itemId, item.barcode) || '-'}</td>
           <td>${item.name}</td>
           <td class="right">${qty}</td>
           <td class="right">${discount.toLocaleString()}đ</td>

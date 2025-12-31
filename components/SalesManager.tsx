@@ -309,6 +309,7 @@ export const SalesManager: React.FC<SalesManagerProps> = ({ saleItems, events = 
       {showHistory && (
         <OrderManager
           saleOrders={saleOrders}
+          saleItems={saleItems}
           onCreateSaleReturn={onCreateSaleReturn}
           onCreateSaleOrder={onCreateSaleOrder}
           onDeleteSaleOrder={onDeleteSaleOrder}
