@@ -19,6 +19,8 @@ export const OrderManager: React.FC<OrderManagerProps> = ({ saleOrders = [], onC
   const [returnSelection, setReturnSelection] = useState<Record<string, number>>({});
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   const [printMenuOrderId, setPrintMenuOrderId] = useState<string | null>(null);
+  const [scanSold, setScanSold] = useState('');
+  const [scanReturn, setScanReturn] = useState('');
 
   const saleOrdersOnly = useMemo(() => saleOrders.filter(order => (order.type || 'SALE') !== 'RETURN'), [saleOrders]);
   const returnOrders = useMemo(() => saleOrders.filter(order => (order.type || '') === 'RETURN'), [saleOrders]);
@@ -126,6 +128,16 @@ export const OrderManager: React.FC<OrderManagerProps> = ({ saleOrders = [], onC
     if (itemBarcode) return itemBarcode;
     const found = saleItems.find(s => s.id === itemId);
     return found?.barcode || '';
+  };
+
+  const findItemByBarcode = (order: SaleOrder, code: string) => {
+    const normalized = code.trim();
+    if (!normalized) return null;
+    const direct = (order.items || []).find(it => (it.barcode || '').trim() === normalized);
+    if (direct) return direct;
+    const matchedSaleItem = saleItems.find(si => (si.barcode || '').trim() === normalized);
+    if (!matchedSaleItem) return null;
+    return (order.items || []).find(it => it.itemId === matchedSaleItem.id) || null;
   };
 
   const buildPrintContent = (order: SaleOrder, mode: 'EXPORT' | 'SOLD' | 'RETURN') => {
@@ -681,6 +693,26 @@ export const OrderManager: React.FC<OrderManagerProps> = ({ saleOrders = [], onC
               </div>
               <div className="space-y-3 flex-1 overflow-y-auto pr-1">
                 <div className="text-sm text-slate-500">Khách hàng: {openOrder.customerName} • {openOrder.customerContact}</div>
+                <div className="flex flex-col sm:flex-row sm:items-center gap-2 text-sm">
+                  <input
+                    value={scanSold}
+                    onChange={e => setScanSold(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') {
+                        const matched = findItemByBarcode(openOrder, scanSold);
+                        if (!matched) { alert('Không tìm thấy sản phẩm theo barcode.'); return; }
+                        const maxQty = matched.quantity ?? 0;
+                        const current = editingItems[matched.itemId]?.quantity ?? matched.soldQuantity ?? 0;
+                        const nextQty = Math.min(maxQty, current + 1);
+                        setEditingItems(prev => ({ ...prev, [matched.itemId]: { ...(prev[matched.itemId] || { discount: matched.discount || 0 }), quantity: nextQty, discount: prev[matched.itemId]?.discount ?? matched.discount ?? 0 } }));
+                        setScanSold('');
+                      }
+                    }}
+                    placeholder="Quét barcode để cộng SL bán"
+                    className="border rounded px-3 py-2 w-full sm:max-w-xs"
+                  />
+                  <span className="text-xs text-slate-500">Enter sau khi quét để +1 số lượng</span>
+                </div>
                 <div className="grid grid-cols-1 gap-2">
                   {openOrder.items.map((it: any, idx: number) => (
                     <div key={idx} className="grid grid-cols-6 gap-2 items-center border-b py-2">
@@ -790,6 +822,30 @@ export const OrderManager: React.FC<OrderManagerProps> = ({ saleOrders = [], onC
                     );
                   })}
                 </div>
+              </div>
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2 mt-3 text-sm">
+                <input
+                  value={scanReturn}
+                  onChange={e => setScanReturn(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') {
+                      const matched = findItemByBarcode(openOrder, scanReturn);
+                      if (!matched) { alert('Không tìm thấy sản phẩm theo barcode.'); return; }
+                      const orderReturns = returnsByOrderId[openOrder.id] || [];
+                      const alreadyReturnedQty = orderReturns.reduce((a, r) => a + ((r.items || []).reduce((s: number, ri: any) => s + (ri.itemId === matched.itemId ? (ri.quantity || 0) : 0), 0)), 0);
+                      const soldQty = matched.soldQuantity ?? 0;
+                      const maxAllowed = Math.max(0, (matched.quantity || 0) - soldQty - alreadyReturnedQty);
+                      const current = returnSelection[matched.itemId] || 0;
+                      if (maxAllowed <= 0) { alert('Đã đạt số lượng tối đa có thể trả.'); return; }
+                      const nextQty = Math.min(maxAllowed, current + 1);
+                      setReturnSelection(prev => ({ ...prev, [matched.itemId]: nextQty }));
+                      setScanReturn('');
+                    }
+                  }}
+                  placeholder="Quét barcode để cộng SL trả"
+                  className="border rounded px-3 py-2 w-full sm:max-w-xs"
+                />
+                <span className="text-xs text-slate-500">Enter sau khi quét để +1 số lượng trả</span>
               </div>
               <div className="mt-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3 flex-shrink-0">
                 {(() => {
