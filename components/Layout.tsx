@@ -108,6 +108,16 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange
             <Users size={20} />
             <span className="font-medium text-sm">Nhân sự</span>
           </button>
+
+          <button 
+            onClick={() => onTabChange('elearning')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
+              activeTab === 'elearning' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+            }`}
+          >
+            <GraduationCap size={20} />
+            <span className="font-medium text-sm">Elearning</span>
+          </button>
         </nav>
 
         <div className="p-4 border-t border-slate-800">
