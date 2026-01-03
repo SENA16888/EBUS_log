@@ -9,6 +9,8 @@ interface PackageManagerProps {
   onCreatePackage: (newPkg: ComboPackage) => void;
   onUpdatePackage: (pkg: ComboPackage) => void;
   onDeletePackage: (id: string) => void;
+  canEdit?: boolean;
+  canDelete?: boolean;
 }
 
 export const PackageManager: React.FC<PackageManagerProps> = ({
@@ -16,7 +18,9 @@ export const PackageManager: React.FC<PackageManagerProps> = ({
   inventory,
   onCreatePackage,
   onUpdatePackage,
-  onDeletePackage
+  onDeletePackage,
+  canEdit = true,
+  canDelete = true
 }) => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingPkgId, setEditingPkgId] = useState<string | null>(null);
@@ -56,6 +60,7 @@ export const PackageManager: React.FC<PackageManagerProps> = ({
   }, [showCreateModal]);
 
   const handleOpenEdit = (e: React.MouseEvent, pkg: ComboPackage) => {
+    if (!canEdit) return;
     e.preventDefault();
     e.stopPropagation();
     setEditingPkgId(pkg.id);
@@ -67,6 +72,7 @@ export const PackageManager: React.FC<PackageManagerProps> = ({
   };
 
   const handleDeleteClick = (e: React.MouseEvent, pkgId: string, pkgName: string) => {
+    if (!canDelete) return;
     e.preventDefault();
     e.stopPropagation();
     if (window.confirm(`CẢNH BÁO:\n\nBạn có chắc chắn muốn xóa vĩnh viễn gói combo "${pkgName}"?\nLưu ý: Các thiết bị trong gói sẽ KHÔNG bị xóa khỏi kho, chỉ xóa định nghĩa gói.`)) {
@@ -91,6 +97,7 @@ export const PackageManager: React.FC<PackageManagerProps> = ({
   };
 
   const handleSubmitPackage = () => {
+    if (!canEdit) return;
     if (!newPkgName || tempItems.length === 0) {
       alert("Vui lòng đặt tên gói và thêm ít nhất 1 thiết bị.");
       return;
@@ -117,9 +124,11 @@ export const PackageManager: React.FC<PackageManagerProps> = ({
            <h2 className="text-2xl font-bold text-gray-800">Quản Lý Gói Thiết Bị (Combo)</h2>
            <p className="text-gray-500 text-sm mt-1">Tạo sẵn các gói sản phẩm để xuất kho nhanh chóng.</p>
         </div>
-        <button onClick={() => setShowCreateModal(true)} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition flex items-center gap-2 text-sm font-medium shadow-sm">
-          <Plus size={16} /> Tạo Gói Combo
-        </button>
+        {canEdit && (
+          <button onClick={() => setShowCreateModal(true)} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition flex items-center gap-2 text-sm font-medium shadow-sm">
+            <Plus size={16} /> Tạo Gói Combo
+          </button>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
@@ -147,8 +156,12 @@ export const PackageManager: React.FC<PackageManagerProps> = ({
                     <div className="text-xs font-black uppercase text-green-700 bg-green-100 px-2 py-1 rounded">Sẵn sàng</div>
                   )}
                   <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-50 relative">
-                    <button onClick={(e) => handleOpenEdit(e, pkg)} title="Sửa gói" className="p-2 text-slate-400 hover:text-blue-600 hover:bg-white rounded-lg transition-all shadow-sm border border-transparent hover:border-blue-100"><Pencil size={18} /></button>
-                    <button onClick={(e) => handleDeleteClick(e, pkg.id, pkg.name)} title="Xóa gói" className="p-2 text-slate-400 hover:text-red-600 hover:bg-white rounded-lg transition-all shadow-sm border border-transparent hover:border-red-100"><Trash2 size={18} /></button>
+                    {canEdit && (
+                      <button onClick={(e) => handleOpenEdit(e, pkg)} title="Sửa gói" className="p-2 text-slate-400 hover:text-blue-600 hover:bg-white rounded-lg transition-all shadow-sm border border-transparent hover:border-blue-100"><Pencil size={18} /></button>
+                    )}
+                    {canDelete && (
+                      <button onClick={(e) => handleDeleteClick(e, pkg.id, pkg.name)} title="Xóa gói" className="p-2 text-slate-400 hover:text-red-600 hover:bg-white rounded-lg transition-all shadow-sm border border-transparent hover:border-red-100"><Trash2 size={18} /></button>
+                    )}
                   </div>
                 </div>
               </div>

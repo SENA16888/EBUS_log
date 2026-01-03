@@ -10,17 +10,24 @@ import { EmployeeManager } from './components/EmployeeManager';
 import { QuotationManager } from './components/QuotationManager';
 import { AIChat } from './components/AIChat';
 import { Elearning } from './components/Elearning';
-import { AppState, InventoryItem, Event, EventStatus, Transaction, TransactionType, ComboPackage, Employee, Quotation, EventStaffAllocation, EventExpense, EventAdvanceRequest, LogEntry, ChecklistDirection, ChecklistStatus, ChecklistSignature, EventChecklist, LearningAttempt, LearningProfile } from './types';
-import { MOCK_INVENTORY, MOCK_EVENTS, MOCK_TRANSACTIONS, MOCK_PACKAGES, MOCK_EMPLOYEES, MOCK_LEARNING_TRACKS, MOCK_LEARNING_PROFILES, MOCK_CAREER_RANKS } from './constants';
+import { AppState, InventoryItem, Event, EventStatus, Transaction, TransactionType, ComboPackage, Employee, Quotation, EventStaffAllocation, EventExpense, EventAdvanceRequest, LogEntry, ChecklistDirection, ChecklistStatus, ChecklistSignature, EventChecklist, LearningAttempt, LearningProfile, AccessPermission, UserAccount } from './types';
+import { MOCK_INVENTORY, MOCK_EVENTS, MOCK_TRANSACTIONS, MOCK_PACKAGES, MOCK_EMPLOYEES, MOCK_LEARNING_TRACKS, MOCK_LEARNING_PROFILES, MOCK_CAREER_RANKS, DEFAULT_USER_ACCOUNTS } from './constants';
 import { MessageSquare } from 'lucide-react';
 import { saveAppState, loadAppState, initializeAuth } from './services/firebaseService';
 import { ensureInventoryBarcodes, ensureItemBarcode, findDuplicateBarcodeItem, findItemByBarcode } from './services/barcodeService';
 import { normalizeChecklist } from './services/checklistService';
+import { getDefaultPermissionsForRole, hasPermission, normalizePhone } from './services/accessControl';
+import { AccessManager } from './components/AccessManager';
+import { LoginModal } from './components/LoginModal';
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'inventory' | 'events' | 'packages' | 'employees' | 'quotations' | 'sales' | 'elearning'>('dashboard');
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [isAccessOpen, setIsAccessOpen] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState(() => {
+    return localStorage.getItem('ebus_current_user') || '';
+  });
   
   const [appState, setAppState] = useState<AppState>(() => {
     return {
@@ -36,25 +43,56 @@ const App: React.FC = () => {
       learningTracks: MOCK_LEARNING_TRACKS,
       learningProfiles: MOCK_LEARNING_PROFILES,
       learningAttempts: [],
-      careerRanks: MOCK_CAREER_RANKS
+      careerRanks: MOCK_CAREER_RANKS,
+      userAccounts: DEFAULT_USER_ACCOUNTS
     };
   });
 
-  const withDefaults = (state: AppState): AppState => ({
-    ...state,
-    inventory: ensureInventoryBarcodes(state.inventory || []),
-    events: (state.events || []).map(ev => ({
-      ...ev,
-      items: ev.items || [],
-      advanceRequests: ev.advanceRequests || [],
-      checklist: normalizeChecklist(ev.checklist),
-      timeline: ev.timeline || []
-    })),
-    learningTracks: state.learningTracks || MOCK_LEARNING_TRACKS,
-    learningProfiles: state.learningProfiles || MOCK_LEARNING_PROFILES,
-    learningAttempts: state.learningAttempts || [],
-    careerRanks: state.careerRanks || MOCK_CAREER_RANKS
-  });
+  const withDefaults = (state: AppState): AppState => {
+    const baseAccounts = state.userAccounts && state.userAccounts.length > 0 ? state.userAccounts : DEFAULT_USER_ACCOUNTS;
+    const normalizedAccounts = baseAccounts.map(acc => {
+      const role = acc.role || 'STAFF';
+      return {
+        ...acc,
+        role,
+        permissions: acc.permissions && acc.permissions.length > 0 ? acc.permissions : getDefaultPermissionsForRole(role),
+        isActive: acc.isActive !== false
+      };
+    });
+    return {
+      ...state,
+      inventory: ensureInventoryBarcodes(state.inventory || []),
+      events: (state.events || []).map(ev => ({
+        ...ev,
+        items: ev.items || [],
+        advanceRequests: ev.advanceRequests || [],
+        checklist: normalizeChecklist(ev.checklist),
+        timeline: ev.timeline || []
+      })),
+      learningTracks: state.learningTracks || MOCK_LEARNING_TRACKS,
+      learningProfiles: state.learningProfiles || MOCK_LEARNING_PROFILES,
+      learningAttempts: state.learningAttempts || [],
+      careerRanks: state.careerRanks || MOCK_CAREER_RANKS,
+      userAccounts: normalizedAccounts
+    };
+  };
+
+  const currentUser = appState.userAccounts?.find(user => user.id === currentUserId) || null;
+  const can = (permission: AccessPermission) => hasPermission(currentUser, permission);
+
+  useEffect(() => {
+    if (currentUserId) {
+      localStorage.setItem('ebus_current_user', currentUserId);
+    } else {
+      localStorage.removeItem('ebus_current_user');
+    }
+  }, [currentUserId]);
+
+  useEffect(() => {
+    if (currentUserId && !currentUser) {
+      setCurrentUserId('');
+    }
+  }, [currentUserId, currentUser]);
 
   // Tải dữ liệu từ Firebase khi component mount
   useEffect(() => {
@@ -120,6 +158,55 @@ const App: React.FC = () => {
       ...prev,
       logs: [newLog, ...prev.logs].slice(0, 50), // Giữ lại 50 log gần nhất
     }));
+  };
+
+  const handleLoginByPhone = (phone: string) => {
+    const normalized = normalizePhone(phone);
+    const account = (appState.userAccounts || []).find(u => normalizePhone(u.phone) === normalized && u.isActive !== false);
+    if (!account) {
+      alert('Khong tim thay tai khoan phu hop. Lien he admin de cap quyen.');
+      return false;
+    }
+    setCurrentUserId(account.id);
+    addLog(`Dang nhap thanh cong: ${account.name}`, 'SUCCESS');
+    return true;
+  };
+
+  const handleLogout = () => {
+    setCurrentUserId('');
+    addLog('Dang xuat khoi he thong', 'INFO');
+  };
+
+  const handleUpsertAccount = (account: UserAccount) => {
+    setAppState(prev => {
+      const accounts = prev.userAccounts || [];
+      const exists = accounts.some(a => a.id === account.id);
+      const next = exists ? accounts.map(a => a.id === account.id ? account : a) : [...accounts, account];
+      return { ...prev, userAccounts: next };
+    });
+    addLog(`Cap nhat tai khoan: ${account.name}`, 'SUCCESS');
+  };
+
+  const handleDeleteAccount = (accountId: string) => {
+    if (currentUser && currentUser.id === accountId) {
+      alert('Khong the xoa tai khoan dang dang nhap.');
+      return;
+    }
+    setAppState(prev => ({
+      ...prev,
+      userAccounts: (prev.userAccounts || []).filter(a => a.id !== accountId)
+    }));
+    addLog(`Da xoa tai khoan ${accountId}`, 'WARNING');
+  };
+
+  const guard = <T extends (...args: any[]) => void>(permission: AccessPermission, action: T): T => {
+    return ((...args: any[]) => {
+      if (!can(permission)) {
+        alert('Ban khong co quyen thuc hien thao tac nay.');
+        return;
+      }
+      return action(...args);
+    }) as T;
   };
 
   const handleSubmitLearningAttempt = (attempt: LearningAttempt) => {
@@ -982,35 +1069,50 @@ const App: React.FC = () => {
   };
 
   return (
-    <Layout activeTab={activeTab} onTabChange={setActiveTab} logs={appState.logs}>
+    <>
+    <Layout
+      activeTab={activeTab}
+      onTabChange={setActiveTab}
+      logs={appState.logs}
+      currentUser={currentUser}
+      canManageAccess={can('ACCESS_MANAGE')}
+      onOpenAccess={() => setIsAccessOpen(true)}
+      onLogout={handleLogout}
+    >
       {activeTab === 'dashboard' && <Dashboard appState={appState} />}
       {activeTab === 'inventory' && (
         <InventoryManager 
           inventory={appState.inventory} 
-          onUpdateInventory={handleUpdateInventory} 
-          onAddNewItem={handleAddNewItem} 
-          onBulkImport={handleBulkImport}
-          onRestockItem={handleRestockItem} 
-          onDeleteItem={handleDeleteItem} 
-          onStatusChange={handleItemStatusChange} 
+          onUpdateInventory={guard('INVENTORY_EDIT', handleUpdateInventory)} 
+          onAddNewItem={guard('INVENTORY_EDIT', handleAddNewItem)} 
+          onBulkImport={guard('INVENTORY_EDIT', handleBulkImport)}
+          onRestockItem={guard('INVENTORY_EDIT', handleRestockItem)} 
+          onDeleteItem={guard('INVENTORY_DELETE', handleDeleteItem)} 
+          onStatusChange={guard('INVENTORY_EDIT', handleItemStatusChange)}
+          canEdit={can('INVENTORY_EDIT')}
+          canDelete={can('INVENTORY_DELETE')}
         />
       )}
       {activeTab === 'packages' && (
         <PackageManager 
           packages={appState.packages} 
           inventory={appState.inventory} 
-          onCreatePackage={handleCreatePackage} 
-          onUpdatePackage={handleUpdatePackage} 
-          onDeletePackage={handleDeletePackage} 
+          onCreatePackage={guard('PACKAGES_EDIT', handleCreatePackage)} 
+          onUpdatePackage={guard('PACKAGES_EDIT', handleUpdatePackage)} 
+          onDeletePackage={guard('PACKAGES_DELETE', handleDeletePackage)}
+          canEdit={can('PACKAGES_EDIT')}
+          canDelete={can('PACKAGES_DELETE')}
         />
       )}
       {activeTab === 'employees' && (
         <EmployeeManager 
           employees={appState.employees} 
           events={appState.events}
-          onAddEmployee={handleAddEmployee} 
-          onUpdateEmployee={handleUpdateEmployee} 
-          onDeleteEmployee={handleDeleteEmployee} 
+          onAddEmployee={guard('EMPLOYEES_EDIT', handleAddEmployee)} 
+          onUpdateEmployee={guard('EMPLOYEES_EDIT', handleUpdateEmployee)} 
+          onDeleteEmployee={guard('EMPLOYEES_DELETE', handleDeleteEmployee)}
+          canEdit={can('EMPLOYEES_EDIT')}
+          canDelete={can('EMPLOYEES_DELETE')}
         />
       )}
       {activeTab === 'quotations' && (
@@ -1018,22 +1120,26 @@ const App: React.FC = () => {
           quotations={appState.quotations} 
           packages={appState.packages} 
           inventory={appState.inventory} 
-          onCreateQuotation={handleCreateQuotation} 
-          onDeleteQuotation={handleDeleteQuotation} 
-          onUpdateStatus={handleUpdateQuotationStatus} 
+          onCreateQuotation={guard('QUOTATIONS_EDIT', handleCreateQuotation)} 
+          onDeleteQuotation={guard('QUOTATIONS_DELETE', handleDeleteQuotation)} 
+          onUpdateStatus={guard('QUOTATIONS_EDIT', handleUpdateQuotationStatus)}
+          canEdit={can('QUOTATIONS_EDIT')}
+          canDelete={can('QUOTATIONS_DELETE')}
         />
       )}
       {activeTab === 'sales' && (
         <SalesManager
           saleItems={appState.saleItems || []}
           events={appState.events}
-          onAddSaleItem={handleCreateSaleItem}
-          onUpdateSaleItem={handleUpdateSaleItem}
-          onDeleteSaleItem={handleDeleteSaleItem}
-          onCreateSaleOrder={handleCreateSaleOrder}
-          onDeleteSaleOrder={handleDeleteSaleOrder}
+          onAddSaleItem={guard('SALES_EDIT', handleCreateSaleItem)}
+          onUpdateSaleItem={guard('SALES_EDIT', handleUpdateSaleItem)}
+          onDeleteSaleItem={guard('SALES_DELETE', handleDeleteSaleItem)}
+          onCreateSaleOrder={guard('SALES_EDIT', handleCreateSaleOrder)}
+          onDeleteSaleOrder={guard('SALES_DELETE', handleDeleteSaleOrder)}
           saleOrders={appState.saleOrders || []}
-          onCreateSaleReturn={handleCreateSaleReturn}
+          onCreateSaleReturn={guard('SALES_EDIT', handleCreateSaleReturn)}
+          canEdit={can('SALES_EDIT')}
+          canDelete={can('SALES_DELETE')}
         />
       )}
       {activeTab === 'elearning' && (
@@ -1044,8 +1150,9 @@ const App: React.FC = () => {
           ranks={appState.careerRanks || []}
           employees={appState.employees}
           events={appState.events}
-          onSubmitAttempt={handleSubmitLearningAttempt}
-          onUpsertProfile={handleUpsertLearningProfile}
+          onSubmitAttempt={guard('ELEARNING_EDIT', handleSubmitLearningAttempt)}
+          onUpsertProfile={guard('ELEARNING_EDIT', handleUpsertLearningProfile)}
+          canEdit={can('ELEARNING_EDIT')}
         />
       )}
       {activeTab === 'events' && (
@@ -1056,28 +1163,29 @@ const App: React.FC = () => {
           employees={appState.employees} 
           quotations={appState.quotations}
           saleOrders={appState.saleOrders || []}
-          onExportToEvent={handleExportToEvent} 
-          onExportPackageToEvent={handleExportPackageToEvent}
-          onSyncQuotation={handleSyncQuotation}
-          onReturnFromEvent={handleReturnFromEvent} 
-          onUpdateEventItemQuantity={handleUpdateEventItemQuantity}
-          onRemoveEventItems={handleRemoveEventItems}
-          onCreateEvent={handleCreateEvent} 
-          onAssignStaff={handleAssignStaff}
-          onRemoveStaff={handleRemoveStaff}
-          onAddExpense={handleAddExpense}
-          onRemoveExpense={handleRemoveExpense}
-          onAddAdvanceRequest={handleAddAdvanceRequest}
-          onRemoveAdvanceRequest={handleRemoveAdvanceRequest}
-          onLinkQuotation={handleLinkQuotation}
-          onFinalizeOrder={handleFinalizeOrder}
-          onToggleItemDone={handleToggleEventItemDone}
-          onToggleStaffDone={handleToggleEventStaffDone}
-          onUpdateEvent={handleUpdateEvent}
-          onLinkSaleOrder={handleLinkSaleOrderToEvent}
-          onChecklistScan={handleChecklistScan}
-          onUpdateChecklistNote={handleUpdateChecklistNote}
-          onSaveChecklistSignature={handleSaveChecklistSignature}
+          canEdit={can('EVENTS_EDIT')}
+          onExportToEvent={guard('EVENTS_EDIT', handleExportToEvent)} 
+          onExportPackageToEvent={guard('EVENTS_EDIT', handleExportPackageToEvent)}
+          onSyncQuotation={guard('EVENTS_EDIT', handleSyncQuotation)}
+          onReturnFromEvent={guard('EVENTS_EDIT', handleReturnFromEvent)} 
+          onUpdateEventItemQuantity={guard('EVENTS_EDIT', handleUpdateEventItemQuantity)}
+          onRemoveEventItems={guard('EVENTS_EDIT', handleRemoveEventItems)}
+          onCreateEvent={guard('EVENTS_EDIT', handleCreateEvent)} 
+          onAssignStaff={guard('EVENTS_EDIT', handleAssignStaff)}
+          onRemoveStaff={guard('EVENTS_EDIT', handleRemoveStaff)}
+          onAddExpense={guard('EVENTS_EDIT', handleAddExpense)}
+          onRemoveExpense={guard('EVENTS_EDIT', handleRemoveExpense)}
+          onAddAdvanceRequest={guard('EVENTS_EDIT', handleAddAdvanceRequest)}
+          onRemoveAdvanceRequest={guard('EVENTS_EDIT', handleRemoveAdvanceRequest)}
+          onLinkQuotation={guard('EVENTS_EDIT', handleLinkQuotation)}
+          onFinalizeOrder={guard('EVENTS_EDIT', handleFinalizeOrder)}
+          onToggleItemDone={guard('EVENTS_EDIT', handleToggleEventItemDone)}
+          onToggleStaffDone={guard('EVENTS_EDIT', handleToggleEventStaffDone)}
+          onUpdateEvent={guard('EVENTS_EDIT', handleUpdateEvent)}
+          onLinkSaleOrder={guard('EVENTS_EDIT', handleLinkSaleOrderToEvent)}
+          onChecklistScan={guard('EVENTS_EDIT', handleChecklistScan)}
+          onUpdateChecklistNote={guard('EVENTS_EDIT', handleUpdateChecklistNote)}
+          onSaveChecklistSignature={guard('EVENTS_EDIT', handleSaveChecklistSignature)}
         />
       )}
       
@@ -1090,6 +1198,21 @@ const App: React.FC = () => {
       </div>
       <AIChat appState={appState} isOpen={isChatOpen} onClose={() => setIsChatOpen(false)} />
     </Layout>
+    <LoginModal
+      isOpen={!currentUser}
+      accounts={appState.userAccounts || []}
+      onLogin={handleLoginByPhone}
+    />
+    <AccessManager
+      isOpen={isAccessOpen && can('ACCESS_MANAGE')}
+      accounts={appState.userAccounts || []}
+      employees={appState.employees}
+      currentUserId={currentUser?.id}
+      onClose={() => setIsAccessOpen(false)}
+      onUpsertAccount={handleUpsertAccount}
+      onDeleteAccount={handleDeleteAccount}
+    />
+    </>
   );
 };
 

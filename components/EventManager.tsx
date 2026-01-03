@@ -18,6 +18,7 @@ interface EventManagerProps {
   employees?: Employee[];
   quotations?: Quotation[];
   saleOrders?: any[];
+  canEdit?: boolean;
   onExportToEvent: (eventId: string, itemId: string, qty: number) => void;
   onExportPackageToEvent?: (eventId: string, packageId: string, qty: number) => void;
   onSyncQuotation?: (eventId: string, quotationId: string) => void;
@@ -199,13 +200,14 @@ const formatMonthLabel = (key: string) => {
   return parsed.toLocaleDateString('vi-VN', { month: 'long', year: 'numeric' });
 };
 
-export const EventManager: React.FC<EventManagerProps> = ({ 
-  events, 
+export const EventManager: React.FC<EventManagerProps> = ({
+  events,
   inventory,
   packages = [],
   employees = [],
   quotations = [],
   saleOrders = [],
+  canEdit = true,
   onExportToEvent,
   onExportPackageToEvent,
   onSyncQuotation,
@@ -397,14 +399,14 @@ export const EventManager: React.FC<EventManagerProps> = ({
   }, [timelineEntries]);
 
   useEffect(() => {
-    if (selectedEvent && (!selectedEvent.processSteps || selectedEvent.processSteps.length === 0) && onUpdateEvent) {
+    if (canEdit && selectedEvent && (!selectedEvent.processSteps || selectedEvent.processSteps.length === 0) && onUpdateEvent) {
       onUpdateEvent(selectedEvent.id, { processSteps: createDefaultProcessSteps() });
     }
     setSelectedItemIds([]);
     setAdvanceTitle('');
     setAdvanceNote('');
     setAdvanceAmount('');
-  }, [selectedEvent, onUpdateEvent]);
+  }, [selectedEvent, onUpdateEvent, canEdit]);
   useEffect(() => {
     if (!selectedEvent) {
       setTimelineDatetime('');

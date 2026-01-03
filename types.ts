@@ -335,6 +335,35 @@ export interface LogEntry {
   type: 'SUCCESS' | 'INFO' | 'WARNING' | 'ERROR';
 }
 
+export type AccessRole = 'ADMIN' | 'MANAGER' | 'STAFF';
+
+export type AccessPermission =
+  | 'INVENTORY_EDIT'
+  | 'INVENTORY_DELETE'
+  | 'PACKAGES_EDIT'
+  | 'PACKAGES_DELETE'
+  | 'EVENTS_EDIT'
+  | 'EVENTS_DELETE'
+  | 'EMPLOYEES_EDIT'
+  | 'EMPLOYEES_DELETE'
+  | 'QUOTATIONS_EDIT'
+  | 'QUOTATIONS_DELETE'
+  | 'SALES_EDIT'
+  | 'SALES_DELETE'
+  | 'ELEARNING_EDIT'
+  | 'ACCESS_MANAGE';
+
+export interface UserAccount {
+  id: string;
+  name: string;
+  phone: string;
+  role: AccessRole;
+  permissions: AccessPermission[];
+  linkedEmployeeId?: string;
+  isActive?: boolean;
+  createdAt?: string;
+}
+
 export type LearningCategory = 'OPERATIONS' | 'CONTENT' | 'SALES' | 'LOGISTICS' | 'LEADERSHIP';
 
 export type LearningQuestionType = 'MULTIPLE_CHOICE' | 'OPEN';
@@ -430,4 +459,5 @@ export interface AppState {
   learningProfiles?: LearningProfile[];
   learningAttempts?: LearningAttempt[];
   careerRanks?: CareerRank[];
+  userAccounts?: UserAccount[];
 }

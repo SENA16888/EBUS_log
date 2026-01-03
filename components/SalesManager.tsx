@@ -13,9 +13,23 @@ interface SalesManagerProps {
   saleOrders?: SaleOrder[];
   onCreateSaleReturn?: (order: SaleOrder) => void;
   onDeleteSaleOrder?: (orderId: string) => void;
+  canEdit?: boolean;
+  canDelete?: boolean;
 }
 
-export const SalesManager: React.FC<SalesManagerProps> = ({ saleItems, events = [], onAddSaleItem, onUpdateSaleItem, onDeleteSaleItem, onCreateSaleOrder, saleOrders = [], onCreateSaleReturn, onDeleteSaleOrder }) => {
+export const SalesManager: React.FC<SalesManagerProps> = ({
+  saleItems,
+  events = [],
+  onAddSaleItem,
+  onUpdateSaleItem,
+  onDeleteSaleItem,
+  onCreateSaleOrder,
+  saleOrders = [],
+  onCreateSaleReturn,
+  onDeleteSaleOrder,
+  canEdit = true,
+  canDelete = true
+}) => {
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState({ name: '', category: '', description: '', imageUrl: '', price: 0, link: '', barcode: '' });
@@ -25,10 +39,11 @@ export const SalesManager: React.FC<SalesManagerProps> = ({ saleItems, events = 
   const [groupType, setGroupType] = useState<'EVENT' | 'CUSTOMER'>(() => (events.length > 0 ? 'EVENT' : 'CUSTOMER'));
   const [selectedEventId, setSelectedEventId] = useState('');
 
-  const openNew = () => { setEditingId(null); setForm({ name: '', category: '', description: '', imageUrl: '', price: 0, link: '', barcode: '' }); setShowModal(true); };
-  const openEdit = (item: SaleItem) => { setEditingId(item.id); setForm({ name: item.name, category: item.category || '', description: item.description || '', imageUrl: item.images?.[0] || '', price: item.price, link: item.link || '', barcode: item.barcode || '' }); setShowModal(true); };
+  const openNew = () => { if (!canEdit) return; setEditingId(null); setForm({ name: '', category: '', description: '', imageUrl: '', price: 0, link: '', barcode: '' }); setShowModal(true); };
+  const openEdit = (item: SaleItem) => { if (!canEdit) return; setEditingId(item.id); setForm({ name: item.name, category: item.category || '', description: item.description || '', imageUrl: item.images?.[0] || '', price: item.price, link: item.link || '', barcode: item.barcode || '' }); setShowModal(true); };
 
   const save = () => {
+    if (!canEdit) return;
     if (!form.name) { alert('Vui lòng nhập tên hàng bán'); return; }
     if (editingId) {
       onUpdateSaleItem({ id: editingId, name: form.name, category: form.category, description: form.description, images: form.imageUrl ? [form.imageUrl] : [], price: Number(form.price), link: form.link, barcode: form.barcode });
@@ -73,10 +88,12 @@ export const SalesManager: React.FC<SalesManagerProps> = ({ saleItems, events = 
           <h2 className="text-2xl font-black">Hàng Bán Sự Kiện</h2>
           <p className="text-sm text-slate-500">Quản lý danh mục hàng bán và xuất danh sách bán hàng.</p>
         </div>
-          <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2">
           <button onClick={() => setShowHistory(true)} className="bg-slate-700 text-white px-4 py-2 rounded">Lịch sử đơn</button>
           <button onClick={() => setShowExport(true)} className="bg-green-600 text-white px-4 py-2 rounded">Xuất danh sách</button>
-          <button onClick={openNew} className="bg-blue-600 text-white px-4 py-2 rounded flex items-center gap-2"><Plus size={16}/> Thêm</button>
+          {canEdit && (
+            <button onClick={openNew} className="bg-blue-600 text-white px-4 py-2 rounded flex items-center gap-2"><Plus size={16}/> Thêm</button>
+          )}
         </div>
       </div>
 
@@ -99,8 +116,8 @@ export const SalesManager: React.FC<SalesManagerProps> = ({ saleItems, events = 
             <div className="flex justify-between">
               <h3 className="font-bold">{s.name}</h3>
               <div className="flex gap-2">
-                <button onClick={() => openEdit(s)} className="text-slate-500">Sửa</button>
-                <button onClick={() => onDeleteSaleItem(s.id)} className="text-red-500"><Trash2 size={16}/></button>
+                {canEdit && <button onClick={() => openEdit(s)} className="text-slate-500">Sửa</button>}
+                {canDelete && <button onClick={() => onDeleteSaleItem(s.id)} className="text-red-500"><Trash2 size={16}/></button>}
               </div>
             </div>
             <p className="text-sm text-slate-500 mt-2">{s.category}</p>
@@ -161,7 +178,7 @@ export const SalesManager: React.FC<SalesManagerProps> = ({ saleItems, events = 
             </div>
             <div className="mt-4 flex justify-end gap-2">
               <button onClick={() => setShowModal(false)} className="px-4 py-2">Hủy</button>
-              <button onClick={save} className="px-4 py-2 bg-blue-600 text-white rounded">Lưu</button>
+              {canEdit && <button onClick={save} className="px-4 py-2 bg-blue-600 text-white rounded">Lưu</button>}
             </div>
           </div>
         </div>
@@ -262,45 +279,47 @@ export const SalesManager: React.FC<SalesManagerProps> = ({ saleItems, events = 
             </div>
             <div className="mt-4 flex justify-end gap-2">
               <button onClick={() => setShowExport(false)} className="px-4 py-2">Đóng</button>
-              <button onClick={() => {
-                // create and save order with per-line discounts
-                if (!customerName) { alert('Vui lòng nhập tên khách hàng'); return; }
-                if (groupType === 'EVENT' && !selectedEventId) { alert('Vui lòng chọn sự kiện'); return; }
-                const selectedEvent = events.find(ev => ev.id === selectedEventId);
-                const orderItems = selectedList.map(({ item }) => {
-                  const qty = selection[item!.id] || 0;
-                  const discount = lineDiscounts[item!.id] || 0;
-                  const lineTotal = Math.max(0, (item!.price - discount) * qty);
-                  return { itemId: item!.id, barcode: item!.barcode, name: item!.name, price: item!.price, quantity: qty, discount, lineTotal };
-                }).filter(i => i.quantity > 0);
-                if (orderItems.length === 0) { alert('Chưa có sản phẩm bán.'); return; }
-                const subtotal = orderItems.reduce((a,b) => a + (b.lineTotal || 0), 0);
-                const order = {
-                  id: `SO-${Date.now()}`,
-                  date: new Date().toISOString(),
-                  customerName,
-                  customerContact,
-                  items: orderItems,
-                  subtotal,
-                  orderDiscount,
-                  total: Math.max(0, subtotal - orderDiscount),
-                  note: orderNote,
-                  type: 'SALE',
-                  groupType,
-                  groupId: groupType === 'EVENT' ? selectedEvent?.id : customerName,
-                  groupName: groupType === 'EVENT' ? selectedEvent?.name : customerName,
-                  eventId: selectedEvent?.id,
-                  eventName: selectedEvent?.name,
-                  status: 'DRAFT'
-                };
-                onCreateSaleOrder(order);
-                setShowExport(false);
-                setSelection({}); setLineDiscounts({});
-                setCustomerName(''); setCustomerContact(''); setOrderNote(''); setOrderDiscount(0);
-                setSelectedEventId('');
-                // open print
-                setTimeout(() => window.print(), 300);
-              }} className="px-4 py-2 bg-blue-600 text-white rounded flex items-center gap-2"><Printer size={16}/> Lưu & In</button>
+              {canEdit && (
+                <button onClick={() => {
+                  // create and save order with per-line discounts
+                  if (!customerName) { alert('Vui lòng nhập tên khách hàng'); return; }
+                  if (groupType === 'EVENT' && !selectedEventId) { alert('Vui lòng chọn sự kiện'); return; }
+                  const selectedEvent = events.find(ev => ev.id === selectedEventId);
+                  const orderItems = selectedList.map(({ item }) => {
+                    const qty = selection[item!.id] || 0;
+                    const discount = lineDiscounts[item!.id] || 0;
+                    const lineTotal = Math.max(0, (item!.price - discount) * qty);
+                    return { itemId: item!.id, barcode: item!.barcode, name: item!.name, price: item!.price, quantity: qty, discount, lineTotal };
+                  }).filter(i => i.quantity > 0);
+                  if (orderItems.length === 0) { alert('Chưa có sản phẩm bán.'); return; }
+                  const subtotal = orderItems.reduce((a,b) => a + (b.lineTotal || 0), 0);
+                  const order = {
+                    id: `SO-${Date.now()}`,
+                    date: new Date().toISOString(),
+                    customerName,
+                    customerContact,
+                    items: orderItems,
+                    subtotal,
+                    orderDiscount,
+                    total: Math.max(0, subtotal - orderDiscount),
+                    note: orderNote,
+                    type: 'SALE',
+                    groupType,
+                    groupId: groupType === 'EVENT' ? selectedEvent?.id : customerName,
+                    groupName: groupType === 'EVENT' ? selectedEvent?.name : customerName,
+                    eventId: selectedEvent?.id,
+                    eventName: selectedEvent?.name,
+                    status: 'DRAFT'
+                  };
+                  onCreateSaleOrder(order);
+                  setShowExport(false);
+                  setSelection({}); setLineDiscounts({});
+                  setCustomerName(''); setCustomerContact(''); setOrderNote(''); setOrderDiscount(0);
+                  setSelectedEventId('');
+                  // open print
+                  setTimeout(() => window.print(), 300);
+                }} className="px-4 py-2 bg-blue-600 text-white rounded flex items-center gap-2"><Printer size={16}/> Lưu & In</button>
+              )}
             </div>
           </div>
         </div>
@@ -314,6 +333,8 @@ export const SalesManager: React.FC<SalesManagerProps> = ({ saleItems, events = 
           onCreateSaleOrder={onCreateSaleOrder}
           onDeleteSaleOrder={onDeleteSaleOrder}
           onClose={() => setShowHistory(false)}
+          canEdit={canEdit}
+          canDelete={canDelete}
         />
       )}
 
@@ -337,11 +358,26 @@ export const SalesManager: React.FC<SalesManagerProps> = ({ saleItems, events = 
                     <div className="text-sm">Đơn giá: {it.price.toLocaleString()}đ</div>
                     <div>
                       <label className="text-xs">Bán được</label>
-                      <input type="number" min={0} max={it.quantity} value={editingOrderItems[it.itemId]?.quantity ?? it.quantity} onChange={e => setEditingOrderItems(prev => ({ ...prev, [it.itemId]: { ...(prev[it.itemId] || { quantity: it.quantity, discount: it.discount || 0 }), quantity: Number(e.target.value) } }))} className="w-20 border p-1 rounded" />
+                      <input
+                        type="number"
+                        min={0}
+                        max={it.quantity}
+                        value={editingOrderItems[it.itemId]?.quantity ?? it.quantity}
+                        onChange={e => setEditingOrderItems(prev => ({ ...prev, [it.itemId]: { ...(prev[it.itemId] || { quantity: it.quantity, discount: it.discount || 0 }), quantity: Number(e.target.value) } }))}
+                        className="w-20 border p-1 rounded"
+                        disabled={!canEdit}
+                      />
                     </div>
                     <div>
                       <label className="text-xs">Chiết khấu</label>
-                      <input type="number" min={0} value={editingOrderItems[it.itemId]?.discount ?? it.discount ?? 0} onChange={e => setEditingOrderItems(prev => ({ ...prev, [it.itemId]: { ...(prev[it.itemId] || { quantity: it.quantity, discount: it.discount || 0 }), discount: Number(e.target.value) } }))} className="w-28 border p-1 rounded" />
+                      <input
+                        type="number"
+                        min={0}
+                        value={editingOrderItems[it.itemId]?.discount ?? it.discount ?? 0}
+                        onChange={e => setEditingOrderItems(prev => ({ ...prev, [it.itemId]: { ...(prev[it.itemId] || { quantity: it.quantity, discount: it.discount || 0 }), discount: Number(e.target.value) } }))}
+                        className="w-28 border p-1 rounded"
+                        disabled={!canEdit}
+                      />
                     </div>
                     <div className="text-right font-black">{(((it.price - (editingOrderItems[it.itemId]?.discount ?? it.discount ?? 0)))* (editingOrderItems[it.itemId]?.quantity ?? it.quantity)).toLocaleString()}đ</div>
                   </div>
@@ -351,26 +387,35 @@ export const SalesManager: React.FC<SalesManagerProps> = ({ saleItems, events = 
             <div className="mt-4 flex justify-between items-center gap-2">
               <div className="flex items-center gap-3">
                 <label className="text-sm">Số lượng trả (nếu có)</label>
-                <input type="number" className="border p-1 rounded w-24" value={returnSelection['__all'] || 0} onChange={e => setReturnSelection(prev => ({ ...prev, ['__all']: Number(e.target.value) }))} placeholder="0" />
+                <input
+                  type="number"
+                  className="border p-1 rounded w-24"
+                  value={returnSelection['__all'] || 0}
+                  onChange={e => setReturnSelection(prev => ({ ...prev, ['__all']: Number(e.target.value) }))}
+                  placeholder="0"
+                  disabled={!canEdit}
+                />
                 <span className="text-xs text-slate-400">(tùy chỉnh nếu cần)</span>
               </div>
               <div className="flex gap-2">
                 <button onClick={() => { setShowOrderDetail(false); setOpenOrder(null); }} className="px-4 py-2">Đóng</button>
-                <button onClick={() => {
-                  // finalize sale update
-                  const updatedItems = openOrder.items.map((it: any) => {
-                    const edit = editingOrderItems[it.itemId];
-                    const qty = edit ? edit.quantity : it.quantity;
-                    const discount = edit ? edit.discount : (it.discount || 0);
-                    const lineTotal = Math.max(0, (it.price - (discount || 0)) * qty);
-                    return { ...it, quantity: qty, discount, lineTotal };
-                  });
-                  const subtotal = updatedItems.reduce((a: number,b: any) => a + (b.lineTotal || 0), 0);
-                  const updatedOrder = { ...openOrder, items: updatedItems, subtotal, total: subtotal };
-                  onCreateSaleOrder(updatedOrder); // save as new snapshot (or use update handler if available)
-                  setShowOrderDetail(false); setOpenOrder(null); setShowHistory(false); setEditingOrderItems({});
-                  alert('Đã chốt và lưu doanh thu bán hàng.');
-                }} className="px-4 py-2 bg-blue-600 text-white rounded">Chốt & Lưu</button>
+                {canEdit && (
+                  <button onClick={() => {
+                    // finalize sale update
+                    const updatedItems = openOrder.items.map((it: any) => {
+                      const edit = editingOrderItems[it.itemId];
+                      const qty = edit ? edit.quantity : it.quantity;
+                      const discount = edit ? edit.discount : (it.discount || 0);
+                      const lineTotal = Math.max(0, (it.price - (discount || 0)) * qty);
+                      return { ...it, quantity: qty, discount, lineTotal };
+                    });
+                    const subtotal = updatedItems.reduce((a: number,b: any) => a + (b.lineTotal || 0), 0);
+                    const updatedOrder = { ...openOrder, items: updatedItems, subtotal, total: subtotal };
+                    onCreateSaleOrder(updatedOrder); // save as new snapshot (or use update handler if available)
+                    setShowOrderDetail(false); setOpenOrder(null); setShowHistory(false); setEditingOrderItems({});
+                    alert('Đã chốt và lưu doanh thu bán hàng.');
+                  }} className="px-4 py-2 bg-blue-600 text-white rounded">Chốt & Lưu</button>
+                )}
               </div>
             </div>
           </div>

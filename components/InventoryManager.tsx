@@ -41,6 +41,8 @@ interface InventoryManagerProps {
   onRestockItem: (itemId: string, quantity: number) => void;
   onDeleteItem: (itemId: string) => void;
   onStatusChange: (itemId: string, action: string, quantity: number, note: string) => void;
+  canEdit?: boolean;
+  canDelete?: boolean;
 }
 
 export const InventoryManager: React.FC<InventoryManagerProps> = ({ 
@@ -50,7 +52,9 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
   onBulkImport,
   onRestockItem,
   onDeleteItem,
-  onStatusChange
+  onStatusChange,
+  canEdit = true,
+  canDelete = true
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCategory, setFilterCategory] = useState('All');
@@ -170,6 +174,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
   }, [printSelections, inventory]);
 
   const handleOpenEdit = (e: React.MouseEvent, item: InventoryItem) => {
+    if (!canEdit) return;
     e.preventDefault();
     e.stopPropagation();
     setEditingItemId(item.id);
@@ -194,6 +199,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
   };
 
   const handleOpenStatus = (e: React.MouseEvent, item: InventoryItem) => {
+    if (!canEdit) return;
     e.preventDefault();
     e.stopPropagation();
     setStatusItem(item);
@@ -204,6 +210,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
   }
 
   const handleOpenRestock = (e: React.MouseEvent, item: InventoryItem) => {
+    if (!canEdit) return;
     e.preventDefault();
     e.stopPropagation();
     setStatusItem(item);
@@ -212,6 +219,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
   }
 
   const handleDeleteClick = (e: React.MouseEvent, item: InventoryItem) => {
+    if (!canDelete) return;
     e.preventDefault();
     e.stopPropagation();
 
@@ -227,6 +235,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
   };
 
   const handleAddNewSubmit = () => {
+    if (!canEdit) return;
     const name = newItemData.name.trim();
     if (!name) {
       alert("Vui lòng điền tên thiết bị");
@@ -272,6 +281,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
   };
 
   const handleEditSubmit = () => {
+    if (!canEdit) return;
     if (!editingItemId) return;
     const existingItem = inventory.find(i => i.id === editingItemId);
     if (!existingItem) return;
@@ -314,6 +324,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
   };
 
   const handleRestockSubmit = () => {
+    if (!canEdit) return;
     if (statusItem && restockQty > 0) {
       onRestockItem(statusItem.id, restockQty);
       setShowRestockModal(false);
@@ -506,6 +517,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
   };
 
   const handleStatusSubmit = () => {
+    if (!canEdit) return;
     if (!statusItem) return;
     if (statusQty <= 0) return;
 
@@ -581,15 +593,19 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
           <p className="text-sm text-slate-500 font-medium leading-snug">Quản lý nhập xuất, bảo trì và mua sắm bổ sung.</p>
         </div>
         <div className="flex gap-2 w-full sm:w-auto">
-          <button onClick={() => setShowBulkModal(true)} className="flex-1 sm:flex-none bg-slate-800 text-white px-4 py-2.5 rounded-xl hover:bg-black transition flex items-center justify-center gap-2 text-[11px] font-black uppercase tracking-widest shadow-md">
-            <ClipboardList size={16} /> Nhập Hàng Loạt
-          </button>
+          {canEdit && (
+            <button onClick={() => setShowBulkModal(true)} className="flex-1 sm:flex-none bg-slate-800 text-white px-4 py-2.5 rounded-xl hover:bg-black transition flex items-center justify-center gap-2 text-[11px] font-black uppercase tracking-widest shadow-md">
+              <ClipboardList size={16} /> Nhập Hàng Loạt
+            </button>
+          )}
           <button onClick={() => handleOpenPrintModal()} className="flex-1 sm:flex-none bg-white text-slate-700 border border-slate-200 px-4 py-2.5 rounded-xl hover:bg-slate-100 transition flex items-center justify-center gap-2 text-[11px] font-black uppercase tracking-widest shadow-md">
             <Printer size={16} /> In mã
           </button>
-          <button onClick={() => { setImportMode('NEW'); setShowImportModal(true); }} className="flex-1 sm:flex-none bg-blue-600 text-white px-4 py-2.5 rounded-xl hover:bg-blue-700 transition flex items-center justify-center gap-2 text-[11px] font-black uppercase tracking-widest shadow-md">
-            <Plus size={16} /> Thêm Thiết Bị
-          </button>
+          {canEdit && (
+            <button onClick={() => { setImportMode('NEW'); setShowImportModal(true); }} className="flex-1 sm:flex-none bg-blue-600 text-white px-4 py-2.5 rounded-xl hover:bg-blue-700 transition flex items-center justify-center gap-2 text-[11px] font-black uppercase tracking-widest shadow-md">
+              <Plus size={16} /> Thêm Thiết Bị
+            </button>
+          )}
         </div>
       </div>
 
@@ -628,11 +644,19 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
               
               {/* ACTION BUTTONS: Increased Z-Index to 50 to ensure clickability */}
               <div className="absolute top-3 right-3 flex flex-col gap-1.5 z-50 opacity-0 group-hover:opacity-100 transition-all transform translate-x-3 group-hover:translate-x-0">
-                 <button onClick={(e) => handleOpenStatus(e, item)} title="Bảo trì / Báo hỏng" className="p-2 bg-white/95 backdrop-blur shadow text-slate-700 rounded-xl hover:text-orange-500 transition-colors"><Wrench size={16} /></button>
-                 <button onClick={(e) => handleOpenRestock(e, item)} title="Nhập thêm hàng" className="p-2 bg-white/95 backdrop-blur shadow text-slate-700 rounded-xl hover:text-green-600 transition-colors"><ArrowUpCircle size={16} /></button>
+                 {canEdit && (
+                   <>
+                     <button onClick={(e) => handleOpenStatus(e, item)} title="Bảo trì / Báo hỏng" className="p-2 bg-white/95 backdrop-blur shadow text-slate-700 rounded-xl hover:text-orange-500 transition-colors"><Wrench size={16} /></button>
+                     <button onClick={(e) => handleOpenRestock(e, item)} title="Nhập thêm hàng" className="p-2 bg-white/95 backdrop-blur shadow text-slate-700 rounded-xl hover:text-green-600 transition-colors"><ArrowUpCircle size={16} /></button>
+                   </>
+                 )}
                  <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleOpenPrintModal(item); }} title="In tem mã vạch" className="p-2 bg-white/95 backdrop-blur shadow text-slate-700 rounded-xl hover:text-slate-900 transition-colors"><Printer size={16} /></button>
-                 <button onClick={(e) => handleOpenEdit(e, item)} title="Chỉnh sửa thông tin" className="p-2 bg-white/95 backdrop-blur shadow text-slate-700 rounded-xl hover:text-blue-600 transition-colors"><Settings2 size={16} /></button>
-                 <button onClick={(e) => handleDeleteClick(e, item)} title="Xóa thiết bị" className="p-2 bg-white/95 backdrop-blur shadow text-red-400 rounded-xl hover:bg-red-500 hover:text-white transition-all"><Trash2 size={16} /></button>
+                 {canEdit && (
+                   <button onClick={(e) => handleOpenEdit(e, item)} title="Chỉnh sửa thông tin" className="p-2 bg-white/95 backdrop-blur shadow text-slate-700 rounded-xl hover:text-blue-600 transition-colors"><Settings2 size={16} /></button>
+                 )}
+                 {canDelete && (
+                   <button onClick={(e) => handleDeleteClick(e, item)} title="Xóa thiết bị" className="p-2 bg-white/95 backdrop-blur shadow text-red-400 rounded-xl hover:bg-red-500 hover:text-white transition-all"><Trash2 size={16} /></button>
+                 )}
               </div>
 
               <div className="relative h-40 bg-slate-100 overflow-hidden">

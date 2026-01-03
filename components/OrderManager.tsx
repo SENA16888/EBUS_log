@@ -9,9 +9,20 @@ interface OrderManagerProps {
   onDeleteSaleOrder?: (orderId: string) => void;
   saleItems?: SaleItem[];
   onClose?: () => void;
+  canEdit?: boolean;
+  canDelete?: boolean;
 }
 
-export const OrderManager: React.FC<OrderManagerProps> = ({ saleOrders = [], onCreateSaleReturn, onCreateSaleOrder, onDeleteSaleOrder, saleItems = [], onClose }) => {
+export const OrderManager: React.FC<OrderManagerProps> = ({
+  saleOrders = [],
+  onCreateSaleReturn,
+  onCreateSaleOrder,
+  onDeleteSaleOrder,
+  saleItems = [],
+  onClose,
+  canEdit = true,
+  canDelete = true
+}) => {
   const [openOrder, setOpenOrder] = useState<SaleOrder | null>(null);
   const [showDetail, setShowDetail] = useState(false);
   const [editingItems, setEditingItems] = useState<Record<string, { quantity: number; discount: number }>>({});
@@ -479,8 +490,9 @@ export const OrderManager: React.FC<OrderManagerProps> = ({ saleOrders = [], onC
                                 <input
                                   type="checkbox"
                                   checked={Boolean(order.exportConfirmed)}
-                                  disabled={isCompleted}
+                                  disabled={isCompleted || !canEdit}
                                   onChange={e => {
+                                    if (!canEdit) return;
                                     if (!onCreateSaleOrder) return;
                                     const updatedOrder = { ...order, exportConfirmed: e.target.checked };
                                     onCreateSaleOrder(updatedOrder);
@@ -492,7 +504,9 @@ export const OrderManager: React.FC<OrderManagerProps> = ({ saleOrders = [], onC
                                 <input
                                   type="checkbox"
                                   checked={Boolean(order.refundConfirmed)}
+                                  disabled={!canEdit}
                                   onChange={e => {
+                                    if (!canEdit) return;
                                     if (!onCreateSaleOrder) return;
                                     onCreateSaleOrder({ ...order, refundConfirmed: e.target.checked });
                                   }}
@@ -503,7 +517,9 @@ export const OrderManager: React.FC<OrderManagerProps> = ({ saleOrders = [], onC
                                 <input
                                   type="checkbox"
                                   checked={Boolean(order.returnConfirmed)}
+                                  disabled={!canEdit}
                                   onChange={e => {
+                                    if (!canEdit) return;
                                     if (!onCreateSaleOrder) return;
                                     onCreateSaleOrder({ ...order, returnConfirmed: e.target.checked });
                                   }}
@@ -558,45 +574,51 @@ export const OrderManager: React.FC<OrderManagerProps> = ({ saleOrders = [], onC
                                   </div>
                                 )}
                               </div>
-                              <button
-                                onClick={() => {
-                                  setOpenOrder(order);
-                                  setShowDetail(true);
-                                  const map: Record<string, { quantity: number; discount: number }> = {};
-                                  (order.items || []).forEach(item => {
-                                    map[item.itemId] = { quantity: item.soldQuantity ?? 0, discount: item.discount || 0 };
-                                  });
-                                  setEditingItems(map);
-                                }}
-                                className="px-3 py-1 bg-slate-100 rounded"
-                              >
-                                NHẬP SL HÀNG ĐÃ BÁN
-                              </button>
-                              <button
-                                onClick={() => {
-                                  setOpenOrder(order);
-                                  setShowReturnModal(true);
-                                  const map: Record<string, number> = {};
-                                  (order.items || []).forEach(item => {
-                                    map[item.itemId] = 0;
-                                  });
-                                  setReturnSelection(map);
-                                }}
-                                className="px-3 py-1 bg-yellow-100 rounded"
-                              >
-                                Tạo trả hàng
-                              </button>
-                              <button
-                                onClick={() => {
-                                  if (!onDeleteSaleOrder) return;
-                                  const confirmDelete = window.confirm(`Xóa đơn ${order.id}? Các đơn trả liên quan sẽ bị xóa cùng.`);
-                                  if (!confirmDelete) return;
-                                  onDeleteSaleOrder(order.id);
-                                }}
-                                className="px-3 py-1 bg-red-50 text-red-600 border border-red-100 rounded"
-                              >
-                                <Trash2 size={14} className="inline mr-1" /> Xóa đơn
-                              </button>
+                              {canEdit && (
+                                <button
+                                  onClick={() => {
+                                    setOpenOrder(order);
+                                    setShowDetail(true);
+                                    const map: Record<string, { quantity: number; discount: number }> = {};
+                                    (order.items || []).forEach(item => {
+                                      map[item.itemId] = { quantity: item.soldQuantity ?? 0, discount: item.discount || 0 };
+                                    });
+                                    setEditingItems(map);
+                                  }}
+                                  className="px-3 py-1 bg-slate-100 rounded"
+                                >
+                                  NHẬP SL HÀNG ĐÃ BÁN
+                                </button>
+                              )}
+                              {canEdit && (
+                                <button
+                                  onClick={() => {
+                                    setOpenOrder(order);
+                                    setShowReturnModal(true);
+                                    const map: Record<string, number> = {};
+                                    (order.items || []).forEach(item => {
+                                      map[item.itemId] = 0;
+                                    });
+                                    setReturnSelection(map);
+                                  }}
+                                  className="px-3 py-1 bg-yellow-100 rounded"
+                                >
+                                  Tạo trả hàng
+                                </button>
+                              )}
+                              {canDelete && (
+                                <button
+                                  onClick={() => {
+                                    if (!onDeleteSaleOrder) return;
+                                    const confirmDelete = window.confirm(`Xóa đơn ${order.id}? Các đơn trả liên quan sẽ bị xóa cùng.`);
+                                    if (!confirmDelete) return;
+                                    onDeleteSaleOrder(order.id);
+                                  }}
+                                  className="px-3 py-1 bg-red-50 text-red-600 border border-red-100 rounded"
+                                >
+                                  <Trash2 size={14} className="inline mr-1" /> Xóa đơn
+                                </button>
+                              )}
                             </div>
                           </div>
 
@@ -698,6 +720,7 @@ export const OrderManager: React.FC<OrderManagerProps> = ({ saleOrders = [], onC
                     value={scanSold}
                     onChange={e => setScanSold(e.target.value)}
                     onKeyDown={e => {
+                      if (!canEdit) return;
                       if (e.key === 'Enter') {
                         const matched = findItemByBarcode(openOrder, scanSold);
                         if (!matched) { alert('Không tìm thấy sản phẩm theo barcode.'); return; }
@@ -710,6 +733,7 @@ export const OrderManager: React.FC<OrderManagerProps> = ({ saleOrders = [], onC
                     }}
                     placeholder="Quét barcode để cộng SL bán"
                     className="border rounded px-3 py-2 w-full sm:max-w-xs"
+                    disabled={!canEdit}
                   />
                   <span className="text-xs text-slate-500">Enter sau khi quét để +1 số lượng</span>
                 </div>
@@ -723,11 +747,26 @@ export const OrderManager: React.FC<OrderManagerProps> = ({ saleOrders = [], onC
                       <div className="text-sm">Đơn giá: {it.price.toLocaleString()}đ</div>
                       <div>
                         <label className="text-xs">Bán được</label>
-                        <input type="number" min={0} max={it.quantity} value={editingItems[it.itemId]?.quantity ?? it.soldQuantity ?? 0} onChange={e => setEditingItems(prev => ({ ...prev, [it.itemId]: { ...(prev[it.itemId] || { quantity: it.soldQuantity ?? 0, discount: it.discount || 0 }), quantity: Number(e.target.value) } }))} className="w-20 border p-1 rounded" />
+                        <input
+                          type="number"
+                          min={0}
+                          max={it.quantity}
+                          value={editingItems[it.itemId]?.quantity ?? it.soldQuantity ?? 0}
+                          onChange={e => setEditingItems(prev => ({ ...prev, [it.itemId]: { ...(prev[it.itemId] || { quantity: it.soldQuantity ?? 0, discount: it.discount || 0 }), quantity: Number(e.target.value) } }))}
+                          className="w-20 border p-1 rounded"
+                          disabled={!canEdit}
+                        />
                       </div>
                       <div>
                         <label className="text-xs">Chiết khấu</label>
-                        <input type="number" min={0} value={editingItems[it.itemId]?.discount ?? it.discount ?? 0} onChange={e => setEditingItems(prev => ({ ...prev, [it.itemId]: { ...(prev[it.itemId] || { quantity: it.quantity, discount: it.discount || 0 }), discount: Number(e.target.value) } }))} className="w-28 border p-1 rounded" />
+                        <input
+                          type="number"
+                          min={0}
+                          value={editingItems[it.itemId]?.discount ?? it.discount ?? 0}
+                          onChange={e => setEditingItems(prev => ({ ...prev, [it.itemId]: { ...(prev[it.itemId] || { quantity: it.quantity, discount: it.discount || 0 }), discount: Number(e.target.value) } }))}
+                          className="w-28 border p-1 rounded"
+                          disabled={!canEdit}
+                        />
                       </div>
                       <div className="text-right font-black">{(((it.price - (editingItems[it.itemId]?.discount ?? it.discount ?? 0)))* (editingItems[it.itemId]?.quantity ?? it.soldQuantity ?? 0)).toLocaleString()}đ</div>
                     </div>
@@ -756,27 +795,29 @@ export const OrderManager: React.FC<OrderManagerProps> = ({ saleOrders = [], onC
                 })()}
                 <div className="flex gap-2 flex-shrink-0">
                 <button onClick={() => { setShowDetail(false); setOpenOrder(null); }} className="px-4 py-2">Đóng</button>
-                <button onClick={() => {
-                  const updatedItems = openOrder.items.map((it: any) => {
-                    const edit = editingItems[it.itemId];
-                    const qty = edit ? edit.quantity : (it.soldQuantity ?? 0);
-                    const discount = edit ? edit.discount : (it.discount || 0);
-                    if (Number.isNaN(qty)) {
-                      return { ...it, soldQuantity: 0, discount, lineTotal: 0 };
+                {canEdit && (
+                  <button onClick={() => {
+                    const updatedItems = openOrder.items.map((it: any) => {
+                      const edit = editingItems[it.itemId];
+                      const qty = edit ? edit.quantity : (it.soldQuantity ?? 0);
+                      const discount = edit ? edit.discount : (it.discount || 0);
+                      if (Number.isNaN(qty)) {
+                        return { ...it, soldQuantity: 0, discount, lineTotal: 0 };
+                      }
+                      const lineTotal = Math.max(0, (it.price - (discount || 0)) * qty);
+                      return { ...it, soldQuantity: qty, discount, lineTotal };
+                    });
+                    const invalid = updatedItems.some(it => it.soldQuantity === null || Number.isNaN(it.soldQuantity));
+                    if (invalid) {
+                      alert('Vui lòng nhập số lượng bán được và chiết khấu hợp lệ.');
+                      return;
                     }
-                    const lineTotal = Math.max(0, (it.price - (discount || 0)) * qty);
-                    return { ...it, soldQuantity: qty, discount, lineTotal };
-                  });
-                  const invalid = updatedItems.some(it => it.soldQuantity === null || Number.isNaN(it.soldQuantity));
-                  if (invalid) {
-                    alert('Vui lòng nhập số lượng bán được và chiết khấu hợp lệ.');
-                    return;
-                  }
-                  const updatedOrder = { ...openOrder, items: updatedItems, status: 'FINALIZED' };
-                  if (onCreateSaleOrder) onCreateSaleOrder(updatedOrder);
-                  setShowDetail(false); setOpenOrder(null);
-                  alert('Đã chốt và lưu doanh thu.');
-                }} className="px-4 py-2 bg-blue-600 text-white rounded">Chốt & Lưu</button>
+                    const updatedOrder = { ...openOrder, items: updatedItems, status: 'FINALIZED' };
+                    if (onCreateSaleOrder) onCreateSaleOrder(updatedOrder);
+                    setShowDetail(false); setOpenOrder(null);
+                    alert('Đã chốt và lưu doanh thu.');
+                  }} className="px-4 py-2 bg-blue-600 text-white rounded">Chốt & Lưu</button>
+                )}
                 </div>
               </div>
             </div>
@@ -806,15 +847,15 @@ export const OrderManager: React.FC<OrderManagerProps> = ({ saleOrders = [], onC
                         </div>
                         <div className="text-sm">Đơn giá: {it.price.toLocaleString()}đ</div>
                         <div>
-                          <input
-                            type="number"
-                            min={0}
-                            max={maxAllowed}
-                            value={returnSelection[it.itemId] ?? 0}
-                            onChange={e => setReturnSelection(prev => ({ ...prev, [it.itemId]: Number(e.target.value) }))}
-                            className={`w-20 border p-1 rounded ${maxAllowed === 0 ? 'bg-slate-100 text-slate-400' : ''}`}
-                            disabled={maxAllowed === 0}
-                          />
+                        <input
+                          type="number"
+                          min={0}
+                          max={maxAllowed}
+                          value={returnSelection[it.itemId] ?? 0}
+                          onChange={e => setReturnSelection(prev => ({ ...prev, [it.itemId]: Number(e.target.value) }))}
+                          className={`w-20 border p-1 rounded ${maxAllowed === 0 ? 'bg-slate-100 text-slate-400' : ''}`}
+                          disabled={maxAllowed === 0 || !canEdit}
+                        />
                         </div>
                         <div className="text-xs text-slate-400">Còn trả tối đa: {maxAllowed} • Chiết khấu cũ: {it.discount || 0}đ</div>
                         <div className="text-right font-black">{(((it.price - (it.discount || 0)))* (returnSelection[it.itemId] || 0)).toLocaleString()}đ</div>
@@ -828,6 +869,7 @@ export const OrderManager: React.FC<OrderManagerProps> = ({ saleOrders = [], onC
                   value={scanReturn}
                   onChange={e => setScanReturn(e.target.value)}
                   onKeyDown={e => {
+                    if (!canEdit) return;
                     if (e.key === 'Enter') {
                       const matched = findItemByBarcode(openOrder, scanReturn);
                       if (!matched) { alert('Không tìm thấy sản phẩm theo barcode.'); return; }
@@ -844,6 +886,7 @@ export const OrderManager: React.FC<OrderManagerProps> = ({ saleOrders = [], onC
                   }}
                   placeholder="Quét barcode để cộng SL trả"
                   className="border rounded px-3 py-2 w-full sm:max-w-xs"
+                  disabled={!canEdit}
                 />
                 <span className="text-xs text-slate-500">Enter sau khi quét để +1 số lượng trả</span>
               </div>
@@ -893,55 +936,57 @@ export const OrderManager: React.FC<OrderManagerProps> = ({ saleOrders = [], onC
                     </div>
                   )}
                 </div>
-                <button onClick={() => {
-                  const orderReturns = returnsByOrderId[openOrder.id] || [];
-                  const built: any[] = [];
-                  for (const it of (openOrder.items || [])) {
-                    const alreadyReturnedQty = orderReturns.reduce((a, r) => a + ((r.items || []).reduce((s: number, ri: any) => s + (ri.itemId === it.itemId ? (ri.quantity || 0) : 0), 0)), 0);
-                    const soldQty = it.soldQuantity ?? 0;
-                    const maxAllowed = Math.max(0, (it.quantity || 0) - soldQty - alreadyReturnedQty);
-                    const qty = returnSelection[it.itemId] || 0;
-                    if (qty > 0) {
-                      if (qty > maxAllowed) { alert(`Số lượng trả cho "${it.name}" vượt quá số đã xuất còn lại (${maxAllowed}).`); return; }
-                      const discount = it.discount || 0;
-                      const lineTotal = -Math.max(0, (it.price - discount) * qty);
-                      built.push({ itemId: it.itemId, barcode: it.barcode, name: it.name, price: it.price, quantity: qty, discount, lineTotal });
+                {canEdit && (
+                  <button onClick={() => {
+                    const orderReturns = returnsByOrderId[openOrder.id] || [];
+                    const built: any[] = [];
+                    for (const it of (openOrder.items || [])) {
+                      const alreadyReturnedQty = orderReturns.reduce((a, r) => a + ((r.items || []).reduce((s: number, ri: any) => s + (ri.itemId === it.itemId ? (ri.quantity || 0) : 0), 0)), 0);
+                      const soldQty = it.soldQuantity ?? 0;
+                      const maxAllowed = Math.max(0, (it.quantity || 0) - soldQty - alreadyReturnedQty);
+                      const qty = returnSelection[it.itemId] || 0;
+                      if (qty > 0) {
+                        if (qty > maxAllowed) { alert(`Số lượng trả cho "${it.name}" vượt quá số đã xuất còn lại (${maxAllowed}).`); return; }
+                        const discount = it.discount || 0;
+                        const lineTotal = -Math.max(0, (it.price - discount) * qty);
+                        built.push({ itemId: it.itemId, barcode: it.barcode, name: it.name, price: it.price, quantity: qty, discount, lineTotal });
+                      }
                     }
-                  }
-                  const canComplete = (openOrder.items || []).every((it: any) => {
-                    const alreadyReturnedQty = orderReturns.reduce((a, r) => a + ((r.items || []).reduce((s: number, ri: any) => s + (ri.itemId === it.itemId ? (ri.quantity || 0) : 0), 0)), 0);
-                    const soldQty = it.soldQuantity ?? 0;
-                    return (soldQty + alreadyReturnedQty) >= (it.quantity || 0);
-                  });
-                  if (built.length === 0 && !canComplete) { alert('Chưa chọn sản phẩm trả.'); return; }
-                  if (built.length === 0 && canComplete) {
-                    if (onCreateSaleOrder) onCreateSaleOrder({ ...openOrder });
+                    const canComplete = (openOrder.items || []).every((it: any) => {
+                      const alreadyReturnedQty = orderReturns.reduce((a, r) => a + ((r.items || []).reduce((s: number, ri: any) => s + (ri.itemId === it.itemId ? (ri.quantity || 0) : 0), 0)), 0);
+                      const soldQty = it.soldQuantity ?? 0;
+                      return (soldQty + alreadyReturnedQty) >= (it.quantity || 0);
+                    });
+                    if (built.length === 0 && !canComplete) { alert('Chưa chọn sản phẩm trả.'); return; }
+                    if (built.length === 0 && canComplete) {
+                      if (onCreateSaleOrder) onCreateSaleOrder({ ...openOrder });
+                      setShowReturnModal(false); setOpenOrder(null); setReturnSelection({});
+                      alert('Đã hoàn tất đơn hàng.');
+                      return;
+                    }
+                    const subtotal = built.reduce((a:any,b:any) => a + (b.lineTotal || 0), 0);
+                    const order = {
+                      id: `RT-${Date.now()}`,
+                      date: new Date().toISOString(),
+                      customerName: openOrder.customerName,
+                      customerContact: openOrder.customerContact,
+                      items: built,
+                      subtotal,
+                      total: subtotal,
+                      note: `Trả hàng cho ${openOrder.id}`,
+                      type: 'RETURN',
+                      relatedOrderId: openOrder.id,
+                      groupType: openOrder.groupType,
+                      groupId: openOrder.groupId,
+                      groupName: openOrder.groupName,
+                      eventId: openOrder.eventId,
+                      eventName: openOrder.eventName
+                    };
+                    if (onCreateSaleReturn) onCreateSaleReturn(order);
                     setShowReturnModal(false); setOpenOrder(null); setReturnSelection({});
-                    alert('Đã hoàn tất đơn hàng.');
-                    return;
-                  }
-                  const subtotal = built.reduce((a:any,b:any) => a + (b.lineTotal || 0), 0);
-                  const order = {
-                    id: `RT-${Date.now()}`,
-                    date: new Date().toISOString(),
-                    customerName: openOrder.customerName,
-                    customerContact: openOrder.customerContact,
-                    items: built,
-                    subtotal,
-                    total: subtotal,
-                    note: `Trả hàng cho ${openOrder.id}`,
-                    type: 'RETURN',
-                    relatedOrderId: openOrder.id,
-                    groupType: openOrder.groupType,
-                    groupId: openOrder.groupId,
-                    groupName: openOrder.groupName,
-                    eventId: openOrder.eventId,
-                    eventName: openOrder.eventName
-                  };
-                  if (onCreateSaleReturn) onCreateSaleReturn(order);
-                  setShowReturnModal(false); setOpenOrder(null); setReturnSelection({});
-                  alert('Đã tạo đơn trả hàng.');
-                }} className="px-4 py-2 bg-yellow-600 text-white rounded">Tạo trả hàng</button>
+                    alert('Đã tạo đơn trả hàng.');
+                  }} className="px-4 py-2 bg-yellow-600 text-white rounded">Tạo trả hàng</button>
+                )}
                 </div>
               </div>
             </div>

@@ -1,11 +1,33 @@
 
-import { InventoryItem, Event, Transaction, EventStatus, TransactionType, ComboPackage, Employee, LearningTrack, LearningProfile, CareerRank } from './types';
+import { InventoryItem, Event, Transaction, EventStatus, TransactionType, ComboPackage, Employee, LearningTrack, LearningProfile, CareerRank, UserAccount } from './types';
+import { getDefaultPermissionsForRole } from './services/accessControl';
 
 export const MOCK_INVENTORY: InventoryItem[] = [];
 export const MOCK_PACKAGES: ComboPackage[] = [];
 export const MOCK_EMPLOYEES: Employee[] = [];
 export const MOCK_EVENTS: Event[] = [];
 export const MOCK_TRANSACTIONS: Transaction[] = [];
+
+export const DEFAULT_USER_ACCOUNTS: UserAccount[] = [
+  {
+    id: 'user-admin',
+    name: 'Admin Tong',
+    phone: '0900000000',
+    role: 'ADMIN',
+    permissions: getDefaultPermissionsForRole('ADMIN'),
+    isActive: true,
+    createdAt: new Date().toISOString()
+  },
+  {
+    id: 'user-manager',
+    name: 'Quan ly',
+    phone: '0910000000',
+    role: 'MANAGER',
+    permissions: getDefaultPermissionsForRole('MANAGER'),
+    isActive: true,
+    createdAt: new Date().toISOString()
+  }
+];
 
 export const MOCK_LEARNING_TRACKS: LearningTrack[] = [
   {

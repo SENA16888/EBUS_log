@@ -11,6 +11,7 @@ interface ElearningProps {
   events: Event[];
   onSubmitAttempt: (attempt: LearningAttempt) => void;
   onUpsertProfile: (profile: LearningProfile) => void;
+  canEdit?: boolean;
 }
 
 const PASSING_SCORE = 7;
@@ -28,7 +29,8 @@ export const Elearning: React.FC<ElearningProps> = ({
   employees,
   events,
   onSubmitAttempt,
-  onUpsertProfile
+  onUpsertProfile,
+  canEdit = true
 }) => {
   const [selectedProfileId, setSelectedProfileId] = useState<string>(profiles[0]?.id || '');
   const [selectedTrackId, setSelectedTrackId] = useState<string>(tracks[0]?.id || '');
@@ -168,6 +170,7 @@ export const Elearning: React.FC<ElearningProps> = ({
   }, 0);
 
   const handleAttemptSubmit = (question: LearningQuestion) => {
+    if (!canEdit) return;
     if (!activeProfile || !selectedTrack || !selectedLesson) return;
     const draft = answers[question.id];
     if (!draft || (question.type === 'MULTIPLE_CHOICE' && draft.selectedOption === undefined) || (question.type === 'OPEN' && !draft.answerText?.trim())) {
@@ -214,6 +217,7 @@ export const Elearning: React.FC<ElearningProps> = ({
   };
 
   const handleMarkLessonDone = () => {
+    if (!canEdit) return;
     if (!activeProfile || !selectedLesson) return;
     const completed = new Set(activeProfile.completedLessons || []);
     completed.add(selectedLesson.id);
@@ -221,11 +225,13 @@ export const Elearning: React.FC<ElearningProps> = ({
   };
 
   const handleSaveProfile = () => {
+    if (!canEdit) return;
     if (!profileDraft) return;
     onUpsertProfile(profileDraft);
   };
 
   const handleCreateProfile = () => {
+    if (!canEdit) return;
     if (!newProfileName.trim()) return;
     const profile: LearningProfile = {
       id: `learner-${Date.now()}`,
@@ -436,7 +442,7 @@ export const Elearning: React.FC<ElearningProps> = ({
                             <label key={opt} className={`flex items-center gap-2 border rounded-lg px-3 py-2 cursor-pointer transition ${answers[q.id]?.selectedOption === i ? 'border-blue-400 bg-blue-50' : 'border-slate-200 hover:border-blue-200'}`}>
                               <input
                                 type="radio"
-                                disabled={isLessonLocked}
+                                disabled={isLessonLocked || !canEdit}
                                 checked={answers[q.id]?.selectedOption === i}
                                 onChange={() => setAnswers(prev => ({ ...prev, [q.id]: { ...prev[q.id], selectedOption: i } }))}
                               />
@@ -446,7 +452,7 @@ export const Elearning: React.FC<ElearningProps> = ({
                         </div>
                       ) : (
                         <textarea
-                          disabled={isLessonLocked}
+                          disabled={isLessonLocked || !canEdit}
                           value={answers[q.id]?.answerText || ''}
                           onChange={e => setAnswers(prev => ({ ...prev, [q.id]: { ...prev[q.id], answerText: e.target.value } }))}
                           placeholder="Nhập câu trả lời của bạn..."
@@ -458,7 +464,7 @@ export const Elearning: React.FC<ElearningProps> = ({
                       <div className="mt-3 flex items-center gap-2">
                         <button
                           onClick={() => handleAttemptSubmit(q)}
-                          disabled={isLessonLocked}
+                          disabled={isLessonLocked || !canEdit}
                           className={`px-3 py-2 rounded-md text-sm font-semibold flex items-center gap-2 ${isLessonLocked ? 'bg-slate-200 text-slate-500 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
                         >
                           <CheckCircle2 size={16} /> Nộp & xem đáp án
@@ -502,8 +508,8 @@ export const Elearning: React.FC<ElearningProps> = ({
                 <div className="flex gap-2">
                   <button
                     onClick={handleMarkLessonDone}
-                    disabled={!lessonScore.completed}
-                    className={`px-3 py-2 rounded-md text-sm font-semibold flex items-center gap-2 ${lessonScore.completed ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-slate-200 text-slate-500 cursor-not-allowed'}`}
+                    disabled={!lessonScore.completed || !canEdit}
+                    className={`px-3 py-2 rounded-md text-sm font-semibold flex items-center gap-2 ${lessonScore.completed && canEdit ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-slate-200 text-slate-500 cursor-not-allowed'}`}
                   >
                     <Trophy size={16} /> Đánh dấu hoàn thành
                   </button>
@@ -550,6 +556,7 @@ export const Elearning: React.FC<ElearningProps> = ({
                       onChange={e => setProfileDraft(prev => prev ? { ...prev, tenureMonths: Number(e.target.value) } : prev)}
                       className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
                       placeholder="Tháng làm việc"
+                      disabled={!canEdit}
                     />
                     <input
                       type="number"
@@ -557,6 +564,7 @@ export const Elearning: React.FC<ElearningProps> = ({
                       onChange={e => setProfileDraft(prev => prev ? { ...prev, eventsAttended: Number(e.target.value) } : prev)}
                       className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
                       placeholder="Số sự kiện"
+                      disabled={!canEdit}
                     />
                     <input
                       type="number"
@@ -566,6 +574,7 @@ export const Elearning: React.FC<ElearningProps> = ({
                       placeholder="Điểm tình huống"
                       min={0}
                       max={10}
+                      disabled={!canEdit}
                     />
                     <input
                       type="text"
@@ -573,6 +582,7 @@ export const Elearning: React.FC<ElearningProps> = ({
                       onChange={e => setProfileDraft(prev => prev ? { ...prev, currentRank: e.target.value } : prev)}
                       className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
                       placeholder="Danh hiệu hiện tại"
+                      disabled={!canEdit}
                     />
                   </div>
                   <textarea
@@ -581,10 +591,12 @@ export const Elearning: React.FC<ElearningProps> = ({
                     className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
                     placeholder="Vai trò đã trải qua (phân tách bằng dấu phẩy)"
                     rows={2}
+                    disabled={!canEdit}
                   />
                   <button
                     onClick={handleSaveProfile}
-                    className="w-full bg-blue-600 text-white rounded-lg py-2 text-sm font-semibold hover:bg-blue-700 transition"
+                    disabled={!canEdit}
+                    className={`w-full rounded-lg py-2 text-sm font-semibold transition ${canEdit ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-slate-200 text-slate-500 cursor-not-allowed'}`}
                   >
                     Lưu hồ sơ
                   </button>
@@ -602,10 +614,12 @@ export const Elearning: React.FC<ElearningProps> = ({
                   onChange={e => setNewProfileName(e.target.value)}
                   placeholder="Tên nhân sự"
                   className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                  disabled={!canEdit}
                 />
                 <button
                   onClick={handleCreateProfile}
-                  className="px-3 py-2 bg-slate-800 text-white rounded-lg text-sm font-semibold hover:bg-slate-900"
+                  disabled={!canEdit}
+                  className={`px-3 py-2 rounded-lg text-sm font-semibold ${canEdit ? 'bg-slate-800 text-white hover:bg-slate-900' : 'bg-slate-200 text-slate-500 cursor-not-allowed'}`}
                 >
                   Thêm
                 </button>
@@ -671,7 +685,7 @@ export const Elearning: React.FC<ElearningProps> = ({
                         <p className="text-[11px] text-slate-500">Yêu cầu: {rank.minTenureMonths} tháng • {rank.minEvents} sự kiện • Điểm ≥ {rank.minAvgScore}</p>
                       </div>
                     </div>
-                    {eligible && (
+                    {eligible && canEdit && (
                       <button
                         onClick={() => activeProfile && onUpsertProfile({ ...activeProfile, currentRank: rank.name })}
                         className="text-xs px-2 py-1 bg-blue-600 text-white rounded-md hover:bg-blue-700"

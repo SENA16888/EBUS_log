@@ -2,19 +2,23 @@
 import React from 'react';
 import { 
   LayoutDashboard, Package, CalendarDays, 
-  Settings, Bell, User, Layers, Users, FileText, BookOpen, ShoppingBag, LucideIcon, GraduationCap 
+  Settings, Layers, Users, FileText, BookOpen, ShoppingBag, LucideIcon, GraduationCap, LogOut 
 } from 'lucide-react';
 import { ActivityLog } from './ActivityLog';
-import { LogEntry } from '../types';
+import { LogEntry, UserAccount } from '../types';
 
 interface LayoutProps {
   children: React.ReactNode;
   activeTab: 'dashboard' | 'inventory' | 'events' | 'packages' | 'employees' | 'quotations' | 'sales' | 'elearning';
   onTabChange: (tab: 'dashboard' | 'inventory' | 'events' | 'packages' | 'employees' | 'quotations' | 'sales' | 'elearning') => void;
   logs: LogEntry[];
+  currentUser?: UserAccount | null;
+  canManageAccess?: boolean;
+  onOpenAccess?: () => void;
+  onLogout?: () => void;
 }
 
-export const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange, logs }) => {
+export const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange, logs, currentUser, canManageAccess, onOpenAccess, onLogout }) => {
   const tabs: { key: LayoutProps['activeTab']; label: string; icon: LucideIcon }[] = [
     { key: 'dashboard', label: 'Tổng quan', icon: LayoutDashboard },
     { key: 'inventory', label: 'Kho hàng', icon: Package },
@@ -121,7 +125,13 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange
         </nav>
 
         <div className="p-4 border-t border-slate-800">
-           <button className="w-full flex items-center gap-3 px-3 py-2.5 text-slate-400 hover:text-white transition">
+           <button
+             onClick={canManageAccess ? onOpenAccess : undefined}
+             className={`w-full flex items-center gap-3 px-3 py-2.5 transition ${
+               canManageAccess ? 'text-slate-400 hover:text-white' : 'text-slate-600 cursor-not-allowed'
+             }`}
+             title={canManageAccess ? 'Quan ly phan quyen' : 'Khong du quyen'}
+           >
              <Settings size={20} />
              <span className="font-medium text-sm">Cài đặt</span>
            </button>
@@ -147,8 +157,19 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange
                <span className="sm:hidden">Hướng dẫn</span>
              </a>
              <ActivityLog logs={logs} />
+             {currentUser && (
+               <div className="hidden sm:flex items-center gap-2 bg-slate-100 px-2 py-1 rounded-full text-xs font-semibold text-slate-700">
+                 <span>{currentUser.name}</span>
+                 <span className="text-[10px] uppercase text-slate-500">{currentUser.role}</span>
+                 {onLogout && (
+                   <button onClick={onLogout} className="text-slate-500 hover:text-slate-800" title="Dang xuat">
+                     <LogOut size={14} />
+                   </button>
+                 )}
+               </div>
+             )}
              <div className="w-7 h-7 bg-blue-100 rounded-full flex items-center justify-center text-blue-700 font-bold text-xs">
-                AD
+                {currentUser?.name?.slice(0, 2).toUpperCase() || 'NA'}
              </div>
           </div>
         </header>

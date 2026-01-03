@@ -13,6 +13,8 @@ interface QuotationManagerProps {
   onCreateQuotation: (q: Quotation) => void;
   onDeleteQuotation: (id: string) => void;
   onUpdateStatus: (id: string, status: Quotation['status']) => void;
+  canEdit?: boolean;
+  canDelete?: boolean;
 }
 
 export const QuotationManager: React.FC<QuotationManagerProps> = ({
@@ -21,7 +23,9 @@ export const QuotationManager: React.FC<QuotationManagerProps> = ({
   inventory,
   onCreateQuotation,
   onDeleteQuotation,
-  onUpdateStatus
+  onUpdateStatus,
+  canEdit = true,
+  canDelete = true
 }) => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [viewingQuotation, setViewingQuotation] = useState<Quotation | null>(null);
@@ -44,6 +48,7 @@ export const QuotationManager: React.FC<QuotationManagerProps> = ({
   };
 
   const handleAddItem = (itemId: string) => {
+    if (!canEdit) return;
     const item = inventory.find(i => i.id === itemId);
     if (!item) return;
     
@@ -59,6 +64,7 @@ export const QuotationManager: React.FC<QuotationManagerProps> = ({
   };
 
   const handleAddPackage = (pkgId: string) => {
+    if (!canEdit) return;
     const pkg = packages.find(p => p.id === pkgId);
     if (!pkg) return;
 
@@ -74,10 +80,12 @@ export const QuotationManager: React.FC<QuotationManagerProps> = ({
   };
 
   const handleRemoveItem = (index: number) => {
+    if (!canEdit) return;
     setQuoteItems(quoteItems.filter((_, i) => i !== index));
   };
 
   const handleUpdateItemQty = (index: number, qty: number) => {
+    if (!canEdit) return;
     setQuoteItems(quoteItems.map((item, i) => {
       if (i === index) {
         return { ...item, quantity: qty, total: qty * item.unitPrice };
@@ -87,6 +95,7 @@ export const QuotationManager: React.FC<QuotationManagerProps> = ({
   };
 
   const handleSubmitQuotation = () => {
+    if (!canEdit) return;
     if (!clientName || quoteItems.length === 0) {
       alert("Vui lòng nhập tên khách hàng và ít nhất 1 hạng mục.");
       return;
@@ -135,12 +144,14 @@ export const QuotationManager: React.FC<QuotationManagerProps> = ({
            <h2 className="text-2xl font-bold text-gray-800">Quản Lý Báo Giá</h2>
            <p className="text-gray-500 text-sm mt-1">Tạo báo giá chuyên nghiệp cho khách hàng dựa trên kho và gói thiết bị.</p>
         </div>
-        <button 
-          onClick={() => setShowCreateModal(true)}
-          className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition flex items-center gap-2 text-sm font-medium shadow-sm"
-        >
-          <Plus size={16} /> Tạo Báo Giá Mới
-        </button>
+        {canEdit && (
+          <button 
+            onClick={() => setShowCreateModal(true)}
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition flex items-center gap-2 text-sm font-medium shadow-sm"
+          >
+            <Plus size={16} /> Tạo Báo Giá Mới
+          </button>
+        )}
       </div>
 
       {/* Quotation List Table */}
@@ -176,12 +187,14 @@ export const QuotationManager: React.FC<QuotationManagerProps> = ({
                    >
                      <FileText size={18} />
                    </button>
-                   <button 
-                    onClick={() => onDeleteQuotation(q.id)}
-                    className="p-2 text-gray-400 hover:text-red-500 transition"
-                   >
-                     <Trash2 size={18} />
-                   </button>
+                   {canDelete && (
+                     <button 
+                      onClick={() => onDeleteQuotation(q.id)}
+                      className="p-2 text-gray-400 hover:text-red-500 transition"
+                     >
+                       <Trash2 size={18} />
+                     </button>
+                   )}
                 </td>
               </tr>
             ))}
@@ -339,12 +352,14 @@ export const QuotationManager: React.FC<QuotationManagerProps> = ({
 
             <div className="p-6 border-t border-slate-100 flex justify-end gap-3 bg-slate-50">
                <button onClick={() => setShowCreateModal(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-200 rounded-lg font-medium">Hủy bỏ</button>
-               <button 
-                onClick={handleSubmitQuotation}
-                className="px-6 py-2 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 shadow-md shadow-blue-200 transition"
-               >
-                 Tạo & Lưu Báo Giá
-               </button>
+               {canEdit && (
+                 <button 
+                  onClick={handleSubmitQuotation}
+                  className="px-6 py-2 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 shadow-md shadow-blue-200 transition"
+                 >
+                   Tạo & Lưu Báo Giá
+                 </button>
+               )}
             </div>
           </div>
         </div>
@@ -360,12 +375,14 @@ export const QuotationManager: React.FC<QuotationManagerProps> = ({
                     <button onClick={() => window.print()} className="p-2 bg-white/10 hover:bg-white/20 rounded flex items-center gap-2 text-xs">
                       <Printer size={16} /> In Báo Giá
                     </button>
-                    <button 
-                      onClick={() => { onUpdateStatus(viewingQuotation.id, 'ACCEPTED'); setViewingQuotation(null); }} 
-                      className="p-2 bg-green-600 hover:bg-green-700 rounded flex items-center gap-2 text-xs"
-                    >
-                      <CheckCircle size={16} /> Chốt Báo Giá
-                    </button>
+                    {canEdit && (
+                      <button 
+                        onClick={() => { onUpdateStatus(viewingQuotation.id, 'ACCEPTED'); setViewingQuotation(null); }} 
+                        className="p-2 bg-green-600 hover:bg-green-700 rounded flex items-center gap-2 text-xs"
+                      >
+                        <CheckCircle size={16} /> Chốt Báo Giá
+                      </button>
+                    )}
                     <button onClick={() => setViewingQuotation(null)} className="p-2 text-white/50 hover:text-white">
                       <X size={20} />
                     </button>

@@ -8,6 +8,8 @@ interface EmployeeManagerProps {
   onAddEmployee: (emp: Employee) => void;
   onUpdateEmployee: (emp: Employee) => void;
   onDeleteEmployee: (id: string) => void;
+  canEdit?: boolean;
+  canDelete?: boolean;
 }
 
 export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
@@ -15,7 +17,9 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
   events = [],
   onAddEmployee,
   onUpdateEmployee,
-  onDeleteEmployee
+  onDeleteEmployee,
+  canEdit = true,
+  canDelete = true
 }) => {
   type StaffEventInfo = {
     event: Event;
@@ -43,6 +47,7 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
   );
 
   const handleOpenEdit = (emp: Employee) => {
+    if (!canEdit) return;
     setEditingId(emp.id);
     setFormData({
       name: emp.name,
@@ -55,6 +60,7 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
   };
 
   const handleOpenAdd = () => {
+    if (!canEdit) return;
     setEditingId(null);
     setFormData({
       name: '',
@@ -111,6 +117,7 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
   }, [employees, events, todayStr]);
 
   const handleSubmit = () => {
+    if (!canEdit) return;
     if (!formData.name || !formData.phone) {
       alert("Vui lòng nhập tên và số điện thoại.");
       return;
@@ -139,12 +146,14 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
     <div className="space-y-5">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
         <h2 className="text-xl font-semibold text-gray-800">Danh Mục Nhân Sự</h2>
-        <button 
-          onClick={handleOpenAdd}
-          className="bg-blue-600 text-white px-3 py-2 rounded-md hover:bg-blue-700 transition flex items-center gap-2 text-sm font-medium shadow-sm"
-        >
-          <Plus size={14} /> Thêm Nhân Viên
-        </button>
+        {canEdit && (
+          <button 
+            onClick={handleOpenAdd}
+            className="bg-blue-600 text-white px-3 py-2 rounded-md hover:bg-blue-700 transition flex items-center gap-2 text-sm font-medium shadow-sm"
+          >
+            <Plus size={14} /> Thêm Nhân Viên
+          </button>
+        )}
       </div>
 
       {/* Search */}
@@ -164,15 +173,19 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
         {filteredEmployees.map(emp => (
           <div key={emp.id} className="bg-white p-4 rounded-lg shadow-sm border border-slate-100 flex gap-3 hover:shadow-md transition group relative">
              <div className="absolute top-3 right-3 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                <button onClick={() => handleOpenEdit(emp)} className="p-1 text-gray-400 hover:text-blue-600 bg-slate-50 rounded">
-                  <Pencil size={14} />
-                </button>
-                <button 
-                  onClick={() => { if(window.confirm('Xóa nhân viên này?')) onDeleteEmployee(emp.id); }} 
-                  className="p-1 text-gray-400 hover:text-red-600 bg-slate-50 rounded"
-                >
-                  <Trash2 size={14} />
-                </button>
+                {canEdit && (
+                  <button onClick={() => handleOpenEdit(emp)} className="p-1 text-gray-400 hover:text-blue-600 bg-slate-50 rounded">
+                    <Pencil size={14} />
+                  </button>
+                )}
+                {canDelete && (
+                  <button 
+                    onClick={() => { if(window.confirm('Xóa nhân viên này?')) onDeleteEmployee(emp.id); }} 
+                    className="p-1 text-gray-400 hover:text-red-600 bg-slate-50 rounded"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                )}
              </div>
 
              <img src={emp.avatarUrl} alt={emp.name} className="w-12 h-12 rounded-full object-cover border border-slate-200" />
