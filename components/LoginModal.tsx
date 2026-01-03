@@ -12,8 +12,6 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, accounts, onLogi
   const [phone, setPhone] = useState('');
   const [error, setError] = useState('');
 
-  const adminHint = useMemo(() => accounts.find(acc => acc.role === 'ADMIN'), [accounts]);
-
   if (!isOpen) return null;
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -54,11 +52,6 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, accounts, onLogi
             Dang nhap
           </button>
         </form>
-        {adminHint && (
-          <div className="mt-4 bg-slate-50 border border-slate-100 rounded-xl p-3 text-xs text-slate-600">
-            Tai khoan admin mac dinh: <span className="font-semibold">{adminHint.phone}</span>
-          </div>
-        )}
       </div>
     </div>
   );
