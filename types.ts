@@ -335,6 +335,87 @@ export interface LogEntry {
   type: 'SUCCESS' | 'INFO' | 'WARNING' | 'ERROR';
 }
 
+export type LearningCategory = 'OPERATIONS' | 'CONTENT' | 'SALES' | 'LOGISTICS' | 'LEADERSHIP';
+
+export type LearningQuestionType = 'MULTIPLE_CHOICE' | 'OPEN';
+
+export interface LearningQuestion {
+  id: string;
+  prompt: string;
+  type: LearningQuestionType;
+  options?: string[];
+  correctOption?: number;
+  answerGuide?: string;
+  answerKeywords?: string[];
+  maxScore?: number;
+}
+
+export interface LearningLesson {
+  id: string;
+  title: string;
+  videoUrl: string;
+  duration?: string;
+  summary: string;
+  skills: string[];
+  questions: LearningQuestion[];
+}
+
+export interface LearningTrack {
+  id: string;
+  title: string;
+  description: string;
+  focus: LearningCategory;
+  level: 'BASE' | 'ADVANCED' | 'MASTER';
+  badge: string;
+  requirements?: {
+    minTenureMonths?: number;
+    minEvents?: number;
+    minScore?: number;
+    minScenarioScore?: number;
+    mandatoryRoles?: string[];
+    requiredLessons?: string[];
+  };
+  lessons: LearningLesson[];
+}
+
+export interface LearningAttempt {
+  id: string;
+  learnerId: string;
+  trackId: string;
+  lessonId: string;
+  questionId: string;
+  type: LearningQuestionType;
+  selectedOption?: number;
+  answerText?: string;
+  score: number;
+  feedback: string;
+  createdAt: string;
+}
+
+export interface LearningProfile {
+  id: string;
+  name: string;
+  employeeId?: string;
+  tenureMonths: number;
+  eventsAttended: number;
+  scenarioScore: number;
+  roleHistory: string[];
+  badges?: string[];
+  currentRank?: string;
+  completedLessons?: string[];
+  preferredTracks?: string[];
+}
+
+export interface CareerRank {
+  id: string;
+  name: string;
+  minTenureMonths: number;
+  minEvents: number;
+  minAvgScore: number;
+  mandatoryRoles?: string[];
+  benefits: string[];
+}
+
 export interface AppState {
   inventory: InventoryItem[];
   events: Event[];
@@ -345,4 +426,8 @@ export interface AppState {
   saleItems?: SaleItem[];
   saleOrders?: SaleOrder[];
   logs: LogEntry[];
+  learningTracks?: LearningTrack[];
+  learningProfiles?: LearningProfile[];
+  learningAttempts?: LearningAttempt[];
+  careerRanks?: CareerRank[];
 }

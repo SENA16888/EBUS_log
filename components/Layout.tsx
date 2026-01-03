@@ -2,15 +2,15 @@
 import React from 'react';
 import { 
   LayoutDashboard, Package, CalendarDays, 
-  Settings, Bell, User, Layers, Users, FileText, BookOpen, ShoppingBag, LucideIcon 
+  Settings, Bell, User, Layers, Users, FileText, BookOpen, ShoppingBag, LucideIcon, GraduationCap 
 } from 'lucide-react';
 import { ActivityLog } from './ActivityLog';
 import { LogEntry } from '../types';
 
 interface LayoutProps {
   children: React.ReactNode;
-  activeTab: 'dashboard' | 'inventory' | 'events' | 'packages' | 'employees' | 'quotations' | 'sales';
-  onTabChange: (tab: 'dashboard' | 'inventory' | 'events' | 'packages' | 'employees' | 'quotations' | 'sales') => void;
+  activeTab: 'dashboard' | 'inventory' | 'events' | 'packages' | 'employees' | 'quotations' | 'sales' | 'elearning';
+  onTabChange: (tab: 'dashboard' | 'inventory' | 'events' | 'packages' | 'employees' | 'quotations' | 'sales' | 'elearning') => void;
   logs: LogEntry[];
 }
 
@@ -23,6 +23,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange
     { key: 'sales', label: 'Hàng bán', icon: ShoppingBag },
     { key: 'events', label: 'Sự kiện', icon: CalendarDays },
     { key: 'employees', label: 'Nhân sự', icon: Users },
+    { key: 'elearning', label: 'Elearning', icon: GraduationCap },
   ];
   const activeTabLabel = tabs.find(t => t.key === activeTab)?.label || 'Menu';
 

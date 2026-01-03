@@ -9,15 +9,16 @@ import { PackageManager } from './components/PackageManager';
 import { EmployeeManager } from './components/EmployeeManager';
 import { QuotationManager } from './components/QuotationManager';
 import { AIChat } from './components/AIChat';
-import { AppState, InventoryItem, Event, EventStatus, Transaction, TransactionType, ComboPackage, Employee, Quotation, EventStaffAllocation, EventExpense, EventAdvanceRequest, LogEntry, ChecklistDirection, ChecklistStatus, ChecklistSignature, EventChecklist } from './types';
-import { MOCK_INVENTORY, MOCK_EVENTS, MOCK_TRANSACTIONS, MOCK_PACKAGES, MOCK_EMPLOYEES } from './constants';
+import { Elearning } from './components/Elearning';
+import { AppState, InventoryItem, Event, EventStatus, Transaction, TransactionType, ComboPackage, Employee, Quotation, EventStaffAllocation, EventExpense, EventAdvanceRequest, LogEntry, ChecklistDirection, ChecklistStatus, ChecklistSignature, EventChecklist, LearningAttempt, LearningProfile } from './types';
+import { MOCK_INVENTORY, MOCK_EVENTS, MOCK_TRANSACTIONS, MOCK_PACKAGES, MOCK_EMPLOYEES, MOCK_LEARNING_TRACKS, MOCK_LEARNING_PROFILES, MOCK_CAREER_RANKS } from './constants';
 import { MessageSquare } from 'lucide-react';
 import { saveAppState, loadAppState, initializeAuth } from './services/firebaseService';
 import { ensureInventoryBarcodes, ensureItemBarcode, findDuplicateBarcodeItem, findItemByBarcode } from './services/barcodeService';
 import { normalizeChecklist } from './services/checklistService';
 
 const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'inventory' | 'events' | 'packages' | 'employees' | 'quotations' | 'sales'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'inventory' | 'events' | 'packages' | 'employees' | 'quotations' | 'sales' | 'elearning'>('dashboard');
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   
@@ -31,7 +32,11 @@ const App: React.FC = () => {
       saleItems: [],
       saleOrders: [],
       quotations: [],
-      logs: []
+      logs: [],
+      learningTracks: MOCK_LEARNING_TRACKS,
+      learningProfiles: MOCK_LEARNING_PROFILES,
+      learningAttempts: [],
+      careerRanks: MOCK_CAREER_RANKS
     };
   });
 
@@ -44,7 +49,11 @@ const App: React.FC = () => {
       advanceRequests: ev.advanceRequests || [],
       checklist: normalizeChecklist(ev.checklist),
       timeline: ev.timeline || []
-    }))
+    })),
+    learningTracks: state.learningTracks || MOCK_LEARNING_TRACKS,
+    learningProfiles: state.learningProfiles || MOCK_LEARNING_PROFILES,
+    learningAttempts: state.learningAttempts || [],
+    careerRanks: state.careerRanks || MOCK_CAREER_RANKS
   });
 
   // Tải dữ liệu từ Firebase khi component mount
@@ -111,6 +120,28 @@ const App: React.FC = () => {
       ...prev,
       logs: [newLog, ...prev.logs].slice(0, 50), // Giữ lại 50 log gần nhất
     }));
+  };
+
+  const handleSubmitLearningAttempt = (attempt: LearningAttempt) => {
+    setAppState(prev => {
+      const prevAttempts = prev.learningAttempts || [];
+      const filtered = prevAttempts.filter(a => !(a.learnerId === attempt.learnerId && a.lessonId === attempt.lessonId && a.questionId === attempt.questionId));
+      const updatedAttempts = [attempt, ...filtered].slice(0, 200);
+      return { ...prev, learningAttempts: updatedAttempts };
+    });
+    addLog(`Học viên ${attempt.learnerId} nộp câu hỏi ${attempt.questionId} (điểm ${attempt.score}/10)`, 'INFO');
+  };
+
+  const handleUpsertLearningProfile = (profile: LearningProfile) => {
+    setAppState(prev => {
+      const currentProfiles = prev.learningProfiles || [];
+      const exists = currentProfiles.some(p => p.id === profile.id);
+      const updatedProfiles = exists
+        ? currentProfiles.map(p => p.id === profile.id ? profile : p)
+        : [...currentProfiles, profile];
+      return { ...prev, learningProfiles: updatedProfiles };
+    });
+    addLog(`Cập nhật hồ sơ Elearning cho ${profile.name}`, 'SUCCESS');
   };
 
   const handleChecklistScan = (payload: { eventId: string; barcode: string; direction: ChecklistDirection; status?: ChecklistStatus; quantity?: number; note?: string }) => {
@@ -1003,6 +1034,18 @@ const App: React.FC = () => {
           onDeleteSaleOrder={handleDeleteSaleOrder}
           saleOrders={appState.saleOrders || []}
           onCreateSaleReturn={handleCreateSaleReturn}
+        />
+      )}
+      {activeTab === 'elearning' && (
+        <Elearning
+          tracks={appState.learningTracks || []}
+          profiles={appState.learningProfiles || []}
+          attempts={appState.learningAttempts || []}
+          ranks={appState.careerRanks || []}
+          employees={appState.employees}
+          events={appState.events}
+          onSubmitAttempt={handleSubmitLearningAttempt}
+          onUpsertProfile={handleUpsertLearningProfile}
         />
       )}
       {activeTab === 'events' && (
