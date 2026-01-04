@@ -11,7 +11,7 @@ import { QuotationManager } from './components/QuotationManager';
 import { AIChat } from './components/AIChat';
 import { Elearning } from './components/Elearning';
 import { AdminLogPage } from './components/AdminLogPage';
-import { AppState, InventoryItem, Event, EventStatus, Transaction, TransactionType, ComboPackage, Employee, Quotation, EventStaffAllocation, EventExpense, EventAdvanceRequest, LogEntry, ChecklistDirection, ChecklistStatus, ChecklistSignature, EventChecklist, LearningAttempt, LearningProfile, AccessPermission, UserAccount } from './types';
+import { AppState, InventoryItem, Event, EventStatus, Transaction, TransactionType, ComboPackage, Employee, Quotation, EventStaffAllocation, EventExpense, EventAdvanceRequest, LogEntry, ChecklistDirection, ChecklistStatus, ChecklistSignature, EventChecklist, LearningAttempt, LearningProfile, AccessPermission, UserAccount, LearningTrack } from './types';
 import { MOCK_INVENTORY, MOCK_EVENTS, MOCK_TRANSACTIONS, MOCK_PACKAGES, MOCK_EMPLOYEES, MOCK_LEARNING_TRACKS, MOCK_LEARNING_PROFILES, MOCK_CAREER_RANKS, DEFAULT_USER_ACCOUNTS } from './constants';
 import { MessageSquare } from 'lucide-react';
 import { saveAppState, loadAppState, initializeAuth } from './services/firebaseService';
@@ -255,6 +255,11 @@ const App: React.FC = () => {
       return { ...prev, learningProfiles: updatedProfiles };
     });
     addLog(`Cập nhật hồ sơ Elearning cho ${profile.name}`, 'SUCCESS');
+  };
+
+  const handleUpdateLearningTracks = (updatedTracks: LearningTrack[]) => {
+    setAppState(prev => ({ ...prev, learningTracks: updatedTracks }));
+    addLog('Cập nhật nội dung Elearning (khóa học/bài/ câu hỏi)', 'SUCCESS');
   };
 
   const handleChecklistScan = (payload: { eventId: string; barcode: string; direction: ChecklistDirection; status?: ChecklistStatus; quantity?: number; note?: string }) => {
@@ -1179,6 +1184,7 @@ const App: React.FC = () => {
           events={appState.events}
           onSubmitAttempt={guard('ELEARNING_EDIT', handleSubmitLearningAttempt)}
           onUpsertProfile={guard('ELEARNING_EDIT', handleUpsertLearningProfile)}
+          onUpdateTracks={guard('ELEARNING_EDIT', handleUpdateLearningTracks)}
           canEdit={can('ELEARNING_EDIT')}
           isAdminView={isElearningAdmin}
           currentEmployeeId={currentUser?.linkedEmployeeId}

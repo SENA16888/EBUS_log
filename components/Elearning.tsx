@@ -11,6 +11,7 @@ interface ElearningProps {
   events: Event[];
   onSubmitAttempt: (attempt: LearningAttempt) => void;
   onUpsertProfile: (profile: LearningProfile) => void;
+  onUpdateTracks: (tracks: LearningTrack[]) => void;
   canEdit?: boolean;
   isAdminView?: boolean;
   currentEmployeeId?: string;
@@ -32,6 +33,7 @@ export const Elearning: React.FC<ElearningProps> = ({
   events,
   onSubmitAttempt,
   onUpsertProfile,
+  onUpdateTracks,
   canEdit = true,
   isAdminView = true,
   currentEmployeeId
@@ -43,12 +45,24 @@ export const Elearning: React.FC<ElearningProps> = ({
   const [revealed, setRevealed] = useState<Record<string, boolean>>({});
   const [profileDraft, setProfileDraft] = useState<LearningProfile | null>(profiles[0] || null);
   const [newProfileName, setNewProfileName] = useState<string>('');
+  const [newProfileEmployeeId, setNewProfileEmployeeId] = useState<string>('');
 
   const profileOptions = useMemo(() => {
     if (isAdminView) return profiles;
     if (!currentEmployeeId) return [];
     return profiles.filter(p => p.employeeId === currentEmployeeId);
   }, [profiles, isAdminView, currentEmployeeId]);
+
+  const employeesById = useMemo(() => {
+    const map = new Map<string, Employee>();
+    employees.forEach(emp => map.set(emp.id, emp));
+    return map;
+  }, [employees]);
+
+  const employeesWithoutProfile = useMemo(() => {
+    const profByEmployee = new Set(profiles.map(p => p.employeeId).filter(Boolean) as string[]);
+    return employees.filter(emp => !profByEmployee.has(emp.id));
+  }, [employees, profiles]);
 
   const selectedTrack = useMemo(() => tracks.find(t => t.id === selectedTrackId) || tracks[0], [tracks, selectedTrackId]);
   const selectedLesson = useMemo(() => selectedTrack?.lessons.find(l => l.id === selectedLessonId) || selectedTrack?.lessons[0], [selectedLessonId, selectedTrack]);
@@ -139,6 +153,77 @@ export const Elearning: React.FC<ElearningProps> = ({
   const lessonQuestions = useMemo(() => getLessonQuestions(selectedLesson), [selectedLesson, isAdminView]);
   const hasQuizQuestions = lessonQuestions.length > 0;
 
+  const updateSelectedLesson = (updater: (lesson: LearningLesson) => LearningLesson) => {
+    if (!selectedTrack || !selectedLesson || !isAdminView || !canEdit) return;
+    const updatedTracks = tracks.map(track => {
+      if (track.id !== selectedTrack.id) return track;
+      return {
+        ...track,
+        lessons: track.lessons.map(lesson => lesson.id === selectedLesson.id ? updater(lesson) : lesson)
+      };
+    });
+    onUpdateTracks(updatedTracks);
+  };
+
+  const handleAddQuestion = () => {
+    const newQuestion: LearningQuestion = {
+      id: `q-${Date.now()}`,
+      prompt: 'Câu hỏi mới',
+      type: 'MULTIPLE_CHOICE',
+      options: ['Lựa chọn 1', 'Lựa chọn 2'],
+      correctOption: 0,
+      answerGuide: '',
+      maxScore: 10
+    };
+    updateSelectedLesson(lesson => ({ ...lesson, questions: [...lesson.questions, newQuestion] }));
+  };
+
+  const handleDeleteQuestion = (questionId: string) => {
+    updateSelectedLesson(lesson => ({ ...lesson, questions: lesson.questions.filter(q => q.id !== questionId) }));
+  };
+
+  const handleQuestionChange = (questionId: string, patch: Partial<LearningQuestion>) => {
+    updateSelectedLesson(lesson => ({
+      ...lesson,
+      questions: lesson.questions.map(q => q.id === questionId ? { ...q, ...patch } : q)
+    }));
+  };
+
+  const handleOptionChange = (questionId: string, optionIndex: number, value: string) => {
+    updateSelectedLesson(lesson => ({
+      ...lesson,
+      questions: lesson.questions.map(q => {
+        if (q.id !== questionId) return q;
+        const options = [...(q.options || [])];
+        options[optionIndex] = value;
+        return { ...q, options };
+      })
+    }));
+  };
+
+  const handleAddOption = (questionId: string) => {
+    updateSelectedLesson(lesson => ({
+      ...lesson,
+      questions: lesson.questions.map(q => {
+        if (q.id !== questionId) return q;
+        const options = [...(q.options || []), `Lựa chọn ${((q.options || []).length || 0) + 1}`];
+        return { ...q, options };
+      })
+    }));
+  };
+
+  const handleRemoveOption = (questionId: string, optionIndex: number) => {
+    updateSelectedLesson(lesson => ({
+      ...lesson,
+      questions: lesson.questions.map(q => {
+        if (q.id !== questionId) return q;
+        const options = (q.options || []).filter((_, idx) => idx !== optionIndex);
+        const correctOption = q.correctOption !== undefined && q.correctOption >= options.length ? Math.max(0, options.length - 1) : q.correctOption;
+        return { ...q, options, correctOption };
+      })
+    }));
+  };
+
   const trackSummaries = useMemo(() => {
     return tracks.map(track => {
       const lessonScores = track.lessons.map(l => getLessonScore(l));
@@ -205,6 +290,7 @@ export const Elearning: React.FC<ElearningProps> = ({
       const hasQuizLesson = track.lessons.filter(lesson => lesson.questions.some(q => q.type === 'MULTIPLE_CHOICE')).length;
       return sum + hasQuizLesson;
     }, 0);
+  const lessonsForStats = Math.max(1, totalLessonsForView || totalLessons);
 
   const leaderboard = useMemo(() => {
     if (profiles.length === 0) return [];
@@ -218,7 +304,7 @@ export const Elearning: React.FC<ElearningProps> = ({
             return score.completed || (profile.completedLessons || []).includes(lesson.id);
           }).length;
         }, 0);
-        const completionRate = totalLessonsForView ? Math.round((completed / totalLessonsForView) * 100) : 0;
+        const completionRate = lessonsForStats ? Math.round((completed / lessonsForStats) * 100) : 0;
         return { profile, averageScore, completed, completionRate };
       })
       .sort((a, b) => {
@@ -232,6 +318,7 @@ export const Elearning: React.FC<ElearningProps> = ({
   const activeLeaderboardIndex = leaderboard.findIndex(row => row.profile.id === activeProfile?.id);
 
   const handleAttemptSubmit = (question: LearningQuestion) => {
+    if (isAdminView) return;
     if (!canEdit) return;
     if (!activeProfile || !selectedTrack || !selectedLesson) return;
     const draft = answers[question.id];
@@ -279,6 +366,7 @@ export const Elearning: React.FC<ElearningProps> = ({
   };
 
   const handleMarkLessonDone = () => {
+    if (isAdminView) return;
     if (!canEdit) return;
     if (!activeProfile || !selectedLesson) return;
     const completed = new Set(activeProfile.completedLessons || []);
@@ -294,10 +382,12 @@ export const Elearning: React.FC<ElearningProps> = ({
 
   const handleCreateProfile = () => {
     if (!canEdit) return;
-    if (!newProfileName.trim()) return;
+    if (!newProfileName.trim() && !newProfileEmployeeId) return;
+    const selectedEmployee = newProfileEmployeeId ? employeesById.get(newProfileEmployeeId) : undefined;
     const profile: LearningProfile = {
       id: `learner-${Date.now()}`,
-      name: newProfileName.trim(),
+      name: newProfileName.trim() || selectedEmployee?.name || 'Nhân sự mới',
+      employeeId: selectedEmployee?.id,
       tenureMonths: 0,
       eventsAttended: 0,
       scenarioScore: 6,
@@ -309,6 +399,32 @@ export const Elearning: React.FC<ElearningProps> = ({
     onUpsertProfile(profile);
     setSelectedProfileId(profile.id);
     setNewProfileName('');
+    setNewProfileEmployeeId('');
+  };
+
+  const handleCreateProfileFromEmployee = (employeeId: string) => {
+    if (!canEdit) return;
+    const existing = profiles.find(p => p.employeeId === employeeId);
+    if (existing) {
+      setSelectedProfileId(existing.id);
+      return;
+    }
+    const emp = employeesById.get(employeeId);
+    if (!emp) return;
+    const profile: LearningProfile = {
+      id: `learner-${employeeId}`,
+      name: emp.name,
+      employeeId: emp.id,
+      tenureMonths: 0,
+      eventsAttended: 0,
+      scenarioScore: 6,
+      roleHistory: [],
+      badges: [],
+      currentRank: 'Cộng tác viên',
+      completedLessons: []
+    };
+    onUpsertProfile(profile);
+    setSelectedProfileId(profile.id);
   };
 
   const renderRequirementItem = (text: string, isDone: boolean, key: string) => (
@@ -501,7 +617,7 @@ export const Elearning: React.FC<ElearningProps> = ({
                 </div>
               )}
 
-              {isLessonLocked && (
+              {isLessonLocked && !isAdminView && (
                 <div className="bg-orange-50 border border-orange-100 text-orange-700 rounded-lg p-3 mb-3 flex gap-2 items-start">
                   <Lock size={16} className="mt-0.5" />
                   <div>
@@ -517,7 +633,124 @@ export const Elearning: React.FC<ElearningProps> = ({
                     {isAdminView ? 'Bài học chưa có câu hỏi.' : 'Bài học chưa có câu trắc nghiệm để làm.'}
                   </div>
                 )}
+                {isAdminView && canEdit && (
+                  <div className="flex justify-end">
+                    <button
+                      onClick={handleAddQuestion}
+                      disabled={!canEdit}
+                      className={`px-3 py-2 text-sm font-semibold rounded-md ${canEdit ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-slate-200 text-slate-500 cursor-not-allowed'}`}
+                    >
+                      + Thêm câu hỏi
+                    </button>
+                  </div>
+                )}
                 {lessonQuestions.map((q, idx) => {
+                  if (isAdminView) {
+                    return (
+                      <div key={q.id} className="border border-slate-100 rounded-lg p-3 shadow-[0_4px_12px_rgba(15,23,42,0.04)] space-y-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <div className="w-7 h-7 rounded-full bg-blue-50 text-blue-700 flex items-center justify-center text-sm font-semibold">{idx + 1}</div>
+                          <input
+                            value={q.prompt}
+                            onChange={e => handleQuestionChange(q.id, { prompt: e.target.value })}
+                            className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                            placeholder="Nhập nội dung câu hỏi"
+                            disabled={!canEdit}
+                          />
+                        </div>
+                        <select
+                          value={q.type}
+                          onChange={e => handleQuestionChange(q.id, { type: e.target.value as LearningQuestion['type'] })}
+                          className="text-xs border border-slate-200 rounded-lg px-2 py-1"
+                          disabled={!canEdit}
+                        >
+                          <option value="MULTIPLE_CHOICE">Trắc nghiệm</option>
+                          <option value="OPEN">Tự luận</option>
+                        </select>
+                      </div>
+
+                        {q.type === 'MULTIPLE_CHOICE' ? (
+                          <div className="space-y-2">
+                            {(q.options || []).map((opt, i) => (
+                              <div key={`${q.id}-opt-${i}`} className="flex items-center gap-2">
+                                <input
+                                  type="radio"
+                                  name={`correct-${q.id}`}
+                                  checked={q.correctOption === i}
+                                  onChange={() => handleQuestionChange(q.id, { correctOption: i })}
+                                  disabled={!canEdit}
+                                />
+                                <input
+                                  value={opt}
+                                  onChange={e => handleOptionChange(q.id, i, e.target.value)}
+                                  className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                                  placeholder={`Lựa chọn ${i + 1}`}
+                                  disabled={!canEdit}
+                                />
+                                {(q.options || []).length > 2 && (
+                                  <button
+                                    onClick={() => handleRemoveOption(q.id, i)}
+                                    className={`text-xs ${canEdit ? 'text-red-500 hover:text-red-600' : 'text-slate-300 cursor-not-allowed'}`}
+                                    disabled={!canEdit}
+                                  >
+                                    Xóa
+                                  </button>
+                                )}
+                              </div>
+                            ))}
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => handleAddOption(q.id)}
+                                disabled={!canEdit}
+                                className={`text-xs px-3 py-1.5 rounded-md ${canEdit ? 'bg-slate-100 text-slate-700 hover:bg-slate-200' : 'bg-slate-200 text-slate-500 cursor-not-allowed'}`}
+                              >
+                                + Thêm đáp án
+                              </button>
+                              <span className="text-[11px] text-slate-500">Tích chọn đáp án đúng ở đầu dòng.</span>
+                            </div>
+                          </div>
+                        ) : (
+                          <textarea
+                            value={q.answerGuide || ''}
+                            onChange={e => handleQuestionChange(q.id, { answerGuide: e.target.value })}
+                            className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                            placeholder="Gợi ý/đáp án mẫu cho câu tự luận"
+                            rows={3}
+                            disabled={!canEdit}
+                          />
+                        )}
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                          <input
+                            type="number"
+                            value={q.maxScore || 10}
+                            onChange={e => handleQuestionChange(q.id, { maxScore: Number(e.target.value) || 0 })}
+                            className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                            placeholder="Điểm tối đa"
+                            disabled={!canEdit}
+                          />
+                          <input
+                            value={(q.answerKeywords || []).join(', ')}
+                            onChange={e => handleQuestionChange(q.id, { answerKeywords: e.target.value.split(',').map(x => x.trim()).filter(Boolean) })}
+                            className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                            placeholder="Từ khóa (ngăn cách bởi dấu phẩy)"
+                            disabled={!canEdit}
+                          />
+                        </div>
+                        <div className="flex justify-end">
+                          <button
+                            onClick={() => handleDeleteQuestion(q.id)}
+                            disabled={!canEdit}
+                            className={`text-xs ${canEdit ? 'text-red-500 hover:text-red-600' : 'text-slate-300 cursor-not-allowed'}`}
+                          >
+                            Xóa câu hỏi
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  }
+
                   const latest = profileAttempts.filter(a => a.questionId === q.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
                   const questionAnswered = revealed[q.id] || !!latest;
                   return (
@@ -538,7 +771,7 @@ export const Elearning: React.FC<ElearningProps> = ({
                             <label key={opt} className={`flex items-center gap-2 border rounded-lg px-3 py-2 cursor-pointer transition ${answers[q.id]?.selectedOption === i ? 'border-blue-400 bg-blue-50' : 'border-slate-200 hover:border-blue-200'}`}>
                               <input
                                 type="radio"
-                                disabled={isLessonLocked || !canEdit || !activeProfile}
+                                disabled={isLessonLocked || !canEdit || !activeProfile || isAdminView}
                                 checked={answers[q.id]?.selectedOption === i}
                                 onChange={() => setAnswers(prev => ({ ...prev, [q.id]: { ...prev[q.id], selectedOption: i } }))}
                               />
@@ -548,7 +781,7 @@ export const Elearning: React.FC<ElearningProps> = ({
                         </div>
                       ) : (
                         <textarea
-                          disabled={isLessonLocked || !canEdit || !activeProfile}
+                          disabled={isLessonLocked || !canEdit || !activeProfile || isAdminView}
                           value={answers[q.id]?.answerText || ''}
                           onChange={e => setAnswers(prev => ({ ...prev, [q.id]: { ...prev[q.id], answerText: e.target.value } }))}
                           placeholder="Nhập câu trả lời của bạn..."
@@ -560,8 +793,8 @@ export const Elearning: React.FC<ElearningProps> = ({
                       <div className="mt-3 flex items-center gap-2">
                         <button
                           onClick={() => handleAttemptSubmit(q)}
-                          disabled={isLessonLocked || !canEdit || !activeProfile}
-                          className={`px-3 py-2 rounded-md text-sm font-semibold flex items-center gap-2 ${isLessonLocked || !activeProfile ? 'bg-slate-200 text-slate-500 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
+                          disabled={isLessonLocked || !canEdit || !activeProfile || isAdminView}
+                          className={`px-3 py-2 rounded-md text-sm font-semibold flex items-center gap-2 ${isLessonLocked || !activeProfile || isAdminView ? 'bg-slate-200 text-slate-500 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
                         >
                           <CheckCircle2 size={16} /> Nộp & xem đáp án
                         </button>
@@ -647,13 +880,33 @@ export const Elearning: React.FC<ElearningProps> = ({
                       </div>
                       <div className="bg-slate-50 border border-slate-100 rounded-lg p-3">
                         <p className="text-xs text-slate-500">Điểm trung bình bài học</p>
-                        <p className="text-lg font-semibold text-slate-800">{averageQuestionScore}/10</p>
-                      </div>
-                    </div>
+                    <p className="text-lg font-semibold text-slate-800">{averageQuestionScore}/10</p>
+                  </div>
+                </div>
 
-                    <div className="space-y-2">
-                      <label className="text-xs text-slate-500">Cập nhật nhanh hồ sơ</label>
-                      <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-2">
+                  <div className="space-y-1">
+                    <label className="text-xs text-slate-500">Gắn nhân sự (từ module Nhân sự)</label>
+                    <select
+                      value={profileDraft?.employeeId || ''}
+                      onChange={e => setProfileDraft(prev => prev ? { ...prev, employeeId: e.target.value || undefined } : prev)}
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                      disabled={!canEdit}
+                    >
+                      <option value="">Chưa gắn</option>
+                      {employees.map(emp => (
+                        <option key={emp.id} value={emp.id}>{emp.name} - {emp.phone}</option>
+                      ))}
+                    </select>
+                    {profileDraft?.employeeId && (
+                      <p className="text-[11px] text-slate-500">
+                        {employeesById.get(profileDraft.employeeId)?.role || ''} • {employeesById.get(profileDraft.employeeId)?.phone || ''}
+                      </p>
+                    )}
+                  </div>
+
+                  <label className="text-xs text-slate-500">Cập nhật nhanh hồ sơ</label>
+                  <div className="grid grid-cols-2 gap-2">
                         <input
                           type="number"
                           value={profileDraft?.tenureMonths || 0}
@@ -720,6 +973,17 @@ export const Elearning: React.FC<ElearningProps> = ({
                       className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm"
                       disabled={!canEdit}
                     />
+                    <select
+                      value={newProfileEmployeeId}
+                      onChange={e => setNewProfileEmployeeId(e.target.value)}
+                      className="w-56 border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                      disabled={!canEdit}
+                    >
+                      <option value="">Chọn từ danh sách nhân sự</option>
+                      {employees.map(emp => (
+                        <option key={emp.id} value={emp.id}>{emp.name} - {emp.phone}</option>
+                      ))}
+                    </select>
                     <button
                       onClick={handleCreateProfile}
                       disabled={!canEdit}
@@ -734,6 +998,37 @@ export const Elearning: React.FC<ElearningProps> = ({
                     </p>
                   )}
                 </div>
+              </div>
+
+              <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <Users size={16} className="text-blue-600" />
+                  <p className="font-semibold text-slate-800">Nhân sự chưa có hồ sơ</p>
+                </div>
+                {employeesWithoutProfile.length === 0 ? (
+                  <p className="text-sm text-slate-500">Tất cả nhân sự đã có hồ sơ Elearning.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {employeesWithoutProfile.slice(0, 5).map(emp => (
+                      <div key={emp.id} className="flex items-center justify-between border border-slate-100 rounded-lg px-3 py-2">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-800">{emp.name}</p>
+                          <p className="text-[11px] text-slate-500">{emp.role} • {emp.phone}</p>
+                        </div>
+                        <button
+                          onClick={() => handleCreateProfileFromEmployee(emp.id)}
+                          className="text-xs px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                          disabled={!canEdit}
+                        >
+                          Tạo hồ sơ
+                        </button>
+                      </div>
+                    ))}
+                    {employeesWithoutProfile.length > 5 && (
+                      <p className="text-[11px] text-slate-500">... và {employeesWithoutProfile.length - 5} nhân sự khác.</p>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-4 space-y-3">
@@ -840,7 +1135,7 @@ export const Elearning: React.FC<ElearningProps> = ({
                           <div className="w-6 text-xs font-semibold text-slate-500">{index + 1}</div>
                           <div>
                             <p className="text-sm font-semibold text-slate-800">{row.profile.name}</p>
-                            <p className="text-[11px] text-slate-500">{row.completed}/{totalLessonsForView} bài • {row.averageScore.toFixed(1)}/10</p>
+                            <p className="text-[11px] text-slate-500">{row.completed}/{lessonsForStats} bài • {row.averageScore.toFixed(1)}/10</p>
                           </div>
                         </div>
                         <div className="text-xs font-semibold text-slate-700">{row.completionRate}%</div>
