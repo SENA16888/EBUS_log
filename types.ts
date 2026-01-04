@@ -230,6 +230,36 @@ export interface EventExpense {
   vatInvoiceLink?: string;
 }
 
+export type EventTypeId = 'CAMBRIDGE_DAY' | 'SCIENCE_DAY' | 'BOOK_FAIR' | 'LIBRARY' | 'COMMUNITY';
+
+export interface EventContact {
+  name: string;
+  phone?: string;
+  zalo?: string;
+  role?: string;
+}
+
+export interface EventProfile {
+  code: string;
+  organization?: string;
+  eventType?: EventTypeId;
+  programTimeStart?: string;
+  programTimeEnd?: string;
+  programSession?: Event['session'];
+  addressDetail?: string;
+  mapLink?: string;
+  setupArea?: string;
+  generalGoal?: string;
+  salesScope?: 'NO_SALE' | 'LIGHT_ADVICE' | 'SELLING' | 'CUSTOM';
+  salesScopeNote?: string;
+  audience?: Array<'MN' | 'TIEU_HOC' | 'THCS' | 'THPT' | 'PH'>;
+  attendanceMin?: number;
+  attendanceMax?: number;
+  partnerOrg?: string;
+  schoolContact?: EventContact;
+  einsteinPic?: string;
+}
+
 export interface EventAdvanceRequest {
   id: string;
   title: string;
@@ -309,6 +339,7 @@ export interface Event {
   advancePaidAmount?: number;
   advancePaidDate?: string;
   advancePaidConfirmed?: boolean;
+  eventProfile?: EventProfile;
   quotationId?: string; 
   isOrderCreated?: boolean; 
   processSteps?: EventProcessStep[];

@@ -1,6 +1,6 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { Event, InventoryItem, EventStatus, ComboPackage, Employee, EventExpense, EventAdvanceRequest, EventStaffAllocation, Quotation, EventProcessStep, EventLayout, EventLayoutBlock, LayoutPackageSource, ChecklistDirection, ChecklistStatus, ChecklistSignature, EventTimelineEntry, EventTimelinePhase } from '../types';
+import { Event, InventoryItem, EventStatus, ComboPackage, Employee, EventExpense, EventAdvanceRequest, EventStaffAllocation, Quotation, EventProcessStep, EventLayout, EventLayoutBlock, LayoutPackageSource, ChecklistDirection, ChecklistStatus, ChecklistSignature, EventTimelineEntry, EventTimelinePhase, EventProfile } from '../types';
 import { 
   Calendar, MapPin, Box, ArrowLeft, Plus, Minus, X, Layers, 
   Users, DollarSign, Trash2, Truck, BookOpen, 
@@ -103,6 +103,29 @@ const TIMELINE_PHASES: { value: EventTimelinePhase; label: string; color: string
   { value: 'AFTER', label: 'Sau sự kiện', color: 'bg-slate-50 border-slate-200', description: 'Thu hồi, tổng kết, bàn giao' }
 ];
 
+const EVENT_TYPE_OPTIONS: { value: EventProfile['eventType']; label: string }[] = [
+  { value: 'CAMBRIDGE_DAY', label: 'Cambridge Day' },
+  { value: 'SCIENCE_DAY', label: 'Ngày hội khoa học' },
+  { value: 'BOOK_FAIR', label: 'Hội sách' },
+  { value: 'LIBRARY', label: 'Thư viện' },
+  { value: 'COMMUNITY', label: 'Cộng đồng' },
+];
+
+const SALES_SCOPE_OPTIONS: { value: NonNullable<EventProfile['salesScope']>; label: string }[] = [
+  { value: 'NO_SALE', label: 'Không bán' },
+  { value: 'LIGHT_ADVICE', label: 'Tư vấn nhẹ khi phụ huynh hỏi' },
+  { value: 'SELLING', label: 'Có bán' },
+  { value: 'CUSTOM', label: 'Khác (ghi chú)' },
+];
+
+const AUDIENCE_OPTIONS: { value: NonNullable<EventProfile['audience']>[number]; label: string }[] = [
+  { value: 'MN', label: 'Mầm non' },
+  { value: 'TIEU_HOC', label: 'Tiểu học' },
+  { value: 'THCS', label: 'THCS' },
+  { value: 'THPT', label: 'THPT' },
+  { value: 'PH', label: 'Phụ huynh' },
+];
+
 const getStaffSessions = (staff?: Pick<EventStaffAllocation, 'session' | 'sessions'>): EventSession[] => {
   if (!staff) return [];
   if (staff.sessions && staff.sessions.length > 0) return staff.sessions as EventSession[];
@@ -192,6 +215,21 @@ const getSessionsForDate = (event: Event, date: string): EventSession[] | null =
 const getEventPrimaryDate = (event: Event): string | null => {
   const schedule = getEventSchedule(event);
   return schedule[0]?.date || event.startDate || event.endDate || null;
+};
+
+const formatDateWithDay = (dateStr?: string | null) => {
+  if (!dateStr) return '';
+  const parsed = new Date(dateStr);
+  if (Number.isNaN(parsed.getTime())) return dateStr;
+  const day = parsed.toLocaleDateString('vi-VN', { weekday: 'long' });
+  return `${parsed.toLocaleDateString('vi-VN')} (${day})`;
+};
+
+const generateEventCode = (dateStr?: string) => {
+  const baseDate = dateStr || new Date().toISOString().slice(0, 10);
+  const cleanDate = baseDate.replace(/-/g, '');
+  const suffix = String(Math.floor(Math.random() * 900 + 100));
+  return `EB-${cleanDate}-${suffix}`;
 };
 
 const formatMonthLabel = (key: string) => {
@@ -344,6 +382,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
   const [viewingItem, setViewingItem] = useState<InventoryItem | null>(null);
 
   const selectedEvent = events.find(e => e.id === selectedEventId);
+  const eventProfile = selectedEvent?.eventProfile || {};
   const linkedQuotation = selectedEvent?.quotationId ? quotations.find(q => q.id === selectedEvent.quotationId) : null;
   const fallbackProcessSteps = useMemo(() => createDefaultProcessSteps(), [selectedEventId]);
   const processSteps = selectedEvent?.processSteps && selectedEvent.processSteps.length > 0 ? selectedEvent.processSteps : fallbackProcessSteps;
@@ -424,6 +463,24 @@ export const EventManager: React.FC<EventManagerProps> = ({
   }, [selectedEvent, selectedEventId]);
 
   useEffect(() => {
+    if (!selectedEvent || !onUpdateEvent || !canEdit) return;
+    const profile = selectedEvent.eventProfile || {};
+    const updates: Partial<EventProfile> = {};
+    if (!profile.code) {
+      updates.code = generateEventCode(selectedEvent.startDate || selectedEvent.endDate || new Date().toISOString().slice(0, 10));
+    }
+    if (!profile.organization && selectedEvent.client) {
+      updates.organization = selectedEvent.client;
+    }
+    if (!profile.programSession && selectedEvent.session) {
+      updates.programSession = selectedEvent.session;
+    }
+    if (Object.keys(updates).length > 0) {
+      onUpdateEvent(selectedEvent.id, { eventProfile: { ...profile, ...updates } });
+    }
+  }, [selectedEvent, onUpdateEvent, canEdit]);
+
+  useEffect(() => {
     if (!selectedEvent) {
       setAdvancePaidAmountInput('');
       setAdvancePaidDateInput('');
@@ -462,6 +519,11 @@ export const EventManager: React.FC<EventManagerProps> = ({
       advancePaidAmount: 0,
       advancePaidDate: '',
       advancePaidConfirmed: false,
+      eventProfile: {
+        code: generateEventCode(startDate),
+        organization: newEventData.client,
+        programSession: primarySession
+      },
       processSteps: createDefaultProcessSteps(),
       timeline: [],
       layout: {
@@ -722,6 +784,22 @@ export const EventManager: React.FC<EventManagerProps> = ({
   const handleAdvancePaidConfirmedChange = (checked: boolean) => {
     setAdvancePaidConfirmed(checked);
     persistAdvancePaid({ advancePaidConfirmed: checked });
+  };
+
+  const updateEventProfile = (patch: Partial<EventProfile>) => {
+    if (!selectedEvent || !onUpdateEvent) return;
+    onUpdateEvent(selectedEvent.id, { eventProfile: { ...(selectedEvent.eventProfile || {}), ...patch } });
+  };
+
+  const updateSchoolContact = (patch: Partial<NonNullable<EventProfile['schoolContact']>>) => {
+    const current = eventProfile.schoolContact || { name: '' };
+    updateEventProfile({ schoolContact: { ...current, ...patch } });
+  };
+
+  const toggleAudience = (aud: NonNullable<EventProfile['audience']>[number]) => {
+    const current = eventProfile.audience || [];
+    const next = current.includes(aud) ? current.filter(a => a !== aud) : [...current, aud];
+    updateEventProfile({ audience: next });
   };
 
   const handleStaffSelect = (empId: string) => {
@@ -1156,6 +1234,29 @@ export const EventManager: React.FC<EventManagerProps> = ({
   const vatExpensesTotal = (selectedEvent?.expenses || []).filter(exp => exp.vatInvoiceLink).reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
   const advancePaidAmountNumber = Number(advancePaidAmountInput || selectedEvent?.advancePaidAmount || 0) || 0;
   const advanceRefundAmount = advancePaidAmountNumber - vatExpensesTotal;
+  const salesScopeLabel = useMemo(() => {
+    const found = SALES_SCOPE_OPTIONS.find(opt => opt.value === eventProfile.salesScope);
+    if (found?.value === 'CUSTOM' && eventProfile.salesScopeNote) return eventProfile.salesScopeNote;
+    if (found) return found.label;
+    if (eventProfile.salesScopeNote) return eventProfile.salesScopeNote;
+    return 'Chưa cập nhật';
+  }, [eventProfile.salesScope, eventProfile.salesScopeNote]);
+  const eventDateLabel = useMemo(() => {
+    if (!selectedEvent) return '';
+    const schedule = getEventSchedule(selectedEvent);
+    if (schedule.length === 0) return '';
+    if (schedule.length === 1) return formatDateWithDay(schedule[0].date);
+    const first = schedule[0];
+    const last = schedule[schedule.length - 1];
+    return `${formatDateWithDay(first.date)} → ${formatDateWithDay(last.date)}`;
+  }, [selectedEvent]);
+  const programTimeLabel = useMemo(() => {
+    const timeRange = eventProfile.programTimeStart && eventProfile.programTimeEnd
+      ? `${eventProfile.programTimeStart} - ${eventProfile.programTimeEnd}`
+      : '';
+    const sessionLabel = eventProfile.programSession ? SESSION_LABELS[eventProfile.programSession as EventSession] : '';
+    return [timeRange, sessionLabel].filter(Boolean).join(' • ');
+  }, [eventProfile.programSession, eventProfile.programTimeEnd, eventProfile.programTimeStart]);
   const staffCosts = selectedEvent?.staff?.reduce((a, b) => a + b.salary, 0) || 0;
   const otherCosts = selectedEvent?.expenses?.reduce((a, b) => a + b.amount, 0) || 0;
   const totalCosts = staffCosts + otherCosts;
@@ -1172,6 +1273,23 @@ export const EventManager: React.FC<EventManagerProps> = ({
   const profitMargin = revenue > 0 ? (grossProfit / revenue) * 100 : 0;
   const totalChecklistCount = processSteps.reduce((acc, step) => acc + step.checklist.length, 0);
   const totalChecklistDone = processSteps.reduce((acc, step) => acc + step.checklist.filter(item => item.checked).length, 0);
+  const eventProfileSummary = useMemo(() => {
+    if (!selectedEvent) return [];
+    const lines: string[] = [];
+    lines.push(`Sự kiện: ${selectedEvent.name || 'Chưa đặt tên'}${eventProfile.code ? ` (${eventProfile.code})` : ''}`);
+    lines.push(`Thời gian: ${eventDateLabel || 'Chưa cập nhật'}${programTimeLabel ? ` • ${programTimeLabel}` : ''}`);
+    const locationParts = [
+      selectedEvent.location || '',
+      eventProfile.addressDetail || '',
+      eventProfile.setupArea ? `Khu vực: ${eventProfile.setupArea}` : ''
+    ].filter(Boolean);
+    lines.push(`Vị trí: ${locationParts.join(' • ') || 'Chưa cập nhật'}`);
+    lines.push(`Mục tiêu chung: ${eventProfile.generalGoal || 'Chưa cập nhật'}`);
+    lines.push(`Phạm vi: ${salesScopeLabel}`);
+    lines.push(`Chi phí tổ chức dự kiến: ${totalCosts.toLocaleString()}đ`);
+    lines.push(`Kế hoạch hành động (TIMELINE): ${timelineEntries.length} mốc`);
+    return lines;
+  }, [selectedEvent, eventProfile.code, eventProfile.addressDetail, eventProfile.setupArea, eventProfile.generalGoal, eventDateLabel, programTimeLabel, salesScopeLabel, totalCosts, timelineEntries.length]);
 
   return (
     <div className="flex flex-col lg:flex-row gap-6 lg:h-[calc(100vh-100px)]">
@@ -1857,6 +1975,268 @@ export const EventManager: React.FC<EventManagerProps> = ({
 
               {detailTab === 'COSTS' && (
                 <div className="space-y-6">
+                  {/* EVENT PROFILE */}
+                  <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6">
+                    <div className="flex items-center justify-between gap-2">
+                      <h4 className="font-bold text-gray-800 text-xs uppercase flex items-center gap-2">
+                        <BookOpen size={16} className="text-blue-600" /> Hồ sơ sự kiện (Event Profile)
+                      </h4>
+                      <span className="text-[11px] text-slate-500 font-semibold">Tự động lấy từ thông tin sự kiện, cho phép bổ sung chi tiết</span>
+                    </div>
+
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <h5 className="text-[11px] font-black text-slate-500 uppercase tracking-widest">Thông tin định danh</h5>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div>
+                          <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Mã sự kiện (auto)</label>
+                          <input className="w-full border rounded-xl p-3 text-sm bg-slate-50 font-bold text-slate-700" value={eventProfile.code || ''} readOnly />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Tên sự kiện</label>
+                          <input className="w-full border rounded-xl p-3 text-sm bg-slate-50" value={selectedEvent.name} readOnly />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Đơn vị / Trường</label>
+                          <input 
+                            className="w-full border rounded-xl p-3 text-sm"
+                            placeholder="Tên đầy đủ"
+                            value={eventProfile.organization || ''}
+                            onChange={e => updateEventProfile({ organization: e.target.value })}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Loại sự kiện</label>
+                          <select 
+                            className="w-full border rounded-xl p-3 text-sm bg-white"
+                            value={eventProfile.eventType || ''}
+                            onChange={e => updateEventProfile({ eventType: (e.target.value || undefined) as EventProfile['eventType'] })}
+                          >
+                            <option value="">-- Chọn loại sự kiện --</option>
+                            {EVENT_TYPE_OPTIONS.map(opt => (
+                              <option key={opt.value} value={opt.value}>{opt.label}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Ngày tổ chức + Thứ</label>
+                          <input className="w-full border rounded-xl p-3 text-sm bg-slate-50" value={eventDateLabel || 'Chưa cập nhật'} readOnly />
+                        </div>
+                        <div className="grid grid-cols-3 gap-2">
+                          <div className="col-span-2">
+                            <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Khung giờ chương trình</label>
+                            <div className="flex items-center gap-2">
+                              <input 
+                                type="time"
+                                className="w-full border rounded-xl p-3 text-sm"
+                                value={eventProfile.programTimeStart || ''}
+                                onChange={e => updateEventProfile({ programTimeStart: e.target.value })}
+                              />
+                              <span className="text-slate-400 text-sm">–</span>
+                              <input 
+                                type="time"
+                                className="w-full border rounded-xl p-3 text-sm"
+                                value={eventProfile.programTimeEnd || ''}
+                                onChange={e => updateEventProfile({ programTimeEnd: e.target.value })}
+                              />
+                            </div>
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Buổi</label>
+                            <select 
+                              className="w-full border rounded-xl p-3 text-sm bg-white"
+                              value={eventProfile.programSession || ''}
+                              onChange={e => updateEventProfile({ programSession: (e.target.value || undefined) as Event['session'] })}
+                            >
+                              <option value="">-- Buổi --</option>
+                              {SESSION_OPTIONS.map(opt => (
+                                <option key={opt.value} value={opt.value}>{opt.label}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                        <div className="md:col-span-2">
+                          <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Địa chỉ chi tiết</label>
+                          <input 
+                            className="w-full border rounded-xl p-3 text-sm"
+                            placeholder="Số nhà, phường/quận..."
+                            value={eventProfile.addressDetail || ''}
+                            onChange={e => updateEventProfile({ addressDetail: e.target.value })}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Google Map link</label>
+                          <input 
+                            className="w-full border rounded-xl p-3 text-sm"
+                            placeholder="https://maps.google.com/..."
+                            value={eventProfile.mapLink || ''}
+                            onChange={e => updateEventProfile({ mapLink: e.target.value })}
+                          />
+                        </div>
+                        <div className="md:col-span-3">
+                          <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Khu vực set-up</label>
+                          <input 
+                            className="w-full border rounded-xl p-3 text-sm"
+                            placeholder="Ví dụ: sân/sảnh – STEAM Zone"
+                            value={eventProfile.setupArea || ''}
+                            onChange={e => updateEventProfile({ setupArea: e.target.value })}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-4">
+                      <h5 className="text-[11px] font-black text-slate-500 uppercase tracking-widest">Mục tiêu & Phạm vi</h5>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="md:col-span-2">
+                          <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Mục tiêu chung</label>
+                          <textarea 
+                            rows={3}
+                            className="w-full border rounded-xl p-3 text-sm"
+                            placeholder="3–5 dòng mô tả mục tiêu"
+                            value={eventProfile.generalGoal || ''}
+                            onChange={e => updateEventProfile({ generalGoal: e.target.value })}
+                          />
+                        </div>
+                        <div className="md:col-span-2 space-y-2">
+                          <p className="text-[10px] font-black text-gray-400 uppercase">Phạm vi bán hàng</p>
+                          <div className="flex flex-wrap gap-2">
+                            {SALES_SCOPE_OPTIONS.map(opt => {
+                              const active = eventProfile.salesScope === opt.value;
+                              return (
+                                <button
+                                  key={opt.value}
+                                  type="button"
+                                  onClick={() => updateEventProfile({ salesScope: opt.value, salesScopeNote: opt.value === 'CUSTOM' ? eventProfile.salesScopeNote : undefined })}
+                                  className={`px-3 py-2 rounded-xl border text-sm font-semibold transition ${active ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-slate-200 text-slate-600 hover:border-slate-300'}`}
+                                >
+                                  {opt.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                          {eventProfile.salesScope === 'CUSTOM' && (
+                            <input 
+                              className="w-full border rounded-xl p-3 text-sm"
+                              placeholder="Ghi chú phạm vi bán hàng"
+                              value={eventProfile.salesScopeNote || ''}
+                              onChange={e => updateEventProfile({ salesScopeNote: e.target.value })}
+                            />
+                          )}
+                        </div>
+                        <div>
+                          <p className="block text-[10px] font-black text-gray-400 uppercase mb-2">Đối tượng tham gia</p>
+                          <div className="grid grid-cols-2 gap-2">
+                            {AUDIENCE_OPTIONS.map(opt => (
+                              <label key={opt.value} className="inline-flex items-center gap-2 text-sm text-slate-700">
+                                <input 
+                                  type="checkbox"
+                                  checked={(eventProfile.audience || []).includes(opt.value)}
+                                  onChange={() => toggleAudience(opt.value)}
+                                />
+                                {opt.label}
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Quy mô min</label>
+                            <input 
+                              type="number"
+                              className="w-full border rounded-xl p-3 text-sm"
+                              placeholder="0"
+                              value={eventProfile.attendanceMin ?? ''}
+                              onChange={e => updateEventProfile({ attendanceMin: e.target.value === '' ? undefined : Number(e.target.value) })}
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Quy mô max</label>
+                            <input 
+                              type="number"
+                              className="w-full border rounded-xl p-3 text-sm"
+                              placeholder="0"
+                              value={eventProfile.attendanceMax ?? ''}
+                              onChange={e => updateEventProfile({ attendanceMax: e.target.value === '' ? undefined : Number(e.target.value) })}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-4">
+                      <h5 className="text-[11px] font-black text-slate-500 uppercase tracking-widest">Bên liên quan (Stakeholders)</h5>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Đơn vị phối hợp / BTC</label>
+                          <input 
+                            className="w-full border rounded-xl p-3 text-sm"
+                            placeholder="Tên đơn vị phối hợp"
+                            value={eventProfile.partnerOrg || ''}
+                            onChange={e => updateEventProfile({ partnerOrg: e.target.value })}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">PIC Einstein Bus</label>
+                          <input 
+                            className="w-full border rounded-xl p-3 text-sm"
+                            placeholder="Tên người phụ trách"
+                            value={eventProfile.einsteinPic || ''}
+                            onChange={e => updateEventProfile({ einsteinPic: e.target.value })}
+                          />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                        <div>
+                          <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Đầu mối phía trường - Tên</label>
+                          <input 
+                            className="w-full border rounded-xl p-3 text-sm"
+                            placeholder="Tên"
+                            value={eventProfile.schoolContact?.name || ''}
+                            onChange={e => updateSchoolContact({ name: e.target.value })}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">SĐT</label>
+                          <input 
+                            className="w-full border rounded-xl p-3 text-sm"
+                            placeholder="Số điện thoại"
+                            value={eventProfile.schoolContact?.phone || ''}
+                            onChange={e => updateSchoolContact({ phone: e.target.value })}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Zalo</label>
+                          <input 
+                            className="w-full border rounded-xl p-3 text-sm"
+                            placeholder="Zalo"
+                            value={eventProfile.schoolContact?.zalo || ''}
+                            onChange={e => updateSchoolContact({ zalo: e.target.value })}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Vai trò</label>
+                          <input 
+                            className="w-full border rounded-xl p-3 text-sm"
+                            placeholder="Vai trò"
+                            value={eventProfile.schoolContact?.role || ''}
+                            onChange={e => updateSchoolContact({ role: e.target.value })}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+                      <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Tóm tắt hồ sơ tự sinh</p>
+                      <div className="space-y-1 text-sm text-slate-700">
+                        {eventProfileSummary.map((line, idx) => (
+                          <p key={idx}>{line}</p>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
                   {/* QUOTATION LINK SECTION */}
                   <div className="bg-gradient-to-r from-blue-600 to-indigo-700 p-6 rounded-2xl text-white shadow-xl space-y-4">
                     <div className="flex justify-between items-center">
