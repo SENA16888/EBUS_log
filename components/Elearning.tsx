@@ -95,6 +95,11 @@ export const Elearning: React.FC<ElearningProps> = ({
 
   const totalEventCount = Math.max(activeProfile?.eventsAttended || 0, eventCountFromData);
 
+  const getLessonQuestions = (lesson?: LearningLesson) => {
+    if (!lesson) return [];
+    return isAdminView ? lesson.questions : lesson.questions.filter(q => q.type === 'MULTIPLE_CHOICE');
+  };
+
   const getAverageScoreFromAttempts = (attemptList: LearningAttempt[]) => {
     const bestByQuestion = new Map<string, number>();
     attemptList.forEach(a => {
@@ -107,16 +112,19 @@ export const Elearning: React.FC<ElearningProps> = ({
 
   const getLessonScoreFromAttempts = (lesson: LearningLesson | undefined, attemptList: LearningAttempt[]) => {
     if (!lesson) return { normalized: 0, answeredCount: 0, completed: false };
-    const lessonAttempts = attemptList.filter(a => a.lessonId === lesson.id);
+    const lessonQuestions = getLessonQuestions(lesson);
+    if (lessonQuestions.length === 0) return { normalized: 0, answeredCount: 0, completed: false };
+    const questionIds = new Set(lessonQuestions.map(q => q.id));
+    const lessonAttempts = attemptList.filter(a => a.lessonId === lesson.id && questionIds.has(a.questionId));
     const bestByQuestion = new Map<string, number>();
     lessonAttempts.forEach(a => {
       bestByQuestion.set(a.questionId, Math.max(bestByQuestion.get(a.questionId) || 0, a.score));
     });
-    const totalScore = lesson.questions.reduce((sum, q) => sum + (bestByQuestion.get(q.id) || 0), 0);
-    const totalPossible = lesson.questions.reduce((sum, q) => sum + (q.maxScore || 10), 0);
+    const totalScore = lessonQuestions.reduce((sum, q) => sum + (bestByQuestion.get(q.id) || 0), 0);
+    const totalPossible = lessonQuestions.reduce((sum, q) => sum + (q.maxScore || 10), 0);
     const normalized = totalPossible ? Number(((totalScore / totalPossible) * 10).toFixed(1)) : 0;
     const answeredCount = bestByQuestion.size;
-    const completed = normalized >= PASSING_SCORE && answeredCount === lesson.questions.length;
+    const completed = normalized >= PASSING_SCORE && answeredCount === lessonQuestions.length;
     return { normalized, answeredCount, completed };
   };
 
@@ -128,6 +136,8 @@ export const Elearning: React.FC<ElearningProps> = ({
   };
 
   const lessonScore = getLessonScore(selectedLesson);
+  const lessonQuestions = useMemo(() => getLessonQuestions(selectedLesson), [selectedLesson, isAdminView]);
+  const hasQuizQuestions = lessonQuestions.length > 0;
 
   const trackSummaries = useMemo(() => {
     return tracks.map(track => {
@@ -136,7 +146,7 @@ export const Elearning: React.FC<ElearningProps> = ({
       const progress = track.lessons.length ? Math.round((done / track.lessons.length) * 100) : 0;
       return { track, progress, done };
     });
-  }, [tracks, profileAttempts, activeProfile, totalEventCount, averageQuestionScore]);
+  }, [tracks, profileAttempts, activeProfile, totalEventCount, averageQuestionScore, isAdminView]);
 
   const checkTrackUnlock = (track?: LearningTrack) => {
     if (!track || !activeProfile) return { unlocked: false, reasons: ['Chưa có hồ sơ nhân sự'], eventCount: totalEventCount };
@@ -189,6 +199,12 @@ export const Elearning: React.FC<ElearningProps> = ({
   const completedLessons = tracks.reduce((sum, t) => {
     return sum + t.lessons.filter(l => getLessonScore(l).completed || (activeProfile?.completedLessons || []).includes(l.id)).length;
   }, 0);
+  const totalLessonsForView = isAdminView
+    ? totalLessons
+    : tracks.reduce((sum, track) => {
+      const hasQuizLesson = track.lessons.filter(lesson => lesson.questions.some(q => q.type === 'MULTIPLE_CHOICE')).length;
+      return sum + hasQuizLesson;
+    }, 0);
 
   const leaderboard = useMemo(() => {
     if (profiles.length === 0) return [];
@@ -202,7 +218,7 @@ export const Elearning: React.FC<ElearningProps> = ({
             return score.completed || (profile.completedLessons || []).includes(lesson.id);
           }).length;
         }, 0);
-        const completionRate = totalLessons ? Math.round((completed / totalLessons) * 100) : 0;
+        const completionRate = totalLessonsForView ? Math.round((completed / totalLessonsForView) * 100) : 0;
         return { profile, averageScore, completed, completionRate };
       })
       .sort((a, b) => {
@@ -210,7 +226,7 @@ export const Elearning: React.FC<ElearningProps> = ({
         if (b.averageScore !== a.averageScore) return b.averageScore - a.averageScore;
         return a.profile.name.localeCompare(b.profile.name);
       });
-  }, [profiles, attempts, tracks, totalLessons]);
+  }, [profiles, attempts, tracks, totalLessonsForView, isAdminView]);
 
   const topLeaderboard = leaderboard.slice(0, 8);
   const activeLeaderboardIndex = leaderboard.findIndex(row => row.profile.id === activeProfile?.id);
@@ -312,7 +328,6 @@ export const Elearning: React.FC<ElearningProps> = ({
 
   const isLessonLocked = !trackUnlockStatus.unlocked;
   const nextEligibleRank = rankStatuses.find(r => r.eligible);
-  const nextRankTarget = rankStatuses.find(r => !r.eligible);
 
   return (
     <div className="space-y-4">
@@ -332,20 +347,22 @@ export const Elearning: React.FC<ElearningProps> = ({
                 : 'Tập trung hoàn thành bài học, tích lũy điểm số và nâng cấp danh hiệu cá nhân.'}
             </p>
           </div>
-          <div className="flex gap-2">
-            <div className="bg-white/10 px-3 py-2 rounded-lg text-sm">
-              <div className="text-xs text-slate-100/80">Khóa học</div>
-              <div className="font-semibold">{tracks.length}</div>
+          {isAdminView && (
+            <div className="flex gap-2">
+              <div className="bg-white/10 px-3 py-2 rounded-lg text-sm">
+                <div className="text-xs text-slate-100/80">Khóa học</div>
+                <div className="font-semibold">{tracks.length}</div>
+              </div>
+              <div className="bg-white/10 px-3 py-2 rounded-lg text-sm">
+                <div className="text-xs text-slate-100/80">Bài học</div>
+                <div className="font-semibold">{totalLessons}</div>
+              </div>
+              <div className="bg-white/10 px-3 py-2 rounded-lg text-sm">
+                <div className="text-xs text-slate-100/80">Đã hoàn thành</div>
+                <div className="font-semibold">{completedLessons}/{totalLessons}</div>
+              </div>
             </div>
-            <div className="bg-white/10 px-3 py-2 rounded-lg text-sm">
-              <div className="text-xs text-slate-100/80">Bài học</div>
-              <div className="font-semibold">{totalLessons}</div>
-            </div>
-            <div className="bg-white/10 px-3 py-2 rounded-lg text-sm">
-              <div className="text-xs text-slate-100/80">Đã hoàn thành</div>
-              <div className="font-semibold">{completedLessons}/{totalLessons}</div>
-            </div>
-          </div>
+          )}
         </div>
       </div>
 
@@ -388,89 +405,101 @@ export const Elearning: React.FC<ElearningProps> = ({
                 ))}
               </select>
             </div>
-            <div className="flex-1">
-              <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 h-full">
-                <div className="flex items-center gap-2 text-blue-700 text-sm font-semibold">
-                  <ShieldCheck size={16} /> Điều kiện mở khóa
+            {isAdminView && (
+              <div className="flex-1">
+                <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 h-full">
+                  <div className="flex items-center gap-2 text-blue-700 text-sm font-semibold">
+                    <ShieldCheck size={16} /> Điều kiện mở khóa
+                  </div>
+                  <p className="text-xs text-slate-600 mt-1">
+                    {trackUnlockStatus.unlocked ? 'Đã đủ điều kiện học và thi.' : 'Chưa đủ, xem yêu cầu chi tiết.'}
+                  </p>
                 </div>
-                <p className="text-xs text-slate-600 mt-1">
-                  {trackUnlockStatus.unlocked ? 'Đã đủ điều kiện học và thi.' : 'Chưa đủ, xem yêu cầu chi tiết.'}
-                </p>
               </div>
-            </div>
+            )}
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {trackSummaries.map(({ track, progress, done }) => {
-              const unlocked = checkTrackUnlock(track).unlocked;
-              return (
-                <button
-                  key={track.id}
-                  onClick={() => setSelectedTrackId(track.id)}
-                  className={`text-left bg-white border rounded-xl p-4 shadow-sm hover:shadow-md transition ${selectedTrackId === track.id ? 'border-blue-300 shadow-[0_10px_30px_rgba(37,99,235,0.08)]' : 'border-slate-100'}`}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <Sparkles className="text-blue-600" size={18} />
-                      <div>
-                        <p className="text-sm font-semibold text-slate-800">{track.title}</p>
-                        <p className="text-xs text-slate-500">{track.description}</p>
+          {isAdminView && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {trackSummaries.map(({ track, progress, done }) => {
+                const unlocked = checkTrackUnlock(track).unlocked;
+                return (
+                  <button
+                    key={track.id}
+                    onClick={() => setSelectedTrackId(track.id)}
+                    className={`text-left bg-white border rounded-xl p-4 shadow-sm hover:shadow-md transition ${selectedTrackId === track.id ? 'border-blue-300 shadow-[0_10px_30px_rgba(37,99,235,0.08)]' : 'border-slate-100'}`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <Sparkles className="text-blue-600" size={18} />
+                        <div>
+                          <p className="text-sm font-semibold text-slate-800">{track.title}</p>
+                          <p className="text-xs text-slate-500">{track.description}</p>
+                        </div>
                       </div>
+                      <div className="text-xs text-white bg-slate-800 px-2 py-1 rounded-lg">{track.level}</div>
                     </div>
-                    <div className="text-xs text-white bg-slate-800 px-2 py-1 rounded-lg">{track.level}</div>
-                  </div>
-                  <div className="mt-3 h-2 bg-slate-100 rounded-full overflow-hidden">
-                    <div className={`h-2 ${unlocked ? 'bg-blue-600' : 'bg-slate-400'}`} style={{ width: `${progress}%` }} />
-                  </div>
-                  <div className="mt-2 text-xs text-slate-600 flex items-center gap-2">
-                    <CheckCircle2 size={14} className="text-green-600" />
-                    {done}/{track.lessons.length} bài đã đạt yêu cầu
-                  </div>
-                  {!unlocked && (
-                    <div className="mt-2 text-[11px] text-orange-600 flex items-center gap-1">
-                      <Lock size={12} /> Chưa mở khóa đầy đủ
+                    <div className="mt-3 h-2 bg-slate-100 rounded-full overflow-hidden">
+                      <div className={`h-2 ${unlocked ? 'bg-blue-600' : 'bg-slate-400'}`} style={{ width: `${progress}%` }} />
                     </div>
-                  )}
-                </button>
-              );
-            })}
-          </div>
+                    <div className="mt-2 text-xs text-slate-600 flex items-center gap-2">
+                      <CheckCircle2 size={14} className="text-green-600" />
+                      {done}/{track.lessons.length} bài đã đạt yêu cầu
+                    </div>
+                    {!unlocked && (
+                      <div className="mt-2 text-[11px] text-orange-600 flex items-center gap-1">
+                        <Lock size={12} /> Chưa mở khóa đầy đủ
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
 
           <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
             <div className="p-4 border-b border-slate-100 flex items-center justify-between">
               <div>
-                <p className="text-xs text-slate-500 font-medium uppercase">Bài học đang xem</p>
+                <p className="text-xs text-slate-500 font-medium uppercase">
+                  {isAdminView ? 'Bài học đang xem' : 'Bài kiểm tra trắc nghiệm'}
+                </p>
                 <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
                   <PlayCircle className="text-blue-600" size={18} />
                   {selectedLesson.title}
                 </h3>
-                <p className="text-sm text-slate-500">{selectedLesson.summary}</p>
+                {isAdminView && (
+                  <p className="text-sm text-slate-500">{selectedLesson.summary}</p>
+                )}
               </div>
               <div className="text-right">
                 <div className="text-xs text-slate-500">Điểm trung bình</div>
                 <div className="text-xl font-bold text-blue-700">{lessonScore.normalized.toFixed(1)}/10</div>
-                <div className="text-xs text-slate-500">Đã trả lời {lessonScore.answeredCount}/{selectedLesson.questions.length}</div>
+                <div className="text-xs text-slate-500">Đã trả lời {lessonScore.answeredCount}/{lessonQuestions.length}</div>
               </div>
             </div>
 
-            <div className="aspect-video bg-slate-100">
-              <iframe
-                src={selectedLesson.videoUrl}
-                title={selectedLesson.title}
-                className="w-full h-full"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                allowFullScreen
-              />
-            </div>
+            {isAdminView && (
+              <div className="aspect-video bg-slate-100">
+                <iframe
+                  src={selectedLesson.videoUrl}
+                  title={selectedLesson.title}
+                  className="w-full h-full"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowFullScreen
+                />
+              </div>
+            )}
 
             <div className="p-4">
-              <div className="flex flex-wrap gap-2 mb-3">
-                {selectedLesson.skills.map(skill => (
-                  <span key={skill} className="px-2 py-1 text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-100 rounded-lg">
-                    {skill}
-                  </span>
-                ))}
-              </div>
+              {isAdminView && (
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {selectedLesson.skills.map(skill => (
+                    <span key={skill} className="px-2 py-1 text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-100 rounded-lg">
+                      {skill}
+                    </span>
+                  ))}
+                </div>
+              )}
 
               {isLessonLocked && (
                 <div className="bg-orange-50 border border-orange-100 text-orange-700 rounded-lg p-3 mb-3 flex gap-2 items-start">
@@ -483,7 +512,12 @@ export const Elearning: React.FC<ElearningProps> = ({
               )}
 
               <div className="space-y-4">
-                {selectedLesson.questions.map((q, idx) => {
+                {!hasQuizQuestions && (
+                  <div className="bg-slate-50 border border-slate-100 rounded-lg p-3 text-sm text-slate-600">
+                    {isAdminView ? 'Bài học chưa có câu hỏi.' : 'Bài học chưa có câu trắc nghiệm để làm.'}
+                  </div>
+                )}
+                {lessonQuestions.map((q, idx) => {
                   const latest = profileAttempts.filter(a => a.questionId === q.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
                   const questionAnswered = revealed[q.id] || !!latest;
                   return (
@@ -565,17 +599,23 @@ export const Elearning: React.FC<ElearningProps> = ({
               <div className="mt-4 flex flex-wrap gap-2 items-center justify-between">
                 <div className="text-sm text-slate-700 flex items-center gap-2">
                   <BookOpenCheck size={16} className="text-blue-600" />
-                  {lessonScore.completed ? 'Bài học đã đạt yêu cầu' : 'Hoàn thành tất cả câu hỏi để đạt chuẩn'}
+                  {lessonScore.completed
+                    ? 'Bài học đã đạt yêu cầu'
+                    : isAdminView
+                      ? 'Hoàn thành tất cả câu hỏi để đạt chuẩn'
+                      : 'Hoàn thành tất cả câu hỏi trắc nghiệm để đạt chuẩn'}
                 </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={handleMarkLessonDone}
-                    disabled={!lessonScore.completed || !canEdit || !activeProfile}
-                    className={`px-3 py-2 rounded-md text-sm font-semibold flex items-center gap-2 ${lessonScore.completed && canEdit && activeProfile ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-slate-200 text-slate-500 cursor-not-allowed'}`}
-                  >
-                    <Trophy size={16} /> Đánh dấu hoàn thành
-                  </button>
-                </div>
+                {isAdminView && (
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleMarkLessonDone}
+                      disabled={!lessonScore.completed || !canEdit || !activeProfile}
+                      className={`px-3 py-2 rounded-md text-sm font-semibold flex items-center gap-2 ${lessonScore.completed && canEdit && activeProfile ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-slate-200 text-slate-500 cursor-not-allowed'}`}
+                    >
+                      <Trophy size={16} /> Đánh dấu hoàn thành
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -777,93 +817,42 @@ export const Elearning: React.FC<ElearningProps> = ({
               </div>
             </>
           ) : (
-            <>
-              <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-4 space-y-3">
-                <div className="flex items-center gap-2">
-                  <Crown size={16} className="text-amber-500" />
-                  <p className="font-semibold text-slate-800">Cấp độ cá nhân</p>
-                </div>
-                {activeProfile ? (
-                  <>
-                    <div className="bg-slate-50 border border-slate-100 rounded-lg p-3">
-                      <p className="text-xs text-slate-500">Danh hiệu hiện tại</p>
-                      <p className="text-lg font-semibold text-slate-800">{activeProfile.currentRank || 'Chưa gán'}</p>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div className="bg-slate-50 border border-slate-100 rounded-lg p-3">
-                        <p className="text-xs text-slate-500">Thời gian làm việc</p>
-                        <p className="text-lg font-semibold text-slate-800">{activeProfile.tenureMonths} tháng</p>
-                      </div>
-                      <div className="bg-slate-50 border border-slate-100 rounded-lg p-3">
-                        <p className="text-xs text-slate-500">Sự kiện đã tham gia</p>
-                        <p className="text-lg font-semibold text-slate-800">{totalEventCount}</p>
-                      </div>
-                      <div className="bg-slate-50 border border-slate-100 rounded-lg p-3">
-                        <p className="text-xs text-slate-500">Điểm trung bình</p>
-                        <p className="text-lg font-semibold text-slate-800">{averageQuestionScore}/10</p>
-                      </div>
-                      <div className="bg-slate-50 border border-slate-100 rounded-lg p-3">
-                        <p className="text-xs text-slate-500">Hoàn thành</p>
-                        <p className="text-lg font-semibold text-slate-800">{completedLessons}/{totalLessons}</p>
-                      </div>
-                    </div>
-                    {nextRankTarget ? (
-                      <div className="bg-blue-50 border border-blue-100 rounded-lg p-3">
-                        <p className="text-xs text-blue-700 font-semibold">Mục tiêu tiếp theo</p>
-                        <p className="text-sm font-semibold text-slate-800">{nextRankTarget.rank.name}</p>
-                        {nextRankTarget.reasons.length > 0 ? (
-                          <ul className="text-[11px] text-slate-600 mt-1 list-disc list-inside space-y-0.5">
-                            {nextRankTarget.reasons.slice(0, 3).map(r => <li key={r}>{r}</li>)}
-                          </ul>
-                        ) : (
-                          <p className="text-[11px] text-slate-600 mt-1">Bạn đã đủ điều kiện để lên bậc mới.</p>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="bg-green-50 border border-green-100 rounded-lg p-3 text-xs text-green-700">
-                        Bạn đã đạt bậc cao nhất trong lộ trình.
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <p className="text-sm text-slate-500">Chưa có hồ sơ học tập được gắn với tài khoản này.</p>
-                )}
+            <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <Trophy size={16} className="text-blue-600" />
+                <p className="font-semibold text-slate-800">Bảng xếp hạng</p>
               </div>
-
-              <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-4 space-y-3">
-                <div className="flex items-center gap-2">
-                  <Trophy size={16} className="text-blue-600" />
-                  <p className="font-semibold text-slate-800">Bảng xếp hạng</p>
-                </div>
-                {topLeaderboard.length === 0 ? (
-                  <p className="text-sm text-slate-500">Chưa có dữ liệu xếp hạng.</p>
-                ) : (
-                  <div className="space-y-2">
-                    {topLeaderboard.map((row, index) => {
-                      const isCurrent = row.profile.id === activeProfile?.id;
-                      return (
-                        <div
-                          key={row.profile.id}
-                          className={`flex items-center justify-between border rounded-lg px-3 py-2 ${isCurrent ? 'border-blue-200 bg-blue-50' : 'border-slate-100 bg-slate-50'}`}
-                        >
-                          <div className="flex items-center gap-2">
-                            <div className="w-6 text-xs font-semibold text-slate-500">{index + 1}</div>
-                            <div>
-                              <p className="text-sm font-semibold text-slate-800">{row.profile.name}</p>
-                              <p className="text-[11px] text-slate-500">{row.completed}/{totalLessons} bài • {row.averageScore.toFixed(1)}/10</p>
-                            </div>
+              {!activeProfile && (
+                <p className="text-sm text-slate-500">Chưa có hồ sơ học tập được gắn với tài khoản này.</p>
+              )}
+              {topLeaderboard.length === 0 ? (
+                <p className="text-sm text-slate-500">Chưa có dữ liệu xếp hạng.</p>
+              ) : (
+                <div className="space-y-2">
+                  {topLeaderboard.map((row, index) => {
+                    const isCurrent = row.profile.id === activeProfile?.id;
+                    return (
+                      <div
+                        key={row.profile.id}
+                        className={`flex items-center justify-between border rounded-lg px-3 py-2 ${isCurrent ? 'border-blue-200 bg-blue-50' : 'border-slate-100 bg-slate-50'}`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <div className="w-6 text-xs font-semibold text-slate-500">{index + 1}</div>
+                          <div>
+                            <p className="text-sm font-semibold text-slate-800">{row.profile.name}</p>
+                            <p className="text-[11px] text-slate-500">{row.completed}/{totalLessonsForView} bài • {row.averageScore.toFixed(1)}/10</p>
                           </div>
-                          <div className="text-xs font-semibold text-slate-700">{row.completionRate}%</div>
                         </div>
-                      );
-                    })}
-                  </div>
-                )}
-                {activeProfile && activeLeaderboardIndex >= 0 && (
-                  <p className="text-[11px] text-slate-500">Hạng của bạn: {activeLeaderboardIndex + 1}/{leaderboard.length}</p>
-                )}
-              </div>
-            </>
+                        <div className="text-xs font-semibold text-slate-700">{row.completionRate}%</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              {activeProfile && activeLeaderboardIndex >= 0 && (
+                <p className="text-[11px] text-slate-500">Hạng của bạn: {activeLeaderboardIndex + 1}/{leaderboard.length}</p>
+              )}
+            </div>
           )}
         </div>
       </div>
