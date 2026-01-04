@@ -337,6 +337,9 @@ export const EventManager: React.FC<EventManagerProps> = ({
   const [advanceTitle, setAdvanceTitle] = useState('');
   const [advanceNote, setAdvanceNote] = useState('');
   const [advanceAmount, setAdvanceAmount] = useState('');
+  const [advancePaidAmountInput, setAdvancePaidAmountInput] = useState('');
+  const [advancePaidDateInput, setAdvancePaidDateInput] = useState('');
+  const [advancePaidConfirmed, setAdvancePaidConfirmed] = useState(false);
   const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
   const [viewingItem, setViewingItem] = useState<InventoryItem | null>(null);
 
@@ -420,6 +423,19 @@ export const EventManager: React.FC<EventManagerProps> = ({
     setTimelineDatetime(firstDate ? `${firstDate}T08:00` : '');
   }, [selectedEvent, selectedEventId]);
 
+  useEffect(() => {
+    if (!selectedEvent) {
+      setAdvancePaidAmountInput('');
+      setAdvancePaidDateInput('');
+      setAdvancePaidConfirmed(false);
+      return;
+    }
+    const hasAmount = typeof selectedEvent.advancePaidAmount === 'number' && Number.isFinite(selectedEvent.advancePaidAmount);
+    setAdvancePaidAmountInput(hasAmount ? selectedEvent.advancePaidAmount.toString() : '');
+    setAdvancePaidDateInput(selectedEvent.advancePaidDate || '');
+    setAdvancePaidConfirmed(!!selectedEvent.advancePaidConfirmed);
+  }, [selectedEvent]);
+
   const handleCreateEventSubmit = () => {
     if (!newEventData.name || !newEventData.client || newEventSchedule.length === 0) {
       alert("Vui lòng điền đủ thông tin sự kiện!");
@@ -443,6 +459,9 @@ export const EventManager: React.FC<EventManagerProps> = ({
       staff: [],
       expenses: [],
       advanceRequests: [],
+      advancePaidAmount: 0,
+      advancePaidDate: '',
+      advancePaidConfirmed: false,
       processSteps: createDefaultProcessSteps(),
       timeline: [],
       layout: {
@@ -671,6 +690,38 @@ export const EventManager: React.FC<EventManagerProps> = ({
     setAdvanceTitle('');
     setAdvanceNote('');
     setAdvanceAmount('');
+  };
+
+  const persistAdvancePaid = (updates: Partial<Event>) => {
+    if (!selectedEvent || !onUpdateEvent) return;
+    onUpdateEvent(selectedEvent.id, updates);
+  };
+
+  const handleAdvancePaidAmountChange = (value: string) => {
+    setAdvancePaidAmountInput(value);
+    if (value === '') return;
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      persistAdvancePaid({ advancePaidAmount: parsed });
+    }
+  };
+
+  const handleAdvancePaidAmountBlur = () => {
+    if (!selectedEvent || !onUpdateEvent) return;
+    const parsed = Number(advancePaidAmountInput);
+    const normalized = Number.isFinite(parsed) ? parsed : 0;
+    onUpdateEvent(selectedEvent.id, { advancePaidAmount: normalized });
+    setAdvancePaidAmountInput(normalized.toString());
+  };
+
+  const handleAdvancePaidDateChange = (value: string) => {
+    setAdvancePaidDateInput(value);
+    persistAdvancePaid({ advancePaidDate: value });
+  };
+
+  const handleAdvancePaidConfirmedChange = (checked: boolean) => {
+    setAdvancePaidConfirmed(checked);
+    persistAdvancePaid({ advancePaidConfirmed: checked });
   };
 
   const handleStaffSelect = (empId: string) => {
@@ -1102,6 +1153,9 @@ export const EventManager: React.FC<EventManagerProps> = ({
   // Tài chính
   const advanceRequests = selectedEvent?.advanceRequests || [];
   const totalAdvanceAmount = advanceRequests.reduce((sum, req) => sum + (req.amount || 0), 0);
+  const vatExpensesTotal = (selectedEvent?.expenses || []).filter(exp => exp.vatInvoiceLink).reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
+  const advancePaidAmountNumber = Number(advancePaidAmountInput || selectedEvent?.advancePaidAmount || 0) || 0;
+  const advanceRefundAmount = advancePaidAmountNumber - vatExpensesTotal;
   const staffCosts = selectedEvent?.staff?.reduce((a, b) => a + b.salary, 0) || 0;
   const otherCosts = selectedEvent?.expenses?.reduce((a, b) => a + b.amount, 0) || 0;
   const totalCosts = staffCosts + otherCosts;
@@ -1988,6 +2042,56 @@ export const EventManager: React.FC<EventManagerProps> = ({
                         Chưa có yêu cầu tạm ứng nào. Điền hạng mục, ghi chú và số tiền rồi bấm "Thêm" để lưu.
                       </div>
                     )}
+                  </div>
+
+                  {/* ADVANCE PAID SUMMARY */}
+                  <div className="bg-white p-6 rounded-2xl border border-emerald-200 shadow-sm space-y-4">
+                    <div className="flex items-center justify-between gap-2">
+                      <h4 className="font-bold text-gray-800 text-xs uppercase flex items-center gap-2">
+                        <CheckCircle size={16} className="text-emerald-600" /> Đã tạm ứng
+                      </h4>
+                      <span className="text-[11px] text-slate-500 font-semibold">Chi phí có VAT: {vatExpensesTotal.toLocaleString()}đ</span>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <label className="flex items-center gap-2 bg-emerald-50 border border-emerald-100 rounded-xl p-3 text-sm font-semibold text-emerald-700">
+                        <input 
+                          type="checkbox" 
+                          className="w-4 h-4"
+                          checked={advancePaidConfirmed}
+                          onChange={e => handleAdvancePaidConfirmedChange(e.target.checked)}
+                        />
+                        Đã nhận tạm ứng
+                      </label>
+                      <div>
+                        <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Số tiền đã tạm ứng (VNĐ)</label>
+                        <input 
+                          type="number"
+                          className="w-full border rounded-xl p-3 text-sm font-bold text-emerald-700 outline-none focus:ring-2 focus:ring-emerald-500"
+                          placeholder="0"
+                          value={advancePaidAmountInput}
+                          onChange={e => handleAdvancePaidAmountChange(e.target.value)}
+                          onBlur={handleAdvancePaidAmountBlur}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Ngày tạm ứng</label>
+                        <input 
+                          type="date"
+                          className="w-full border rounded-xl p-3 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
+                          value={advancePaidDateInput}
+                          onChange={e => handleAdvancePaidDateChange(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                    <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-4 flex items-center justify-between flex-wrap gap-3">
+                      <div>
+                        <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">Số tiền hoàn ứng dự kiến</p>
+                        <p className="text-[11px] text-emerald-700">= Đã tạm ứng - Chi phí có VAT</p>
+                      </div>
+                      <p className={`text-2xl font-black ${advanceRefundAmount >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+                        {advanceRefundAmount.toLocaleString()}đ
+                      </p>
+                    </div>
                   </div>
 
                   {/* PROFIT SUMMARY CARD */}

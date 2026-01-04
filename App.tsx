@@ -72,6 +72,9 @@ const App: React.FC = () => {
         ...ev,
         items: ev.items || [],
         advanceRequests: ev.advanceRequests || [],
+        advancePaidAmount: ev.advancePaidAmount ?? 0,
+        advancePaidDate: ev.advancePaidDate || '',
+        advancePaidConfirmed: ev.advancePaidConfirmed ?? false,
         checklist: normalizeChecklist(ev.checklist),
         timeline: ev.timeline || []
       })),

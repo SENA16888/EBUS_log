@@ -306,6 +306,9 @@ export interface Event {
   staff?: EventStaffAllocation[];
   expenses?: EventExpense[];
   advanceRequests?: EventAdvanceRequest[];
+  advancePaidAmount?: number;
+  advancePaidDate?: string;
+  advancePaidConfirmed?: boolean;
   quotationId?: string; 
   isOrderCreated?: boolean; 
   processSteps?: EventProcessStep[];
