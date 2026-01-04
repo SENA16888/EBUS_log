@@ -12,6 +12,8 @@ interface ElearningProps {
   onSubmitAttempt: (attempt: LearningAttempt) => void;
   onUpsertProfile: (profile: LearningProfile) => void;
   canEdit?: boolean;
+  isAdminView?: boolean;
+  currentEmployeeId?: string;
 }
 
 const PASSING_SCORE = 7;
@@ -30,7 +32,9 @@ export const Elearning: React.FC<ElearningProps> = ({
   events,
   onSubmitAttempt,
   onUpsertProfile,
-  canEdit = true
+  canEdit = true,
+  isAdminView = true,
+  currentEmployeeId
 }) => {
   const [selectedProfileId, setSelectedProfileId] = useState<string>(profiles[0]?.id || '');
   const [selectedTrackId, setSelectedTrackId] = useState<string>(tracks[0]?.id || '');
@@ -40,15 +44,25 @@ export const Elearning: React.FC<ElearningProps> = ({
   const [profileDraft, setProfileDraft] = useState<LearningProfile | null>(profiles[0] || null);
   const [newProfileName, setNewProfileName] = useState<string>('');
 
+  const profileOptions = useMemo(() => {
+    if (isAdminView) return profiles;
+    if (!currentEmployeeId) return [];
+    return profiles.filter(p => p.employeeId === currentEmployeeId);
+  }, [profiles, isAdminView, currentEmployeeId]);
+
   const selectedTrack = useMemo(() => tracks.find(t => t.id === selectedTrackId) || tracks[0], [tracks, selectedTrackId]);
   const selectedLesson = useMemo(() => selectedTrack?.lessons.find(l => l.id === selectedLessonId) || selectedTrack?.lessons[0], [selectedLessonId, selectedTrack]);
-  const activeProfile = useMemo(() => profiles.find(p => p.id === selectedProfileId) || null, [profiles, selectedProfileId]);
+  const activeProfile = useMemo(() => profileOptions.find(p => p.id === selectedProfileId) || null, [profileOptions, selectedProfileId]);
 
   useEffect(() => {
-    if (!selectedProfileId && profiles[0]) {
-      setSelectedProfileId(profiles[0].id);
+    if (profileOptions.length === 0) {
+      if (selectedProfileId) setSelectedProfileId('');
+      return;
     }
-  }, [profiles, selectedProfileId]);
+    if (!profileOptions.find(p => p.id === selectedProfileId)) {
+      setSelectedProfileId(profileOptions[0].id);
+    }
+  }, [profileOptions, selectedProfileId]);
 
   useEffect(() => {
     if (!selectedTrackId && tracks[0]) {
@@ -81,19 +95,19 @@ export const Elearning: React.FC<ElearningProps> = ({
 
   const totalEventCount = Math.max(activeProfile?.eventsAttended || 0, eventCountFromData);
 
-  const averageQuestionScore = useMemo(() => {
+  const getAverageScoreFromAttempts = (attemptList: LearningAttempt[]) => {
     const bestByQuestion = new Map<string, number>();
-    profileAttempts.forEach(a => {
+    attemptList.forEach(a => {
       bestByQuestion.set(a.questionId, Math.max(bestByQuestion.get(a.questionId) || 0, a.score));
     });
     if (bestByQuestion.size === 0) return 0;
     const total = Array.from(bestByQuestion.values()).reduce((sum, v) => sum + v, 0);
     return Number((total / bestByQuestion.size).toFixed(1));
-  }, [profileAttempts]);
+  };
 
-  const getLessonScore = (lesson?: LearningLesson) => {
-    if (!lesson || !activeProfile) return { normalized: 0, answeredCount: 0, completed: false };
-    const lessonAttempts = profileAttempts.filter(a => a.lessonId === lesson.id);
+  const getLessonScoreFromAttempts = (lesson: LearningLesson | undefined, attemptList: LearningAttempt[]) => {
+    if (!lesson) return { normalized: 0, answeredCount: 0, completed: false };
+    const lessonAttempts = attemptList.filter(a => a.lessonId === lesson.id);
     const bestByQuestion = new Map<string, number>();
     lessonAttempts.forEach(a => {
       bestByQuestion.set(a.questionId, Math.max(bestByQuestion.get(a.questionId) || 0, a.score));
@@ -104,6 +118,13 @@ export const Elearning: React.FC<ElearningProps> = ({
     const answeredCount = bestByQuestion.size;
     const completed = normalized >= PASSING_SCORE && answeredCount === lesson.questions.length;
     return { normalized, answeredCount, completed };
+  };
+
+  const averageQuestionScore = useMemo(() => getAverageScoreFromAttempts(profileAttempts), [profileAttempts]);
+
+  const getLessonScore = (lesson?: LearningLesson) => {
+    if (!lesson || !activeProfile) return { normalized: 0, answeredCount: 0, completed: false };
+    return getLessonScoreFromAttempts(lesson, profileAttempts);
   };
 
   const lessonScore = getLessonScore(selectedLesson);
@@ -168,6 +189,31 @@ export const Elearning: React.FC<ElearningProps> = ({
   const completedLessons = tracks.reduce((sum, t) => {
     return sum + t.lessons.filter(l => getLessonScore(l).completed || (activeProfile?.completedLessons || []).includes(l.id)).length;
   }, 0);
+
+  const leaderboard = useMemo(() => {
+    if (profiles.length === 0) return [];
+    return profiles
+      .map(profile => {
+        const attemptList = attempts.filter(a => a.learnerId === profile.id);
+        const averageScore = getAverageScoreFromAttempts(attemptList);
+        const completed = tracks.reduce((sum, track) => {
+          return sum + track.lessons.filter(lesson => {
+            const score = getLessonScoreFromAttempts(lesson, attemptList);
+            return score.completed || (profile.completedLessons || []).includes(lesson.id);
+          }).length;
+        }, 0);
+        const completionRate = totalLessons ? Math.round((completed / totalLessons) * 100) : 0;
+        return { profile, averageScore, completed, completionRate };
+      })
+      .sort((a, b) => {
+        if (b.completed !== a.completed) return b.completed - a.completed;
+        if (b.averageScore !== a.averageScore) return b.averageScore - a.averageScore;
+        return a.profile.name.localeCompare(b.profile.name);
+      });
+  }, [profiles, attempts, tracks, totalLessons]);
+
+  const topLeaderboard = leaderboard.slice(0, 8);
+  const activeLeaderboardIndex = leaderboard.findIndex(row => row.profile.id === activeProfile?.id);
 
   const handleAttemptSubmit = (question: LearningQuestion) => {
     if (!canEdit) return;
@@ -266,6 +312,7 @@ export const Elearning: React.FC<ElearningProps> = ({
 
   const isLessonLocked = !trackUnlockStatus.unlocked;
   const nextEligibleRank = rankStatuses.find(r => r.eligible);
+  const nextRankTarget = rankStatuses.find(r => !r.eligible);
 
   return (
     <div className="space-y-4">
@@ -274,10 +321,16 @@ export const Elearning: React.FC<ElearningProps> = ({
           <div>
             <div className="flex items-center gap-2 font-semibold text-sm uppercase tracking-wide">
               <GraduationCap size={16} />
-              Elearning vận hành & bán hàng
+              {isAdminView ? 'Elearning vận hành & bán hàng' : 'Elearning cá nhân'}
             </div>
-            <h2 className="text-2xl font-bold mt-1">Xem video, trả lời câu hỏi, mở khóa danh hiệu</h2>
-            <p className="text-sm text-slate-100/80 mt-1">Điều kiện xét bậc dựa trên thời gian làm việc, số lần đi sự kiện, câu trả lời và vai trò đã trải qua.</p>
+            <h2 className="text-2xl font-bold mt-1">
+              {isAdminView ? 'Xem video, trả lời câu hỏi, mở khóa danh hiệu' : 'Làm bài kiểm tra, theo dõi cấp độ và bảng xếp hạng'}
+            </h2>
+            <p className="text-sm text-slate-100/80 mt-1">
+              {isAdminView
+                ? 'Điều kiện xét bậc dựa trên thời gian làm việc, số lần đi sự kiện, câu trả lời và vai trò đã trải qua.'
+                : 'Tập trung hoàn thành bài học, tích lũy điểm số và nâng cấp danh hiệu cá nhân.'}
+            </p>
           </div>
           <div className="flex gap-2">
             <div className="bg-white/10 px-3 py-2 rounded-lg text-sm">
@@ -300,18 +353,27 @@ export const Elearning: React.FC<ElearningProps> = ({
         <div className="xl:col-span-2 space-y-4">
           <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 flex flex-col md:flex-row gap-3">
             <div className="flex-1">
-              <label className="text-xs text-slate-500 font-medium">Chọn nhân sự</label>
-              <select
-                value={selectedProfileId}
-                onChange={e => setSelectedProfileId(e.target.value)}
-                className="w-full mt-1 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                {profiles.map(p => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
-                ))}
-              </select>
-              {profiles.length === 0 && (
+              <label className="text-xs text-slate-500 font-medium">{isAdminView ? 'Chọn nhân sự' : 'Học viên'}</label>
+              {isAdminView ? (
+                <select
+                  value={selectedProfileId}
+                  onChange={e => setSelectedProfileId(e.target.value)}
+                  className="w-full mt-1 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  {profileOptions.map(p => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              ) : (
+                <div className="w-full mt-1 border border-slate-200 rounded-lg px-3 py-2 text-sm bg-slate-50 text-slate-700">
+                  {activeProfile?.name || 'Chưa gắn hồ sơ'}
+                </div>
+              )}
+              {isAdminView && profileOptions.length === 0 && (
                 <p className="text-xs text-orange-600 mt-1">Chưa có hồ sơ, hãy tạo mới ở bảng bên phải.</p>
+              )}
+              {!isAdminView && profileOptions.length === 0 && (
+                <p className="text-xs text-orange-600 mt-1">Tài khoản chưa gắn hồ sơ Elearning. Liên hệ Admin để tạo.</p>
               )}
             </div>
             <div className="flex-1">
@@ -442,7 +504,7 @@ export const Elearning: React.FC<ElearningProps> = ({
                             <label key={opt} className={`flex items-center gap-2 border rounded-lg px-3 py-2 cursor-pointer transition ${answers[q.id]?.selectedOption === i ? 'border-blue-400 bg-blue-50' : 'border-slate-200 hover:border-blue-200'}`}>
                               <input
                                 type="radio"
-                                disabled={isLessonLocked || !canEdit}
+                                disabled={isLessonLocked || !canEdit || !activeProfile}
                                 checked={answers[q.id]?.selectedOption === i}
                                 onChange={() => setAnswers(prev => ({ ...prev, [q.id]: { ...prev[q.id], selectedOption: i } }))}
                               />
@@ -452,7 +514,7 @@ export const Elearning: React.FC<ElearningProps> = ({
                         </div>
                       ) : (
                         <textarea
-                          disabled={isLessonLocked || !canEdit}
+                          disabled={isLessonLocked || !canEdit || !activeProfile}
                           value={answers[q.id]?.answerText || ''}
                           onChange={e => setAnswers(prev => ({ ...prev, [q.id]: { ...prev[q.id], answerText: e.target.value } }))}
                           placeholder="Nhập câu trả lời của bạn..."
@@ -464,8 +526,8 @@ export const Elearning: React.FC<ElearningProps> = ({
                       <div className="mt-3 flex items-center gap-2">
                         <button
                           onClick={() => handleAttemptSubmit(q)}
-                          disabled={isLessonLocked || !canEdit}
-                          className={`px-3 py-2 rounded-md text-sm font-semibold flex items-center gap-2 ${isLessonLocked ? 'bg-slate-200 text-slate-500 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
+                          disabled={isLessonLocked || !canEdit || !activeProfile}
+                          className={`px-3 py-2 rounded-md text-sm font-semibold flex items-center gap-2 ${isLessonLocked || !activeProfile ? 'bg-slate-200 text-slate-500 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
                         >
                           <CheckCircle2 size={16} /> Nộp & xem đáp án
                         </button>
@@ -508,8 +570,8 @@ export const Elearning: React.FC<ElearningProps> = ({
                 <div className="flex gap-2">
                   <button
                     onClick={handleMarkLessonDone}
-                    disabled={!lessonScore.completed || !canEdit}
-                    className={`px-3 py-2 rounded-md text-sm font-semibold flex items-center gap-2 ${lessonScore.completed && canEdit ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-slate-200 text-slate-500 cursor-not-allowed'}`}
+                    disabled={!lessonScore.completed || !canEdit || !activeProfile}
+                    className={`px-3 py-2 rounded-md text-sm font-semibold flex items-center gap-2 ${lessonScore.completed && canEdit && activeProfile ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-slate-200 text-slate-500 cursor-not-allowed'}`}
                   >
                     <Trophy size={16} /> Đánh dấu hoàn thành
                   </button>
@@ -520,197 +582,289 @@ export const Elearning: React.FC<ElearningProps> = ({
         </div>
 
         <div className="space-y-4">
-          <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-4 space-y-3">
-            <div className="flex items-center gap-2">
-              <Users size={16} className="text-blue-600" />
-              <p className="font-semibold text-slate-800">Hồ sơ học tập</p>
-            </div>
-
-            {activeProfile ? (
-              <>
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="bg-slate-50 border border-slate-100 rounded-lg p-3">
-                    <p className="text-xs text-slate-500">Thời gian làm việc</p>
-                    <p className="text-lg font-semibold text-slate-800">{activeProfile.tenureMonths} tháng</p>
-                  </div>
-                  <div className="bg-slate-50 border border-slate-100 rounded-lg p-3">
-                    <p className="text-xs text-slate-500">Số lần đi sự kiện</p>
-                    <p className="text-lg font-semibold text-slate-800">{totalEventCount}</p>
-                  </div>
-                  <div className="bg-slate-50 border border-slate-100 rounded-lg p-3">
-                    <p className="text-xs text-slate-500">Điểm xử lý tình huống</p>
-                    <p className="text-lg font-semibold text-slate-800">{activeProfile.scenarioScore}/10</p>
-                  </div>
-                  <div className="bg-slate-50 border border-slate-100 rounded-lg p-3">
-                    <p className="text-xs text-slate-500">Điểm trung bình bài học</p>
-                    <p className="text-lg font-semibold text-slate-800">{averageQuestionScore}/10</p>
-                  </div>
+          {isAdminView ? (
+            <>
+              <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <Users size={16} className="text-blue-600" />
+                  <p className="font-semibold text-slate-800">Hồ sơ học tập</p>
                 </div>
 
-                <div className="space-y-2">
-                  <label className="text-xs text-slate-500">Cập nhật nhanh hồ sơ</label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <input
-                      type="number"
-                      value={profileDraft?.tenureMonths || 0}
-                      onChange={e => setProfileDraft(prev => prev ? { ...prev, tenureMonths: Number(e.target.value) } : prev)}
-                      className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
-                      placeholder="Tháng làm việc"
-                      disabled={!canEdit}
-                    />
-                    <input
-                      type="number"
-                      value={profileDraft?.eventsAttended || 0}
-                      onChange={e => setProfileDraft(prev => prev ? { ...prev, eventsAttended: Number(e.target.value) } : prev)}
-                      className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
-                      placeholder="Số sự kiện"
-                      disabled={!canEdit}
-                    />
-                    <input
-                      type="number"
-                      value={profileDraft?.scenarioScore || 0}
-                      onChange={e => setProfileDraft(prev => prev ? { ...prev, scenarioScore: Number(e.target.value) } : prev)}
-                      className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
-                      placeholder="Điểm tình huống"
-                      min={0}
-                      max={10}
-                      disabled={!canEdit}
-                    />
-                    <input
-                      type="text"
-                      value={profileDraft?.currentRank || ''}
-                      onChange={e => setProfileDraft(prev => prev ? { ...prev, currentRank: e.target.value } : prev)}
-                      className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
-                      placeholder="Danh hiệu hiện tại"
-                      disabled={!canEdit}
-                    />
-                  </div>
-                  <textarea
-                    value={profileDraft?.roleHistory.join(', ') || ''}
-                    onChange={e => setProfileDraft(prev => prev ? { ...prev, roleHistory: e.target.value.split(',').map(x => x.trim()).filter(Boolean) } : prev)}
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
-                    placeholder="Vai trò đã trải qua (phân tách bằng dấu phẩy)"
-                    rows={2}
-                    disabled={!canEdit}
-                  />
-                  <button
-                    onClick={handleSaveProfile}
-                    disabled={!canEdit}
-                    className={`w-full rounded-lg py-2 text-sm font-semibold transition ${canEdit ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-slate-200 text-slate-500 cursor-not-allowed'}`}
-                  >
-                    Lưu hồ sơ
-                  </button>
-                </div>
-              </>
-            ) : (
-              <p className="text-sm text-slate-500">Chưa có hồ sơ. Thêm mới bên dưới.</p>
-            )}
-
-            <div className="border-t border-slate-100 pt-3">
-              <label className="text-xs text-slate-500">Tạo hồ sơ mới</label>
-              <div className="flex gap-2 mt-1">
-                <input
-                  value={newProfileName}
-                  onChange={e => setNewProfileName(e.target.value)}
-                  placeholder="Tên nhân sự"
-                  className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm"
-                  disabled={!canEdit}
-                />
-                <button
-                  onClick={handleCreateProfile}
-                  disabled={!canEdit}
-                  className={`px-3 py-2 rounded-lg text-sm font-semibold ${canEdit ? 'bg-slate-800 text-white hover:bg-slate-900' : 'bg-slate-200 text-slate-500 cursor-not-allowed'}`}
-                >
-                  Thêm
-                </button>
-              </div>
-              {employees.length > 0 && (
-                <p className="text-[11px] text-slate-500 mt-1">
-                  Gợi ý: tạo hồ sơ dựa trên nhân sự ở tab Nhân sự để theo dõi lộ trình.
-                </p>
-              )}
-            </div>
-          </div>
-
-          <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-4 space-y-3">
-            <div className="flex items-center gap-2">
-              <Target size={16} className="text-blue-600" />
-              <p className="font-semibold text-slate-800">Điều kiện mở khóa khóa học</p>
-            </div>
-            <div className="space-y-2">
-              {selectedTrack.requirements?.minTenureMonths !== undefined && renderRequirementItem(
-                `Tối thiểu ${selectedTrack.requirements?.minTenureMonths || 0} tháng làm việc`,
-                (activeProfile?.tenureMonths || 0) >= (selectedTrack.requirements?.minTenureMonths || 0),
-                'req-tenure'
-              )}
-              {selectedTrack.requirements?.minEvents !== undefined && renderRequirementItem(
-                `Ít nhất ${selectedTrack.requirements.minEvents} sự kiện`,
-                totalEventCount >= (selectedTrack.requirements.minEvents || 0),
-                'req-events'
-              )}
-              {selectedTrack.requirements?.minScore !== undefined && renderRequirementItem(
-                `Điểm trung bình ≥ ${selectedTrack.requirements.minScore}`,
-                averageQuestionScore >= (selectedTrack.requirements.minScore || 0),
-                'req-score'
-              )}
-              {selectedTrack.requirements?.minScenarioScore !== undefined && renderRequirementItem(
-                `Điểm xử lý tình huống ≥ ${selectedTrack.requirements.minScenarioScore}`,
-                (activeProfile?.scenarioScore || 0) >= (selectedTrack.requirements.minScenarioScore || 0),
-                'req-scenario'
-              )}
-              {selectedTrack.requirements?.mandatoryRoles?.length ? renderRequirementItem(
-                `Đã trải qua: ${selectedTrack.requirements.mandatoryRoles.join(', ')}`,
-                selectedTrack.requirements.mandatoryRoles.every(r => (activeProfile?.roleHistory || []).includes(r)),
-                'req-roles'
-              ) : null}
-            </div>
-          </div>
-
-          <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-4 space-y-3">
-            <div className="flex items-center gap-2">
-              <Crown size={16} className="text-amber-500" />
-              <p className="font-semibold text-slate-800">Bậc danh hiệu & lương thưởng</p>
-            </div>
-            <div className="space-y-3">
-              {rankStatuses.map(({ rank, eligible, reasons }) => (
-                <div
-                  key={rank.id}
-                  className={`border rounded-lg p-3 ${eligible ? 'border-green-200 bg-green-50' : 'border-slate-100 bg-slate-50'}`}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      {eligible ? <Award className="text-green-600" size={18} /> : <Lock className="text-slate-400" size={18} />}
-                      <div>
-                        <p className="font-semibold text-slate-800">{rank.name}</p>
-                        <p className="text-[11px] text-slate-500">Yêu cầu: {rank.minTenureMonths} tháng • {rank.minEvents} sự kiện • Điểm ≥ {rank.minAvgScore}</p>
+                {activeProfile ? (
+                  <>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="bg-slate-50 border border-slate-100 rounded-lg p-3">
+                        <p className="text-xs text-slate-500">Thời gian làm việc</p>
+                        <p className="text-lg font-semibold text-slate-800">{activeProfile.tenureMonths} tháng</p>
+                      </div>
+                      <div className="bg-slate-50 border border-slate-100 rounded-lg p-3">
+                        <p className="text-xs text-slate-500">Số lần đi sự kiện</p>
+                        <p className="text-lg font-semibold text-slate-800">{totalEventCount}</p>
+                      </div>
+                      <div className="bg-slate-50 border border-slate-100 rounded-lg p-3">
+                        <p className="text-xs text-slate-500">Điểm xử lý tình huống</p>
+                        <p className="text-lg font-semibold text-slate-800">{activeProfile.scenarioScore}/10</p>
+                      </div>
+                      <div className="bg-slate-50 border border-slate-100 rounded-lg p-3">
+                        <p className="text-xs text-slate-500">Điểm trung bình bài học</p>
+                        <p className="text-lg font-semibold text-slate-800">{averageQuestionScore}/10</p>
                       </div>
                     </div>
-                    {eligible && canEdit && (
+
+                    <div className="space-y-2">
+                      <label className="text-xs text-slate-500">Cập nhật nhanh hồ sơ</label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <input
+                          type="number"
+                          value={profileDraft?.tenureMonths || 0}
+                          onChange={e => setProfileDraft(prev => prev ? { ...prev, tenureMonths: Number(e.target.value) } : prev)}
+                          className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                          placeholder="Tháng làm việc"
+                          disabled={!canEdit}
+                        />
+                        <input
+                          type="number"
+                          value={profileDraft?.eventsAttended || 0}
+                          onChange={e => setProfileDraft(prev => prev ? { ...prev, eventsAttended: Number(e.target.value) } : prev)}
+                          className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                          placeholder="Số sự kiện"
+                          disabled={!canEdit}
+                        />
+                        <input
+                          type="number"
+                          value={profileDraft?.scenarioScore || 0}
+                          onChange={e => setProfileDraft(prev => prev ? { ...prev, scenarioScore: Number(e.target.value) } : prev)}
+                          className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                          placeholder="Điểm tình huống"
+                          min={0}
+                          max={10}
+                          disabled={!canEdit}
+                        />
+                        <input
+                          type="text"
+                          value={profileDraft?.currentRank || ''}
+                          onChange={e => setProfileDraft(prev => prev ? { ...prev, currentRank: e.target.value } : prev)}
+                          className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                          placeholder="Danh hiệu hiện tại"
+                          disabled={!canEdit}
+                        />
+                      </div>
+                      <textarea
+                        value={profileDraft?.roleHistory.join(', ') || ''}
+                        onChange={e => setProfileDraft(prev => prev ? { ...prev, roleHistory: e.target.value.split(',').map(x => x.trim()).filter(Boolean) } : prev)}
+                        className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                        placeholder="Vai trò đã trải qua (phân tách bằng dấu phẩy)"
+                        rows={2}
+                        disabled={!canEdit}
+                      />
                       <button
-                        onClick={() => activeProfile && onUpsertProfile({ ...activeProfile, currentRank: rank.name })}
-                        className="text-xs px-2 py-1 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                        onClick={handleSaveProfile}
+                        disabled={!canEdit}
+                        className={`w-full rounded-lg py-2 text-sm font-semibold transition ${canEdit ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-slate-200 text-slate-500 cursor-not-allowed'}`}
                       >
-                        Gắn danh hiệu
+                        Lưu hồ sơ
                       </button>
-                    )}
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-sm text-slate-500">Chưa có hồ sơ. Thêm mới bên dưới.</p>
+                )}
+
+                <div className="border-t border-slate-100 pt-3">
+                  <label className="text-xs text-slate-500">Tạo hồ sơ mới</label>
+                  <div className="flex gap-2 mt-1">
+                    <input
+                      value={newProfileName}
+                      onChange={e => setNewProfileName(e.target.value)}
+                      placeholder="Tên nhân sự"
+                      className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                      disabled={!canEdit}
+                    />
+                    <button
+                      onClick={handleCreateProfile}
+                      disabled={!canEdit}
+                      className={`px-3 py-2 rounded-lg text-sm font-semibold ${canEdit ? 'bg-slate-800 text-white hover:bg-slate-900' : 'bg-slate-200 text-slate-500 cursor-not-allowed'}`}
+                    >
+                      Thêm
+                    </button>
                   </div>
-                  {eligible ? (
-                    <p className="text-xs text-green-700 mt-1">Đã đủ điều kiện. Quy đổi phụ cấp: {rank.benefits.join(' • ')}</p>
-                  ) : (
-                    <ul className="text-[11px] text-slate-600 mt-1 list-disc list-inside space-y-0.5">
-                      {reasons.map(r => <li key={r}>{r}</li>)}
-                    </ul>
+                  {employees.length > 0 && (
+                    <p className="text-[11px] text-slate-500 mt-1">
+                      Gợi ý: tạo hồ sơ dựa trên nhân sự ở tab Nhân sự để theo dõi lộ trình.
+                    </p>
                   )}
                 </div>
-              ))}
-            </div>
-            {nextEligibleRank && (
-              <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 text-sm text-blue-800 flex items-center gap-2">
-                <Trophy size={16} />
-                {`Bạn gần đạt: ${nextEligibleRank.rank.name}. Tập trung hoàn thành yêu cầu còn thiếu.`}
               </div>
-            )}
-          </div>
+
+              <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <Target size={16} className="text-blue-600" />
+                  <p className="font-semibold text-slate-800">Điều kiện mở khóa khóa học</p>
+                </div>
+                <div className="space-y-2">
+                  {selectedTrack.requirements?.minTenureMonths !== undefined && renderRequirementItem(
+                    `Tối thiểu ${selectedTrack.requirements?.minTenureMonths || 0} tháng làm việc`,
+                    (activeProfile?.tenureMonths || 0) >= (selectedTrack.requirements?.minTenureMonths || 0),
+                    'req-tenure'
+                  )}
+                  {selectedTrack.requirements?.minEvents !== undefined && renderRequirementItem(
+                    `Ít nhất ${selectedTrack.requirements.minEvents} sự kiện`,
+                    totalEventCount >= (selectedTrack.requirements.minEvents || 0),
+                    'req-events'
+                  )}
+                  {selectedTrack.requirements?.minScore !== undefined && renderRequirementItem(
+                    `Điểm trung bình ≥ ${selectedTrack.requirements.minScore}`,
+                    averageQuestionScore >= (selectedTrack.requirements.minScore || 0),
+                    'req-score'
+                  )}
+                  {selectedTrack.requirements?.minScenarioScore !== undefined && renderRequirementItem(
+                    `Điểm xử lý tình huống ≥ ${selectedTrack.requirements.minScenarioScore}`,
+                    (activeProfile?.scenarioScore || 0) >= (selectedTrack.requirements.minScenarioScore || 0),
+                    'req-scenario'
+                  )}
+                  {selectedTrack.requirements?.mandatoryRoles?.length ? renderRequirementItem(
+                    `Đã trải qua: ${selectedTrack.requirements.mandatoryRoles.join(', ')}`,
+                    selectedTrack.requirements.mandatoryRoles.every(r => (activeProfile?.roleHistory || []).includes(r)),
+                    'req-roles'
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <Crown size={16} className="text-amber-500" />
+                  <p className="font-semibold text-slate-800">Bậc danh hiệu & lương thưởng</p>
+                </div>
+                <div className="space-y-3">
+                  {rankStatuses.map(({ rank, eligible, reasons }) => (
+                    <div
+                      key={rank.id}
+                      className={`border rounded-lg p-3 ${eligible ? 'border-green-200 bg-green-50' : 'border-slate-100 bg-slate-50'}`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          {eligible ? <Award className="text-green-600" size={18} /> : <Lock className="text-slate-400" size={18} />}
+                          <div>
+                            <p className="font-semibold text-slate-800">{rank.name}</p>
+                            <p className="text-[11px] text-slate-500">Yêu cầu: {rank.minTenureMonths} tháng • {rank.minEvents} sự kiện • Điểm ≥ {rank.minAvgScore}</p>
+                          </div>
+                        </div>
+                        {eligible && canEdit && (
+                          <button
+                            onClick={() => activeProfile && onUpsertProfile({ ...activeProfile, currentRank: rank.name })}
+                            className="text-xs px-2 py-1 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                          >
+                            Gắn danh hiệu
+                          </button>
+                        )}
+                      </div>
+                      {eligible ? (
+                        <p className="text-xs text-green-700 mt-1">Đã đủ điều kiện. Quy đổi phụ cấp: {rank.benefits.join(' • ')}</p>
+                      ) : (
+                        <ul className="text-[11px] text-slate-600 mt-1 list-disc list-inside space-y-0.5">
+                          {reasons.map(r => <li key={r}>{r}</li>)}
+                        </ul>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                {nextEligibleRank && (
+                  <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 text-sm text-blue-800 flex items-center gap-2">
+                    <Trophy size={16} />
+                    {`Bạn gần đạt: ${nextEligibleRank.rank.name}. Tập trung hoàn thành yêu cầu còn thiếu.`}
+                  </div>
+                )}
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <Crown size={16} className="text-amber-500" />
+                  <p className="font-semibold text-slate-800">Cấp độ cá nhân</p>
+                </div>
+                {activeProfile ? (
+                  <>
+                    <div className="bg-slate-50 border border-slate-100 rounded-lg p-3">
+                      <p className="text-xs text-slate-500">Danh hiệu hiện tại</p>
+                      <p className="text-lg font-semibold text-slate-800">{activeProfile.currentRank || 'Chưa gán'}</p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="bg-slate-50 border border-slate-100 rounded-lg p-3">
+                        <p className="text-xs text-slate-500">Thời gian làm việc</p>
+                        <p className="text-lg font-semibold text-slate-800">{activeProfile.tenureMonths} tháng</p>
+                      </div>
+                      <div className="bg-slate-50 border border-slate-100 rounded-lg p-3">
+                        <p className="text-xs text-slate-500">Sự kiện đã tham gia</p>
+                        <p className="text-lg font-semibold text-slate-800">{totalEventCount}</p>
+                      </div>
+                      <div className="bg-slate-50 border border-slate-100 rounded-lg p-3">
+                        <p className="text-xs text-slate-500">Điểm trung bình</p>
+                        <p className="text-lg font-semibold text-slate-800">{averageQuestionScore}/10</p>
+                      </div>
+                      <div className="bg-slate-50 border border-slate-100 rounded-lg p-3">
+                        <p className="text-xs text-slate-500">Hoàn thành</p>
+                        <p className="text-lg font-semibold text-slate-800">{completedLessons}/{totalLessons}</p>
+                      </div>
+                    </div>
+                    {nextRankTarget ? (
+                      <div className="bg-blue-50 border border-blue-100 rounded-lg p-3">
+                        <p className="text-xs text-blue-700 font-semibold">Mục tiêu tiếp theo</p>
+                        <p className="text-sm font-semibold text-slate-800">{nextRankTarget.rank.name}</p>
+                        {nextRankTarget.reasons.length > 0 ? (
+                          <ul className="text-[11px] text-slate-600 mt-1 list-disc list-inside space-y-0.5">
+                            {nextRankTarget.reasons.slice(0, 3).map(r => <li key={r}>{r}</li>)}
+                          </ul>
+                        ) : (
+                          <p className="text-[11px] text-slate-600 mt-1">Bạn đã đủ điều kiện để lên bậc mới.</p>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="bg-green-50 border border-green-100 rounded-lg p-3 text-xs text-green-700">
+                        Bạn đã đạt bậc cao nhất trong lộ trình.
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <p className="text-sm text-slate-500">Chưa có hồ sơ học tập được gắn với tài khoản này.</p>
+                )}
+              </div>
+
+              <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <Trophy size={16} className="text-blue-600" />
+                  <p className="font-semibold text-slate-800">Bảng xếp hạng</p>
+                </div>
+                {topLeaderboard.length === 0 ? (
+                  <p className="text-sm text-slate-500">Chưa có dữ liệu xếp hạng.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {topLeaderboard.map((row, index) => {
+                      const isCurrent = row.profile.id === activeProfile?.id;
+                      return (
+                        <div
+                          key={row.profile.id}
+                          className={`flex items-center justify-between border rounded-lg px-3 py-2 ${isCurrent ? 'border-blue-200 bg-blue-50' : 'border-slate-100 bg-slate-50'}`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <div className="w-6 text-xs font-semibold text-slate-500">{index + 1}</div>
+                            <div>
+                              <p className="text-sm font-semibold text-slate-800">{row.profile.name}</p>
+                              <p className="text-[11px] text-slate-500">{row.completed}/{totalLessons} bài • {row.averageScore.toFixed(1)}/10</p>
+                            </div>
+                          </div>
+                          <div className="text-xs font-semibold text-slate-700">{row.completionRate}%</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                {activeProfile && activeLeaderboardIndex >= 0 && (
+                  <p className="text-[11px] text-slate-500">Hạng của bạn: {activeLeaderboardIndex + 1}/{leaderboard.length}</p>
+                )}
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>

@@ -86,6 +86,7 @@ const App: React.FC = () => {
   const currentUser = appState.userAccounts?.find(user => user.id === currentUserId) || null;
   const can = (permission: AccessPermission) => hasPermission(currentUser, permission);
   const canViewLogs = currentUser?.role === 'ADMIN';
+  const isElearningAdmin = currentUser?.role === 'ADMIN' || currentUser?.role === 'MANAGER';
 
   useEffect(() => {
     if (activeTab === 'logs' && !canViewLogs) {
@@ -1179,6 +1180,8 @@ const App: React.FC = () => {
           onSubmitAttempt={guard('ELEARNING_EDIT', handleSubmitLearningAttempt)}
           onUpsertProfile={guard('ELEARNING_EDIT', handleUpsertLearningProfile)}
           canEdit={can('ELEARNING_EDIT')}
+          isAdminView={isElearningAdmin}
+          currentEmployeeId={currentUser?.linkedEmployeeId}
         />
       )}
       {activeTab === 'logs' && canViewLogs && (
