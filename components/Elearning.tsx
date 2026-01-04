@@ -12,6 +12,7 @@ interface ElearningProps {
   onSubmitAttempt: (attempt: LearningAttempt) => void;
   onUpsertProfile: (profile: LearningProfile) => void;
   onUpdateTracks: (tracks: LearningTrack[]) => void;
+  onDeleteProfile: (profileId: string) => void;
   canEdit?: boolean;
   isAdminView?: boolean;
   currentEmployeeId?: string;
@@ -34,6 +35,7 @@ export const Elearning: React.FC<ElearningProps> = ({
   onSubmitAttempt,
   onUpsertProfile,
   onUpdateTracks,
+  onDeleteProfile,
   canEdit = true,
   isAdminView = true,
   currentEmployeeId
@@ -434,6 +436,15 @@ export const Elearning: React.FC<ElearningProps> = ({
     setSelectedProfileId(profile.id);
   };
 
+  const handleDeleteProfile = (profileId: string) => {
+    if (!canEdit || !isAdminView) return;
+    if (!window.confirm('Xóa hồ sơ này? Hành động không thể hoàn tác.')) return;
+    onDeleteProfile(profileId);
+    if (profileId === selectedProfileId) {
+      setSelectedProfileId(profileOptions.find(p => p.id !== profileId)?.id || '');
+    }
+  };
+
   const renderRequirementItem = (text: string, isDone: boolean, key: string) => (
     <div key={key} className="flex items-center gap-2 text-sm">
       {isDone ? <CheckCircle2 className="text-green-600" size={16} /> : <XCircle className="text-orange-500" size={16} />}
@@ -803,18 +814,27 @@ export const Elearning: React.FC<ElearningProps> = ({
                       rows={2}
                       disabled={!canEdit}
                     />
+                  <button
+                    onClick={handleSaveProfile}
+                    disabled={!canEdit}
+                    className={`w-full rounded-lg py-2 text-sm font-semibold transition ${canEdit ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-slate-200 text-slate-500 cursor-not-allowed'}`}
+                  >
+                    Lưu hồ sơ
+                  </button>
+                  {activeProfile && (
                     <button
-                      onClick={handleSaveProfile}
+                      onClick={() => handleDeleteProfile(activeProfile.id)}
                       disabled={!canEdit}
-                      className={`w-full rounded-lg py-2 text-sm font-semibold transition ${canEdit ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-slate-200 text-slate-500 cursor-not-allowed'}`}
+                      className={`w-full rounded-lg py-2 text-sm font-semibold transition border ${canEdit ? 'border-red-200 text-red-600 hover:bg-red-50' : 'border-slate-200 text-slate-400 cursor-not-allowed'}`}
                     >
-                      Lưu hồ sơ
+                      Xóa hồ sơ
                     </button>
-                  </div>
-                </>
-              ) : (
-                <p className="text-sm text-slate-500">Chưa có hồ sơ. Thêm mới bên dưới.</p>
-              )}
+                  )}
+                </div>
+              </>
+            ) : (
+              <p className="text-sm text-slate-500">Chưa có hồ sơ. Thêm mới bên dưới.</p>
+            )}
 
               <div className="border-t border-slate-100 pt-3">
                 <label className="text-xs text-slate-500">Tạo hồ sơ mới</label>

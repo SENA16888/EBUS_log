@@ -262,6 +262,15 @@ const App: React.FC = () => {
     addLog('Cập nhật nội dung Elearning (khóa học/bài/ câu hỏi)', 'SUCCESS');
   };
 
+  const handleDeleteLearningProfile = (profileId: string) => {
+    setAppState(prev => {
+      const filteredProfiles = (prev.learningProfiles || []).filter(p => p.id !== profileId);
+      const filteredAttempts = (prev.learningAttempts || []).filter(a => a.learnerId !== profileId);
+      return { ...prev, learningProfiles: filteredProfiles, learningAttempts: filteredAttempts };
+    });
+    addLog(`Đã xóa hồ sơ Elearning ${profileId}`, 'WARNING');
+  };
+
   const handleChecklistScan = (payload: { eventId: string; barcode: string; direction: ChecklistDirection; status?: ChecklistStatus; quantity?: number; note?: string }) => {
     const quantity = Math.max(1, Math.round(payload.quantity || 1));
     setAppState(prev => {
@@ -1185,6 +1194,7 @@ const App: React.FC = () => {
           onSubmitAttempt={guard('ELEARNING_EDIT', handleSubmitLearningAttempt)}
           onUpsertProfile={guard('ELEARNING_EDIT', handleUpsertLearningProfile)}
           onUpdateTracks={guard('ELEARNING_EDIT', handleUpdateLearningTracks)}
+          onDeleteProfile={guard('ELEARNING_EDIT', handleDeleteLearningProfile)}
           canEdit={can('ELEARNING_EDIT')}
           isAdminView={isElearningAdmin}
           currentEmployeeId={currentUser?.linkedEmployeeId}

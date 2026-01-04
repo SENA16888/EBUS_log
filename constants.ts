@@ -328,46 +328,7 @@ export const MOCK_LEARNING_TRACKS: LearningTrack[] = [
   }
 ];
 
-export const MOCK_LEARNING_PROFILES: LearningProfile[] = [
-  {
-    id: 'learner-ops',
-    name: 'Nguyễn Văn An',
-    employeeId: 'EMP-OPS',
-    tenureMonths: 8,
-    eventsAttended: 14,
-    scenarioScore: 8.5,
-    roleHistory: ['Nhân viên vận hành', 'Team Lead'],
-    badges: ['Ops Rookie', 'Safety First'],
-    currentRank: 'Team Lead Onsite',
-    completedLessons: ['ops-01', 'ct-01'],
-    preferredTracks: ['OPERATIONS', 'LEADERSHIP']
-  },
-  {
-    id: 'learner-content',
-    name: 'Trần Thu Hà',
-    employeeId: 'EMP-CONTENT',
-    tenureMonths: 4,
-    eventsAttended: 7,
-    scenarioScore: 7.2,
-    roleHistory: ['Nội dung', 'Hậu cần'],
-    badges: ['Content Mate'],
-    currentRank: 'Chuyên viên vận hành',
-    completedLessons: ['ct-01'],
-    preferredTracks: ['CONTENT', 'OPERATIONS']
-  },
-  {
-    id: 'learner-sales',
-    name: 'Lê Minh Khoa',
-    employeeId: 'EMP-SALES',
-    tenureMonths: 2,
-    eventsAttended: 3,
-    scenarioScore: 6.5,
-    roleHistory: ['Bán hàng', 'Nhân viên vận hành'],
-    badges: ['Sales Rookie'],
-    currentRank: 'Triển khai viên',
-    preferredTracks: ['SALES']
-  }
-];
+export const MOCK_LEARNING_PROFILES: LearningProfile[] = [];
 
 export const MOCK_CAREER_RANKS: CareerRank[] = [
   {
