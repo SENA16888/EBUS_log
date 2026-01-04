@@ -2,23 +2,24 @@
 import React from 'react';
 import { 
   LayoutDashboard, Package, CalendarDays, 
-  Settings, Layers, Users, FileText, BookOpen, ShoppingBag, LucideIcon, GraduationCap, LogOut 
+  Settings, Layers, Users, FileText, BookOpen, ShoppingBag, LucideIcon, GraduationCap, LogOut, ClipboardList 
 } from 'lucide-react';
 import { ActivityLog } from './ActivityLog';
 import { LogEntry, UserAccount } from '../types';
 
 interface LayoutProps {
   children: React.ReactNode;
-  activeTab: 'dashboard' | 'inventory' | 'events' | 'packages' | 'employees' | 'quotations' | 'sales' | 'elearning';
-  onTabChange: (tab: 'dashboard' | 'inventory' | 'events' | 'packages' | 'employees' | 'quotations' | 'sales' | 'elearning') => void;
+  activeTab: 'dashboard' | 'inventory' | 'events' | 'packages' | 'employees' | 'quotations' | 'sales' | 'elearning' | 'logs';
+  onTabChange: (tab: 'dashboard' | 'inventory' | 'events' | 'packages' | 'employees' | 'quotations' | 'sales' | 'elearning' | 'logs') => void;
   logs: LogEntry[];
   currentUser?: UserAccount | null;
   canManageAccess?: boolean;
+  canViewLogs?: boolean;
   onOpenAccess?: () => void;
   onLogout?: () => void;
 }
 
-export const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange, logs, currentUser, canManageAccess, onOpenAccess, onLogout }) => {
+export const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange, logs, currentUser, canManageAccess, canViewLogs, onOpenAccess, onLogout }) => {
   const tabs: { key: LayoutProps['activeTab']; label: string; icon: LucideIcon }[] = [
     { key: 'dashboard', label: 'Tổng quan', icon: LayoutDashboard },
     { key: 'inventory', label: 'Kho hàng', icon: Package },
@@ -27,8 +28,11 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange
     { key: 'sales', label: 'Hàng bán', icon: ShoppingBag },
     { key: 'events', label: 'Sự kiện', icon: CalendarDays },
     { key: 'employees', label: 'Nhân sự', icon: Users },
-    { key: 'elearning', label: 'Elearning', icon: GraduationCap },
+    { key: 'elearning', label: 'Elearning', icon: GraduationCap }
   ];
+  if (canViewLogs) {
+    tabs.push({ key: 'logs', label: 'Nhật ký', icon: ClipboardList });
+  }
   const activeTabLabel = tabs.find(t => t.key === activeTab)?.label || 'Menu';
 
   return (
@@ -122,6 +126,18 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange
             <GraduationCap size={20} />
             <span className="font-medium text-sm">Elearning</span>
           </button>
+
+          {canViewLogs && (
+            <button 
+              onClick={() => onTabChange('logs')}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
+                activeTab === 'logs' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+              }`}
+            >
+              <ClipboardList size={20} />
+              <span className="font-medium text-sm">Nhật ký</span>
+            </button>
+          )}
         </nav>
 
         <div className="p-4 border-t border-slate-800">

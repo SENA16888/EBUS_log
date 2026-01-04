@@ -328,11 +328,19 @@ export interface Quotation {
   status: 'DRAFT' | 'SENT' | 'ACCEPTED';
 }
 
+export interface LogActor {
+  id: string;
+  name: string;
+  role: AccessRole;
+  phone?: string;
+}
+
 export interface LogEntry {
   id: string;
   timestamp: Date;
   message: string;
   type: 'SUCCESS' | 'INFO' | 'WARNING' | 'ERROR';
+  actor?: LogActor;
 }
 
 export type AccessRole = 'ADMIN' | 'MANAGER' | 'STAFF';

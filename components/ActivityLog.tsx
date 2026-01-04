@@ -30,6 +30,16 @@ export const ActivityLog: React.FC<ActivityLogProps> = ({ logs }) => {
     }
   };
 
+  const formatTime = (value: LogEntry['timestamp']) => {
+    const date = value instanceof Date ? value : new Date(value);
+    return date.toLocaleTimeString('vi-VN');
+  };
+
+  const getActorLabel = (log: LogEntry) => {
+    if (!log.actor) return 'He thong';
+    return `${log.actor.name} · ${log.actor.role}`;
+  };
+
   return (
     <div className="relative" ref={logRef}>
       <button 
@@ -62,7 +72,7 @@ export const ActivityLog: React.FC<ActivityLogProps> = ({ logs }) => {
                       <div className="flex-1">
                         <p className="text-sm text-gray-800 leading-tight">{log.message}</p>
                         <p className="text-xs text-gray-400 mt-1">
-                          {log.timestamp.toLocaleTimeString('vi-VN')}
+                          {getActorLabel(log)} • {formatTime(log.timestamp)}
                         </p>
                       </div>
                     </div>

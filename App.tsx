@@ -10,6 +10,7 @@ import { EmployeeManager } from './components/EmployeeManager';
 import { QuotationManager } from './components/QuotationManager';
 import { AIChat } from './components/AIChat';
 import { Elearning } from './components/Elearning';
+import { AdminLogPage } from './components/AdminLogPage';
 import { AppState, InventoryItem, Event, EventStatus, Transaction, TransactionType, ComboPackage, Employee, Quotation, EventStaffAllocation, EventExpense, EventAdvanceRequest, LogEntry, ChecklistDirection, ChecklistStatus, ChecklistSignature, EventChecklist, LearningAttempt, LearningProfile, AccessPermission, UserAccount } from './types';
 import { MOCK_INVENTORY, MOCK_EVENTS, MOCK_TRANSACTIONS, MOCK_PACKAGES, MOCK_EMPLOYEES, MOCK_LEARNING_TRACKS, MOCK_LEARNING_PROFILES, MOCK_CAREER_RANKS, DEFAULT_USER_ACCOUNTS } from './constants';
 import { MessageSquare } from 'lucide-react';
@@ -21,7 +22,7 @@ import { AccessManager } from './components/AccessManager';
 import { LoginModal } from './components/LoginModal';
 
 const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'inventory' | 'events' | 'packages' | 'employees' | 'quotations' | 'sales' | 'elearning'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'inventory' | 'events' | 'packages' | 'employees' | 'quotations' | 'sales' | 'elearning' | 'logs'>('dashboard');
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isAccessOpen, setIsAccessOpen] = useState(false);
@@ -59,6 +60,10 @@ const App: React.FC = () => {
         isActive: acc.isActive !== false
       };
     });
+    const normalizedLogs = (state.logs || []).map(log => ({
+      ...log,
+      timestamp: log?.timestamp ? (log.timestamp instanceof Date ? log.timestamp : new Date(log.timestamp)) : new Date()
+    }));
     return {
       ...state,
       inventory: ensureInventoryBarcodes(state.inventory || []),
@@ -73,12 +78,20 @@ const App: React.FC = () => {
       learningProfiles: state.learningProfiles || MOCK_LEARNING_PROFILES,
       learningAttempts: state.learningAttempts || [],
       careerRanks: state.careerRanks || MOCK_CAREER_RANKS,
+      logs: normalizedLogs,
       userAccounts: normalizedAccounts
     };
   };
 
   const currentUser = appState.userAccounts?.find(user => user.id === currentUserId) || null;
   const can = (permission: AccessPermission) => hasPermission(currentUser, permission);
+  const canViewLogs = currentUser?.role === 'ADMIN';
+
+  useEffect(() => {
+    if (activeTab === 'logs' && !canViewLogs) {
+      setActiveTab('dashboard');
+    }
+  }, [activeTab, canViewLogs]);
 
   useEffect(() => {
     if (currentUserId) {
@@ -147,16 +160,28 @@ const App: React.FC = () => {
     void saveData();
   }, [appState, isLoading]);
 
-  const addLog = (message: string, type: LogEntry['type'] = 'INFO') => {
+  const resolveActor = (override?: UserAccount | null) => {
+    const actor = override ?? currentUser;
+    if (!actor) return undefined;
+    return {
+      id: actor.id,
+      name: actor.name,
+      role: actor.role,
+      phone: actor.phone
+    };
+  };
+
+  const addLog = (message: string, type: LogEntry['type'] = 'INFO', actorOverride?: UserAccount | null) => {
     const newLog: LogEntry = {
-      id: `log-${Date.now()}`,
+      id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       timestamp: new Date(),
       message,
       type,
+      actor: resolveActor(actorOverride)
     };
     setAppState(prev => ({
       ...prev,
-      logs: [newLog, ...prev.logs].slice(0, 50), // Giữ lại 50 log gần nhất
+      logs: [newLog, ...(prev.logs || [])].slice(0, 300), // Giữ lại 300 log gần nhất
     }));
   };
 
@@ -168,7 +193,7 @@ const App: React.FC = () => {
       return false;
     }
     setCurrentUserId(account.id);
-    addLog(`Dang nhap thanh cong: ${account.name}`, 'SUCCESS');
+    addLog(`Dang nhap thanh cong: ${account.name}`, 'SUCCESS', account);
     return true;
   };
 
@@ -1076,6 +1101,7 @@ const App: React.FC = () => {
       logs={appState.logs}
       currentUser={currentUser}
       canManageAccess={can('ACCESS_MANAGE')}
+      canViewLogs={canViewLogs}
       onOpenAccess={() => setIsAccessOpen(true)}
       onLogout={handleLogout}
     >
@@ -1154,6 +1180,9 @@ const App: React.FC = () => {
           onUpsertProfile={guard('ELEARNING_EDIT', handleUpsertLearningProfile)}
           canEdit={can('ELEARNING_EDIT')}
         />
+      )}
+      {activeTab === 'logs' && canViewLogs && (
+        <AdminLogPage logs={appState.logs} accounts={appState.userAccounts || []} />
       )}
       {activeTab === 'events' && (
         <EventManager 
