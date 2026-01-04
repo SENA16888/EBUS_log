@@ -270,7 +270,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
   onSaveChecklistSignature
 }) => {
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
-  const [detailTab, setDetailTab] = useState<'EQUIPMENT' | 'STAFF' | 'COSTS' | 'FLOWS' | 'LAYOUT' | 'CHECKLIST' | 'TIMELINE'>('EQUIPMENT');
+  const [detailTab, setDetailTab] = useState<'EQUIPMENT' | 'STAFF' | 'PROFILE' | 'COSTS' | 'FLOWS' | 'LAYOUT' | 'CHECKLIST' | 'TIMELINE'>('EQUIPMENT');
   const [selectedLayoutBlockId, setSelectedLayoutBlockId] = useState<string | null>(null);
   
   // Modals
@@ -1392,6 +1392,9 @@ export const EventManager: React.FC<EventManagerProps> = ({
                 <button onClick={() => setDetailTab('STAFF')} className={`pb-3 text-sm font-bold border-b-2 transition flex items-center gap-2 ${detailTab === 'STAFF' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
                   <Users size={16}/> Nhân Sự
                 </button>
+                <button onClick={() => setDetailTab('PROFILE')} className={`pb-3 text-sm font-bold border-b-2 transition flex items-center gap-2 ${detailTab === 'PROFILE' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
+                  <BookOpen size={16}/> Hồ sơ sự kiện
+                </button>
                 <button onClick={() => setDetailTab('LAYOUT')} className={`pb-3 text-sm font-bold border-b-2 transition flex items-center gap-2 ${detailTab === 'LAYOUT' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
                   <MapPin size={16}/> Sơ đồ trạm
                 </button>
@@ -1973,9 +1976,8 @@ export const EventManager: React.FC<EventManagerProps> = ({
                 </div>
               )}
 
-              {detailTab === 'COSTS' && (
+              {detailTab === 'PROFILE' && selectedEvent && (
                 <div className="space-y-6">
-                  {/* EVENT PROFILE */}
                   <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6">
                     <div className="flex items-center justify-between gap-2">
                       <h4 className="font-bold text-gray-800 text-xs uppercase flex items-center gap-2">
@@ -2236,7 +2238,11 @@ export const EventManager: React.FC<EventManagerProps> = ({
                       </div>
                     </div>
                   </div>
+                </div>
+              )}
 
+              {detailTab === 'COSTS' && (
+                <div className="space-y-6">
                   {/* QUOTATION LINK SECTION */}
                   <div className="bg-gradient-to-r from-blue-600 to-indigo-700 p-6 rounded-2xl text-white shadow-xl space-y-4">
                     <div className="flex justify-between items-center">
