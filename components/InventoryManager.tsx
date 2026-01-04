@@ -1,9 +1,9 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { InventoryItem } from '../types';
+import { InventoryItem, InventoryReceipt, InventoryReceiptItem } from '../types';
 import { 
-  Search, Plus, Filter, X, Trash2, AlertTriangle, Wrench, ClipboardList,
-  ShoppingCart, Info, ArrowUpCircle, Settings2, Link as LinkIcon, CheckCircle, CalendarClock, Printer, History
+  Search, X, Trash2, AlertTriangle, Wrench,
+  ShoppingCart, Info, Settings2, Link as LinkIcon, CheckCircle, CalendarClock, Printer, History, FilePlus
 } from 'lucide-react';
 import JsBarcode from 'jsbarcode';
 import { findDuplicateBarcodeItem, generateBarcode, normalizeBarcode } from '../services/barcodeService';
@@ -35,38 +35,55 @@ const BarcodePreview: React.FC<{ value?: string }> = ({ value }) => {
 
 interface InventoryManagerProps {
   inventory: InventoryItem[];
+  receipts: InventoryReceipt[];
   onUpdateInventory: (item: InventoryItem) => void;
   onAddNewItem: (item: InventoryItem) => void;
-  onBulkImport?: (items: InventoryItem[]) => void;
-  onRestockItem: (itemId: string, quantity: number) => void;
   onDeleteItem: (itemId: string) => void;
   onStatusChange: (itemId: string, action: string, quantity: number, note: string) => void;
+  onCreateReceipt: (payload: { source: string; note?: string; items: InventoryReceiptItem[] }) => void;
   canEdit?: boolean;
   canDelete?: boolean;
+  canCreateReceipt?: boolean;
 }
 
 export const InventoryManager: React.FC<InventoryManagerProps> = ({ 
   inventory, 
+  receipts,
   onUpdateInventory,
   onAddNewItem,
-  onBulkImport,
-  onRestockItem,
   onDeleteItem,
   onStatusChange,
+  onCreateReceipt,
   canEdit = true,
-  canDelete = true
+  canDelete = true,
+  canCreateReceipt = false
 }) => {
+  const createEmptyReceiptItem = (): (InventoryReceiptItem & { tempId: string }) => ({
+    tempId: `draft-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    mode: 'EXISTING',
+    itemId: '',
+    name: '',
+    category: DEFAULT_CATEGORY,
+    quantity: 1,
+    barcode: '',
+    description: '',
+    imageUrl: 'https://picsum.photos/200/200',
+    rentalPrice: 0,
+    purchaseLink: '',
+    minStock: 5,
+    productionNote: '',
+    location: 'Kho tổng'
+  });
+
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCategory, setFilterCategory] = useState('All');
   const [showLowStockOnly, setShowLowStockOnly] = useState(false);
   
   const [showImportModal, setShowImportModal] = useState(false);
   const [showStatusModal, setShowStatusModal] = useState(false);
-  const [showBulkModal, setShowBulkModal] = useState(false);
-  const [showRestockModal, setShowRestockModal] = useState(false);
   const [showPrintModal, setShowPrintModal] = useState(false);
+  const [showReceiptModal, setShowReceiptModal] = useState(false);
   
-  const [bulkText, setBulkText] = useState('');
   const [importMode, setImportMode] = useState<'NEW' | 'EDIT'>('NEW');
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   
@@ -74,12 +91,16 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
   const [statusType, setStatusType] = useState('TO_MAINTENANCE');
   const [statusQty, setStatusQty] = useState(1);
   const [statusNote, setStatusNote] = useState('');
-  const [restockQty, setRestockQty] = useState(1);
   const [printSelections, setPrintSelections] = useState<{ itemId: string; quantity: number }[]>([]);
   const [printDraftItemId, setPrintDraftItemId] = useState('');
   const [printDraftQty, setPrintDraftQty] = useState(1);
   const [printPreviewUrl, setPrintPreviewUrl] = useState('');
   const [printLabelHeight, setPrintLabelHeight] = useState(22); // mm
+  const [receiptSource, setReceiptSource] = useState('');
+  const [receiptNote, setReceiptNote] = useState('');
+  const [receiptItems, setReceiptItems] = useState<Array<InventoryReceiptItem & { tempId: string }>>([
+    createEmptyReceiptItem()
+  ]);
 
   const [newItemData, setNewItemData] = useState({
     barcode: '',
@@ -117,6 +138,8 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
     });
     return ['All', ...Array.from(categorySet)];
   }, [inventory]);
+
+  const recentReceipts = useMemo(() => receipts.slice(0, 5), [receipts]);
 
   useEffect(() => {
     if (!categories.includes(filterCategory)) {
@@ -209,15 +232,6 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
     setShowStatusModal(true);
   }
 
-  const handleOpenRestock = (e: React.MouseEvent, item: InventoryItem) => {
-    if (!canEdit) return;
-    e.preventDefault();
-    e.stopPropagation();
-    setStatusItem(item);
-    setRestockQty(1);
-    setShowRestockModal(true);
-  }
-
   const handleDeleteClick = (e: React.MouseEvent, item: InventoryItem) => {
     if (!canDelete) return;
     e.preventDefault();
@@ -236,6 +250,10 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
 
   const handleAddNewSubmit = () => {
     if (!canEdit) return;
+    if (!canCreateReceipt) {
+      alert('Chỉ ADMIN được phép thêm thiết bị mới. Vui lòng tạo phiếu nhập kho.');
+      return;
+    }
     const name = newItemData.name.trim();
     if (!name) {
       alert("Vui lòng điền tên thiết bị");
@@ -321,16 +339,6 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
     onUpdateInventory(updatedItem);
     setShowImportModal(false);
     resetForms();
-  };
-
-  const handleRestockSubmit = () => {
-    if (!canEdit) return;
-    if (statusItem && restockQty > 0) {
-      onRestockItem(statusItem.id, restockQty);
-      setShowRestockModal(false);
-      setRestockQty(1);
-      setStatusItem(null);
-    }
   };
 
   const handleOpenPrintModal = (item?: InventoryItem) => {
@@ -516,6 +524,140 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
     printWindow.focus();
   };
 
+  const handleReceiptItemChange = (tempId: string, changes: Partial<InventoryReceiptItem>) => {
+    setReceiptItems(prev => prev.map(item => item.tempId === tempId ? { ...item, ...changes } : item));
+  };
+
+  const handleSelectExistingForReceipt = (tempId: string, itemId: string) => {
+    const found = inventory.find(i => i.id === itemId);
+    setReceiptItems(prev => prev.map(item => {
+      if (item.tempId !== tempId) return item;
+      if (!found) return { ...item, itemId };
+      return {
+        ...item,
+        mode: 'EXISTING',
+        itemId,
+        name: found.name,
+        category: found.category || item.category,
+        quantity: item.quantity || 1,
+        barcode: found.barcode || item.barcode,
+        location: found.location || 'Kho tổng',
+        rentalPrice: found.rentalPrice ?? item.rentalPrice,
+        purchaseLink: found.purchaseLink || item.purchaseLink,
+        minStock: typeof found.minStock === 'number' ? found.minStock : item.minStock,
+        productionNote: found.productionNote || item.productionNote,
+        description: found.description || item.description,
+        imageUrl: found.imageUrl || item.imageUrl
+      };
+    }));
+  };
+
+  const handleReceiptModeChange = (tempId: string, mode: InventoryReceiptItem['mode']) => {
+    setReceiptItems(prev => prev.map(item => {
+      if (item.tempId !== tempId) return item;
+      if (mode === 'EXISTING') {
+        const found = item.itemId ? inventory.find(i => i.id === item.itemId) : undefined;
+        return {
+          ...item,
+          mode,
+          name: found?.name || '',
+          barcode: found?.barcode || '',
+          category: found?.category || item.category,
+          location: found?.location || 'Kho tổng'
+        };
+      }
+      return {
+        ...item,
+        mode: 'NEW',
+        itemId: '',
+        name: '',
+        barcode: '',
+        category: DEFAULT_CATEGORY,
+        location: 'Kho tổng'
+      };
+    }));
+  };
+
+  const handleAddReceiptLine = () => setReceiptItems(prev => [...prev, createEmptyReceiptItem()]);
+
+  const handleRemoveReceiptLine = (tempId: string) => {
+    setReceiptItems(prev => prev.length > 1 ? prev.filter(item => item.tempId !== tempId) : prev);
+  };
+
+  const resetReceiptForm = () => {
+    setReceiptSource('');
+    setReceiptNote('');
+    setReceiptItems([createEmptyReceiptItem()]);
+  };
+
+  const handleSubmitReceipt = () => {
+    if (!canCreateReceipt) {
+      alert('Chỉ ADMIN được phép lập phiếu nhập kho.');
+      return;
+    }
+    const trimmedSource = receiptSource.trim();
+    if (!trimmedSource) {
+      alert('Vui lòng nhập nguồn gốc/đường link cho phiếu.');
+      return;
+    }
+    const errors: string[] = [];
+    const payloadItems: InventoryReceiptItem[] = receiptItems.map((item, idx) => {
+      const qty = Math.max(1, Math.round(item.quantity || 0));
+      if (item.mode === 'EXISTING') {
+        if (!item.itemId) {
+          errors.push(`Chọn thiết bị có sẵn cho dòng ${idx + 1}.`);
+          return null;
+        }
+        const found = inventory.find(i => i.id === item.itemId);
+        return {
+          mode: 'EXISTING',
+          itemId: item.itemId,
+          name: found?.name || item.name,
+          category: found?.category || item.category || DEFAULT_CATEGORY,
+          quantity: qty,
+          barcode: found?.barcode || item.barcode,
+          description: item.description || found?.description,
+          imageUrl: found?.imageUrl || item.imageUrl,
+          rentalPrice: typeof item.rentalPrice === 'number' ? item.rentalPrice : found?.rentalPrice,
+          purchaseLink: item.purchaseLink || found?.purchaseLink,
+          minStock: typeof item.minStock === 'number' ? item.minStock : found?.minStock,
+          productionNote: item.productionNote || found?.productionNote,
+          location: item.location || found?.location || 'Kho tổng'
+        };
+      }
+      if (!item.name.trim()) {
+        errors.push(`Điền tên thiết bị mới ở dòng ${idx + 1}.`);
+        return null;
+      }
+      return {
+        mode: 'NEW',
+        itemId: item.itemId,
+        name: item.name.trim(),
+        category: item.category || DEFAULT_CATEGORY,
+        quantity: qty,
+        barcode: item.barcode,
+        description: item.description,
+        imageUrl: item.imageUrl,
+        rentalPrice: item.rentalPrice,
+        purchaseLink: item.purchaseLink,
+        minStock: item.minStock,
+        productionNote: item.productionNote,
+        location: item.location
+      };
+    }).filter(Boolean) as InventoryReceiptItem[];
+    if (errors.length) {
+      alert(errors.join('\n'));
+      return;
+    }
+    if (!payloadItems.length) {
+      alert('Vui lòng thêm ít nhất 1 thiết bị hợp lệ.');
+      return;
+    }
+    onCreateReceipt({ source: trimmedSource, note: receiptNote.trim(), items: payloadItems });
+    setShowReceiptModal(false);
+    resetReceiptForm();
+  };
+
   const handleStatusSubmit = () => {
     if (!canEdit) return;
     if (!statusItem) return;
@@ -539,41 +681,6 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
     setStatusItem(null);
   };
 
-  const handleBulkSubmit = () => {
-    if (!bulkText.trim() || !onBulkImport) return;
-    const lines = bulkText.split('\n').filter(l => l.trim().length > 0);
-    const newItems: InventoryItem[] = lines.map((line, idx) => {
-      let raw = line.trim();
-      let qty = 1;
-      let name = raw;
-      const prefixMatch = raw.match(/^(\d+)\s*(?:x|set|bộ|cái|-|loại)?\s*(.+)$/i);
-      const suffixMatch = raw.match(/^(.+?)\s*(?:-|\sx|\s|\(|\:)\s*(\d+)\s*\)?$/i);
-      if (prefixMatch) { qty = parseInt(prefixMatch[1]); name = prefixMatch[2].trim(); }
-      else if (suffixMatch) { name = suffixMatch[1].trim(); qty = parseInt(suffixMatch[2]); }
-      return {
-        id: `BULK-${Date.now()}-${idx}`,
-        barcode: generateBarcode(name || raw),
-        name: name,
-        category: DEFAULT_CATEGORY,
-        description: 'Nhập nhanh từ trình văn bản',
-        totalQuantity: qty,
-        availableQuantity: qty,
-        inUseQuantity: 0,
-        maintenanceQuantity: 0,
-        brokenQuantity: 0,
-        lostQuantity: 0,
-        usageCount: 0,
-        location: 'Kho tổng',
-        rentalPrice: 0,
-        imageUrl: `https://picsum.photos/200/200?random=${idx}`,
-        minStock: 5
-      };
-    });
-    onBulkImport(newItems);
-    setBulkText('');
-    setShowBulkModal(false);
-  };
-
   const resetForms = () => {
     setNewItemData({
       barcode: '',
@@ -590,21 +697,24 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
         <div>
           <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight">Hệ Thống Kho Thiết Bị</h2>
-          <p className="text-sm text-slate-500 font-medium leading-snug">Quản lý nhập xuất, bảo trì và mua sắm bổ sung.</p>
+          <p className="text-sm text-slate-500 font-medium leading-snug">Quản lý nhập xuất, bảo trì và mua sắm bổ sung. Mọi bổ sung kho phải đi qua phiếu nhập có nguồn gốc.</p>
         </div>
-        <div className="flex gap-2 w-full sm:w-auto">
-          {canEdit && (
-            <button onClick={() => setShowBulkModal(true)} className="flex-1 sm:flex-none bg-slate-800 text-white px-4 py-2.5 rounded-xl hover:bg-black transition flex items-center justify-center gap-2 text-[11px] font-black uppercase tracking-widest shadow-md">
-              <ClipboardList size={16} /> Nhập Hàng Loạt
+        <div className="flex flex-col gap-2 w-full sm:w-auto items-stretch sm:items-end">
+          <div className="flex gap-2 w-full sm:w-auto">
+            <button onClick={() => handleOpenPrintModal()} className="flex-1 sm:flex-none bg-white text-slate-700 border border-slate-200 px-4 py-2.5 rounded-xl hover:bg-slate-100 transition flex items-center justify-center gap-2 text-[11px] font-black uppercase tracking-widest shadow-md">
+              <Printer size={16} /> In mã
             </button>
-          )}
-          <button onClick={() => handleOpenPrintModal()} className="flex-1 sm:flex-none bg-white text-slate-700 border border-slate-200 px-4 py-2.5 rounded-xl hover:bg-slate-100 transition flex items-center justify-center gap-2 text-[11px] font-black uppercase tracking-widest shadow-md">
-            <Printer size={16} /> In mã
-          </button>
-          {canEdit && (
-            <button onClick={() => { setImportMode('NEW'); setShowImportModal(true); }} className="flex-1 sm:flex-none bg-blue-600 text-white px-4 py-2.5 rounded-xl hover:bg-blue-700 transition flex items-center justify-center gap-2 text-[11px] font-black uppercase tracking-widest shadow-md">
-              <Plus size={16} /> Thêm Thiết Bị
-            </button>
+            {canCreateReceipt && (
+              <button
+                onClick={() => { resetReceiptForm(); setShowReceiptModal(true); }}
+                className="flex-1 sm:flex-none bg-blue-600 text-white px-4 py-2.5 rounded-xl hover:bg-blue-700 transition flex items-center justify-center gap-2 text-[11px] font-black uppercase tracking-widest shadow-md"
+              >
+                <FilePlus size={16} /> Phiếu nhập kho
+              </button>
+            )}
+          </div>
+          {!canCreateReceipt && (
+            <p className="text-[11px] text-slate-400 text-left sm:text-right">Chỉ ADMIN được phép lập phiếu nhập kho.</p>
           )}
         </div>
       </div>
@@ -636,6 +746,62 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
         </button>
       </div>
 
+      <div className="bg-white border border-slate-100 rounded-2xl shadow-sm p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Lịch sử phiếu nhập</p>
+            <h3 className="text-lg font-black text-slate-800">Phiếu nhập gần đây</h3>
+            <p className="text-sm text-slate-500">Ghi lại nguồn gốc, người lập và danh mục thiết bị nhập kho.</p>
+          </div>
+          {canCreateReceipt && (
+            <button
+              onClick={() => { resetReceiptForm(); setShowReceiptModal(true); }}
+              className="bg-blue-50 text-blue-700 px-4 py-2 rounded-xl text-[11px] font-black uppercase tracking-widest border border-blue-100 hover:bg-blue-100 transition"
+            >
+              Lập phiếu
+            </button>
+          )}
+        </div>
+        {recentReceipts.length === 0 ? (
+          <p className="mt-3 text-sm text-slate-500">Chưa có phiếu nhập kho nào. Khi nhập mới, hãy tạo phiếu và lưu nguồn gốc.</p>
+        ) : (
+          <div className="mt-3 space-y-3 max-h-72 overflow-y-auto pr-1">
+            {recentReceipts.map(receipt => (
+              <div key={receipt.id} className="p-3 border border-slate-100 rounded-xl bg-slate-50/70">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-3">
+                    <div className="p-2 rounded-lg bg-blue-100 text-blue-700">
+                      <History size={16} />
+                    </div>
+                    <div>
+                      <p className="text-[11px] font-black text-slate-500 uppercase tracking-widest">{receipt.code}</p>
+                      <p className="text-sm font-bold text-slate-800 line-clamp-1">{receipt.source}</p>
+                      <p className="text-[11px] text-slate-500">{new Date(receipt.createdAt).toLocaleString('vi-VN')}</p>
+                    </div>
+                  </div>
+                  <div className="text-right text-[11px] text-slate-500 font-semibold">
+                    <p className="text-sm font-black text-blue-600">{receipt.items.length} dòng</p>
+                    <p>Người lập: {receipt.createdBy?.name || 'ADMIN'}</p>
+                  </div>
+                </div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {receipt.items.slice(0, 4).map(it => (
+                    <span key={`${receipt.id}-${it.itemId || it.name}`} className="px-2 py-1 rounded-full text-[11px] font-bold border border-slate-200 bg-white text-slate-700">
+                      {it.name || 'Thiết bị mới'} • +{it.quantity} {it.mode === 'NEW' ? 'mới' : 'bổ sung'}
+                    </span>
+                  ))}
+                  {receipt.items.length > 4 && (
+                    <span className="px-2 py-1 rounded-full text-[10px] font-bold border border-slate-200 bg-slate-100 text-slate-600">
+                      +{receipt.items.length - 4} dòng khác
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 pb-16">
         {filteredInventory.map(item => {
           const isLowStock = item.availableQuantity <= (item.minStock || 0);
@@ -645,10 +811,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
               {/* ACTION BUTTONS: Increased Z-Index to 50 to ensure clickability */}
               <div className="absolute top-3 right-3 flex flex-col gap-1.5 z-50 opacity-0 group-hover:opacity-100 transition-all transform translate-x-3 group-hover:translate-x-0">
                  {canEdit && (
-                   <>
-                     <button onClick={(e) => handleOpenStatus(e, item)} title="Bảo trì / Báo hỏng" className="p-2 bg-white/95 backdrop-blur shadow text-slate-700 rounded-xl hover:text-orange-500 transition-colors"><Wrench size={16} /></button>
-                     <button onClick={(e) => handleOpenRestock(e, item)} title="Nhập thêm hàng" className="p-2 bg-white/95 backdrop-blur shadow text-slate-700 rounded-xl hover:text-green-600 transition-colors"><ArrowUpCircle size={16} /></button>
-                   </>
+                   <button onClick={(e) => handleOpenStatus(e, item)} title="Bảo trì / Báo hỏng" className="p-2 bg-white/95 backdrop-blur shadow text-slate-700 rounded-xl hover:text-orange-500 transition-colors"><Wrench size={16} /></button>
                  )}
                  <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleOpenPrintModal(item); }} title="In tem mã vạch" className="p-2 bg-white/95 backdrop-blur shadow text-slate-700 rounded-xl hover:text-slate-900 transition-colors"><Printer size={16} /></button>
                  {canEdit && (
@@ -878,18 +1041,213 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
         </div>
       )}
 
-      {/* 2. Modal Bulk Import */}
-      {showBulkModal && (
-        <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4">
-           <div className="bg-white rounded-2xl w-full max-w-lg p-6 shadow-2xl">
-              <div className="flex justify-between items-center mb-4">
-                 <h3 className="text-xl font-bold text-slate-800">Nhập Hàng Loạt (Smart Scan)</h3>
-                 <button onClick={() => setShowBulkModal(false)}><X size={24}/></button>
+      {/* 2. Modal Phiếu nhập kho */}
+      {showReceiptModal && (
+        <div className="fixed inset-0 bg-black/60 z-[110] flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-5xl shadow-2xl overflow-hidden">
+            <div className="flex items-start justify-between gap-3 p-6 border-b bg-slate-50">
+              <div>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Phiếu nhập kho</p>
+                <h3 className="text-2xl font-black text-slate-800">Tạo phiếu nhập kho</h3>
+                <p className="text-sm text-slate-500">Bổ sung thiết bị mới hoặc tăng số lượng cho hàng có sẵn. Ghi rõ nguồn gốc để truy xuất.</p>
               </div>
-              <p className="text-sm text-slate-500 mb-4">Dán danh sách thiết bị vào bên dưới (VD: "10 micro", "Loa full x 4"). Hệ thống sẽ tự tách số lượng.</p>
-              <textarea className="w-full h-64 border-2 border-slate-100 rounded-xl p-4 font-mono text-sm" value={bulkText} onChange={e => setBulkText(e.target.value)} placeholder="10 x Đèn Par Led&#10;5 bộ Micro Shure&#10;Màn hình LED: 20m2"></textarea>
-              <button onClick={handleBulkSubmit} className="w-full mt-4 bg-slate-800 text-white py-3 rounded-xl font-bold">Xử lý & Nhập kho</button>
-           </div>
+              <button onClick={() => { setShowReceiptModal(false); resetReceiptForm(); }} className="p-2 rounded-xl hover:bg-slate-200">
+                <X size={22}/>
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="md:col-span-2">
+                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Nguồn gốc *</label>
+                  <input
+                    type="text"
+                    value={receiptSource}
+                    onChange={e => setReceiptSource(e.target.value)}
+                    placeholder="Link NCC, hợp đồng, ghi chú nguồn..."
+                    className="w-full border-2 border-slate-100 rounded-xl p-3 text-sm font-semibold"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Ghi chú phiếu</label>
+                  <input
+                    type="text"
+                    value={receiptNote}
+                    onChange={e => setReceiptNote(e.target.value)}
+                    placeholder="Thêm mô tả / nội dung thanh toán (tùy chọn)"
+                    className="w-full border-2 border-slate-100 rounded-xl p-3 text-sm font-semibold"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                {receiptItems.map((line, idx) => (
+                  <div key={line.tempId} className="border border-slate-100 rounded-xl p-4 bg-slate-50/60">
+                    <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="px-2 py-1 rounded-full bg-slate-200 text-[11px] font-black text-slate-600 uppercase tracking-widest">Dòng {idx + 1}</span>
+                        <select
+                          value={line.mode}
+                          onChange={e => handleReceiptModeChange(line.tempId, e.target.value as InventoryReceiptItem['mode'])}
+                          className="border border-slate-200 rounded-lg px-3 py-2 text-xs font-semibold bg-white"
+                        >
+                          <option value="EXISTING">Bổ sung thiết bị có sẵn</option>
+                          <option value="NEW">Thêm thiết bị mới</option>
+                        </select>
+                      </div>
+                      {receiptItems.length > 1 && (
+                        <button onClick={() => handleRemoveReceiptLine(line.tempId)} className="text-xs text-red-500 font-bold hover:underline">Xóa dòng</button>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {line.mode === 'EXISTING' ? (
+                        <div>
+                          <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Thiết bị có sẵn</label>
+                          <select
+                            value={line.itemId}
+                            onChange={e => handleSelectExistingForReceipt(line.tempId, e.target.value)}
+                            className="w-full border-2 border-slate-100 rounded-xl p-3 text-sm font-bold bg-white"
+                          >
+                            <option value="">-- Chọn thiết bị --</option>
+                            {inventory.map(item => (
+                              <option key={item.id} value={item.id}>
+                                {item.name} {item.barcode ? `• ${item.barcode}` : ''}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      ) : (
+                        <div>
+                          <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Tên thiết bị mới *</label>
+                          <input
+                            type="text"
+                            value={line.name}
+                            onChange={e => handleReceiptItemChange(line.tempId, { name: e.target.value })}
+                            placeholder="Ví dụ: Loa Array L-ACME"
+                            className="w-full border-2 border-slate-100 rounded-xl p-3 text-sm font-bold"
+                          />
+                        </div>
+                      )}
+
+                      <div>
+                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Số lượng nhập</label>
+                        <input
+                          type="number"
+                          min={1}
+                          value={line.quantity}
+                          onChange={e => handleReceiptItemChange(line.tempId, { quantity: Number(e.target.value) })}
+                          className="w-full border-2 border-slate-100 rounded-xl p-3 text-xl font-black text-center text-blue-600"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-3">
+                      <div>
+                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Danh mục</label>
+                        <input
+                          type="text"
+                          value={line.category}
+                          onChange={e => handleReceiptItemChange(line.tempId, { category: e.target.value })}
+                          className="w-full border-2 border-slate-100 rounded-xl p-3 text-sm font-bold bg-white"
+                          disabled={line.mode === 'EXISTING'}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Mã barcode</label>
+                        <input
+                          type="text"
+                          value={line.barcode}
+                          onChange={e => handleReceiptItemChange(line.tempId, { barcode: e.target.value })}
+                          placeholder="Để trống để hệ thống tạo"
+                          className="w-full border-2 border-slate-100 rounded-xl p-3 text-sm font-mono tracking-widest bg-white"
+                          disabled={line.mode === 'EXISTING'}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Vị trí kho</label>
+                        <input
+                          type="text"
+                          value={line.location}
+                          onChange={e => handleReceiptItemChange(line.tempId, { location: e.target.value })}
+                          className="w-full border-2 border-slate-100 rounded-xl p-3 text-sm font-bold bg-white"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-3">
+                      <div>
+                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Link mua / nguồn</label>
+                        <input
+                          type="text"
+                          value={line.purchaseLink || ''}
+                          onChange={e => handleReceiptItemChange(line.tempId, { purchaseLink: e.target.value })}
+                          placeholder="https:// hoặc mô tả NCC"
+                          className="w-full border-2 border-slate-100 rounded-xl p-3 text-sm font-semibold"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Ngưỡng cảnh báo</label>
+                        <input
+                          type="number"
+                          value={line.minStock ?? ''}
+                          onChange={e => {
+                            const value = e.target.value;
+                            handleReceiptItemChange(line.tempId, { minStock: value === '' ? undefined : Number(value) });
+                          }}
+                          className="w-full border-2 border-slate-100 rounded-xl p-3 text-sm font-bold text-blue-600"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Giá thuê (VNĐ)</label>
+                        <input
+                          type="number"
+                          value={line.rentalPrice ?? ''}
+                          onChange={e => {
+                            const value = e.target.value;
+                            handleReceiptItemChange(line.tempId, { rentalPrice: value === '' ? undefined : Number(value) });
+                          }}
+                          className="w-full border-2 border-slate-100 rounded-xl p-3 text-sm font-bold text-blue-600"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="mt-3">
+                      <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Ghi chú / Mô tả</label>
+                      <textarea
+                        rows={2}
+                        value={line.description || ''}
+                        onChange={e => handleReceiptItemChange(line.tempId, { description: e.target.value })}
+                        className="w-full border-2 border-slate-100 rounded-xl p-3 text-sm font-semibold bg-white"
+                        placeholder="Thông số, tình trạng nhập, series..."
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <button
+                onClick={handleAddReceiptLine}
+                className="w-full border-2 border-dashed border-slate-200 rounded-xl py-3 text-sm font-black text-slate-600 hover:border-blue-300 hover:text-blue-600"
+              >
+                + Thêm dòng thiết bị
+              </button>
+            </div>
+
+            <div className="p-6 border-t bg-slate-50 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+              <div className="text-sm text-slate-500">
+                Tổng <b>{receiptItems.length}</b> dòng • Nguồn gốc bắt buộc cho tất cả thiết bị nhập kho.
+              </div>
+              <div className="flex items-center gap-3">
+                <button onClick={() => { setShowReceiptModal(false); resetReceiptForm(); }} className="px-5 py-3 text-slate-500 font-black uppercase tracking-widest text-xs hover:bg-slate-200 rounded-2xl">
+                  Hủy
+                </button>
+                <button onClick={handleSubmitReceipt} className="px-8 py-3 bg-blue-600 text-white rounded-2xl font-black uppercase tracking-widest text-xs shadow-xl shadow-blue-200 hover:bg-blue-700">
+                  Lưu phiếu nhập
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
@@ -1018,31 +1376,6 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
               <button onClick={() => setShowPrintModal(false)} className="px-5 py-3 text-slate-500 font-black uppercase tracking-widest text-xs hover:bg-slate-100 rounded-xl">Đóng</button>
               <button onClick={handlePrintLabels} className="px-8 py-3 bg-slate-900 text-white rounded-xl font-black uppercase tracking-widest text-xs shadow-lg hover:bg-black">In tem</button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* 3. Modal Restock (Nhập thêm hàng) */}
-      {showRestockModal && statusItem && (
-        <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl">
-             <div className="flex justify-between items-center mb-6">
-                <div>
-                   <h3 className="text-lg font-bold text-slate-800">Nhập Thêm Hàng</h3>
-                   <p className="text-blue-600 font-bold">{statusItem.name}</p>
-                </div>
-                <button onClick={() => setShowRestockModal(false)}><X size={24}/></button>
-             </div>
-             <div className="space-y-4">
-                <div>
-                   <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Số lượng nhập thêm</label>
-                   <input type="number" min="1" className="w-full border-2 border-slate-100 rounded-xl p-3 text-2xl font-black text-center text-blue-600" value={restockQty} onChange={e => setRestockQty(Number(e.target.value))} />
-                </div>
-                <div className="bg-blue-50 p-3 rounded-lg text-sm text-blue-700">
-                   Tổng kho sau khi nhập: <b>{statusItem.totalQuantity + restockQty}</b>
-                </div>
-                <button onClick={handleRestockSubmit} className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold shadow-lg shadow-blue-200 hover:bg-blue-700">Xác nhận nhập kho</button>
-             </div>
           </div>
         </div>
       )}

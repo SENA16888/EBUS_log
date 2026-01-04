@@ -1,5 +1,5 @@
 
-import { InventoryItem, Event, Transaction, EventStatus, TransactionType, ComboPackage, Employee, LearningTrack, LearningProfile, CareerRank, UserAccount } from './types';
+import { InventoryItem, Event, Transaction, EventStatus, TransactionType, ComboPackage, Employee, LearningTrack, LearningProfile, CareerRank, UserAccount, InventoryReceipt } from './types';
 import { getDefaultPermissionsForRole } from './services/accessControl';
 
 export const MOCK_INVENTORY: InventoryItem[] = [];
@@ -7,6 +7,7 @@ export const MOCK_PACKAGES: ComboPackage[] = [];
 export const MOCK_EMPLOYEES: Employee[] = [];
 export const MOCK_EVENTS: Event[] = [];
 export const MOCK_TRANSACTIONS: Transaction[] = [];
+export const MOCK_INVENTORY_RECEIPTS: InventoryReceipt[] = [];
 
 export const DEFAULT_USER_ACCOUNTS: UserAccount[] = [
   {

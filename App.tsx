@@ -11,11 +11,11 @@ import { QuotationManager } from './components/QuotationManager';
 import { AIChat } from './components/AIChat';
 import { Elearning } from './components/Elearning';
 import { AdminLogPage } from './components/AdminLogPage';
-import { AppState, InventoryItem, Event, EventStatus, Transaction, TransactionType, ComboPackage, Employee, Quotation, EventStaffAllocation, EventExpense, EventAdvanceRequest, LogEntry, ChecklistDirection, ChecklistStatus, ChecklistSignature, EventChecklist, LearningAttempt, LearningProfile, AccessPermission, UserAccount, LearningTrack } from './types';
-import { MOCK_INVENTORY, MOCK_EVENTS, MOCK_TRANSACTIONS, MOCK_PACKAGES, MOCK_EMPLOYEES, MOCK_LEARNING_TRACKS, MOCK_LEARNING_PROFILES, MOCK_CAREER_RANKS, DEFAULT_USER_ACCOUNTS } from './constants';
+import { AppState, InventoryItem, Event, EventStatus, Transaction, TransactionType, ComboPackage, Employee, Quotation, EventStaffAllocation, EventExpense, EventAdvanceRequest, LogEntry, ChecklistDirection, ChecklistStatus, ChecklistSignature, EventChecklist, LearningAttempt, LearningProfile, AccessPermission, UserAccount, LearningTrack, InventoryReceipt, InventoryReceiptItem } from './types';
+import { MOCK_INVENTORY, MOCK_EVENTS, MOCK_TRANSACTIONS, MOCK_PACKAGES, MOCK_EMPLOYEES, MOCK_LEARNING_TRACKS, MOCK_LEARNING_PROFILES, MOCK_CAREER_RANKS, DEFAULT_USER_ACCOUNTS, MOCK_INVENTORY_RECEIPTS } from './constants';
 import { MessageSquare } from 'lucide-react';
 import { saveAppState, loadAppState, initializeAuth } from './services/firebaseService';
-import { ensureInventoryBarcodes, ensureItemBarcode, findDuplicateBarcodeItem, findItemByBarcode } from './services/barcodeService';
+import { ensureInventoryBarcodes, ensureItemBarcode, findDuplicateBarcodeItem, findItemByBarcode, generateBarcode, normalizeBarcode } from './services/barcodeService';
 import { normalizeChecklist } from './services/checklistService';
 import { getDefaultPermissionsForRole, hasPermission, normalizePhone } from './services/accessControl';
 import { AccessManager } from './components/AccessManager';
@@ -41,6 +41,7 @@ const App: React.FC = () => {
       saleOrders: [],
       quotations: [],
       logs: [],
+      inventoryReceipts: MOCK_INVENTORY_RECEIPTS,
       learningTracks: MOCK_LEARNING_TRACKS,
       learningProfiles: MOCK_LEARNING_PROFILES,
       learningAttempts: [],
@@ -78,6 +79,7 @@ const App: React.FC = () => {
       learningProfiles: state.learningProfiles || MOCK_LEARNING_PROFILES,
       learningAttempts: state.learningAttempts || [],
       careerRanks: state.careerRanks || MOCK_CAREER_RANKS,
+      inventoryReceipts: state.inventoryReceipts || [],
       logs: normalizedLogs,
       userAccounts: normalizedAccounts
     };
@@ -85,6 +87,7 @@ const App: React.FC = () => {
 
   const currentUser = appState.userAccounts?.find(user => user.id === currentUserId) || null;
   const can = (permission: AccessPermission) => hasPermission(currentUser, permission);
+  const isAdmin = currentUser?.role === 'ADMIN';
   const canViewLogs = currentUser?.role === 'ADMIN';
   const isElearningAdmin = currentUser?.role === 'ADMIN' || currentUser?.role === 'MANAGER';
 
@@ -623,26 +626,156 @@ const App: React.FC = () => {
       addLog(`Đã thêm thiết bị mới: ${itemWithBarcode.name}`, 'SUCCESS');
     }
   };
-  
-  const handleBulkImport = (items: InventoryItem[]) => {
+
+  const handleCreateReceipt = (payload: { source: string; note?: string; items: InventoryReceiptItem[] }) => {
+    if (!isAdmin) {
+      alert('Chỉ ADMIN được phép tạo phiếu nhập kho.');
+      return;
+    }
+    const source = payload.source.trim();
+    if (!source) {
+      alert('Vui lòng nhập nguồn gốc (link, NCC, mô tả...).');
+      return;
+    }
+
+    const sanitizedItems = (payload.items || []).map(item => {
+      const quantity = Math.max(1, Math.round(item.quantity || 0));
+      const mode: InventoryReceiptItem['mode'] = item.mode === 'EXISTING' ? 'EXISTING' : 'NEW';
+      return {
+        ...item,
+        mode,
+        quantity,
+        name: (item.name || '').trim(),
+        category: (item.category || 'Khác').trim() || 'Khác',
+        barcode: normalizeBarcode(item.barcode || ''),
+        location: (item.location || 'Kho tổng').trim(),
+        description: item.description?.trim(),
+        purchaseLink: item.purchaseLink?.trim(),
+        productionNote: item.productionNote?.trim(),
+      };
+    }).filter(item => item.quantity > 0 && (item.mode === 'EXISTING' ? !!item.itemId : !!item.name));
+
+    if (!sanitizedItems.length) {
+      alert('Vui lòng thêm ít nhất 1 thiết bị vào phiếu.');
+      return;
+    }
+
+    let error = '';
+    let createdReceipt: InventoryReceipt | null = null;
+
     setAppState(prev => {
-      let currentInv = [...prev.inventory];
-      items.forEach((incomingItem, idx) => {
-        const newItem = ensureItemBarcode(incomingItem, `-bulk-${idx}`);
-        const existingIdx = currentInv.findIndex(i => i.name.toLowerCase() === newItem.name.toLowerCase());
-        if (existingIdx > -1) {
-          currentInv[existingIdx] = {
-            ...currentInv[existingIdx],
-            totalQuantity: currentInv[existingIdx].totalQuantity + newItem.totalQuantity,
-            availableQuantity: currentInv[existingIdx].availableQuantity + newItem.availableQuantity
+      let nextInventory = [...prev.inventory];
+      const receiptItems: InventoryReceiptItem[] = [];
+
+      sanitizedItems.forEach((item, idx) => {
+        if (error) return;
+        const quantity = item.quantity || 1;
+        if (item.mode === 'EXISTING' && item.itemId) {
+          const foundIdx = nextInventory.findIndex(inv => inv.id === item.itemId);
+          if (foundIdx === -1) {
+            error = `Không tìm thấy thiết bị cho dòng ${idx + 1}.`;
+            return;
+          }
+          const target = nextInventory[foundIdx];
+          const updated: InventoryItem = {
+            ...target,
+            totalQuantity: target.totalQuantity + quantity,
+            availableQuantity: target.availableQuantity + quantity,
+            location: item.location || target.location,
+            purchaseLink: item.purchaseLink || target.purchaseLink,
+            rentalPrice: typeof item.rentalPrice === 'number' ? item.rentalPrice : target.rentalPrice,
+            minStock: typeof item.minStock === 'number' ? item.minStock : target.minStock,
+            productionNote: item.productionNote || target.productionNote,
+            description: item.description || target.description,
+            imageUrl: item.imageUrl || target.imageUrl,
+            category: item.category || target.category
           };
+          nextInventory[foundIdx] = updated;
+          receiptItems.push({
+            ...item,
+            mode: 'EXISTING',
+            itemId: target.id,
+            name: target.name,
+            category: updated.category,
+            quantity,
+            barcode: target.barcode || item.barcode
+          });
         } else {
-          currentInv.push(newItem);
+          const name = item.name.trim();
+          if (!name) {
+            error = `Thiếu tên thiết bị ở dòng ${idx + 1}.`;
+            return;
+          }
+          const category = item.category || 'Khác';
+          const finalBarcode = item.barcode || generateBarcode(name || category);
+          const duplicate = findDuplicateBarcodeItem(nextInventory, finalBarcode);
+          if (duplicate) {
+            error = `Mã barcode ${finalBarcode} đã thuộc về "${duplicate.name}".`;
+            return;
+          }
+          const newItem: InventoryItem = {
+            id: `ITEM-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 6)}`,
+            barcode: finalBarcode,
+            name,
+            category,
+            description: item.description || '',
+            location: item.location || 'Kho tổng',
+            totalQuantity: quantity,
+            availableQuantity: quantity,
+            inUseQuantity: 0,
+            maintenanceQuantity: 0,
+            brokenQuantity: 0,
+            lostQuantity: 0,
+            usageCount: 0,
+            imageUrl: item.imageUrl || 'https://picsum.photos/200/200',
+            rentalPrice: Number.isFinite(item.rentalPrice) ? Number(item.rentalPrice) : 0,
+            purchaseLink: item.purchaseLink || '',
+            minStock: Number.isFinite(item.minStock) ? Number(item.minStock) : 5,
+            productionNote: item.productionNote || '',
+            plannedPurchase: false,
+            plannedQuantity: 0,
+            plannedEta: ''
+          };
+          nextInventory.push(newItem);
+          receiptItems.push({
+            ...item,
+            mode: 'NEW',
+            itemId: newItem.id,
+            name: newItem.name,
+            category: newItem.category,
+            quantity,
+            barcode: newItem.barcode
+          });
         }
       });
-      return { ...prev, inventory: currentInv };
+
+      if (error) return prev;
+
+      const receipt: InventoryReceipt = {
+        id: `RC-${Date.now()}`,
+        code: `PNK-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.random().toString(36).slice(2, 5).toUpperCase()}`,
+        createdAt: new Date().toISOString(),
+        source,
+        note: payload.note?.trim(),
+        createdBy: resolveActor(),
+        items: receiptItems
+      };
+      createdReceipt = receipt;
+
+      return {
+        ...prev,
+        inventory: nextInventory,
+        inventoryReceipts: [receipt, ...(prev.inventoryReceipts || [])].slice(0, 80)
+      };
     });
-    addLog(`Đã nhập hàng loạt ${items.length} hạng mục.`, 'INFO');
+
+    if (error) {
+      alert(error);
+      return;
+    }
+    if (createdReceipt) {
+      addLog(`Tạo phiếu nhập kho ${createdReceipt.code} (${createdReceipt.items.length} dòng) • Nguồn: ${createdReceipt.source}`, 'SUCCESS');
+    }
   };
 
   const handleDeleteItem = (id: string) => {
@@ -711,21 +844,6 @@ const App: React.FC = () => {
       ...prev,
       events: prev.events.map(e => e.id !== eventId ? e : { ...e, staff: (e.staff || []).map(s => s.employeeId === employeeId ? { ...s, done } : s) })
     }));
-  };
-
-  const handleRestockItem = (id: string, qty: number) => {
-    let itemName = '';
-    setAppState(prev => ({
-      ...prev,
-      inventory: prev.inventory.map(i => {
-        if (i.id === id) {
-          itemName = i.name;
-          return { ...i, totalQuantity: i.totalQuantity + qty, availableQuantity: i.availableQuantity + qty }
-        }
-        return i;
-      })
-    }));
-    addLog(`Nhập thêm ${qty} chiếc "${itemName}" vào kho.`, 'INFO');
   };
 
   const handleItemStatusChange = (id: string, action: string, qty: number, note: string) => {
@@ -1126,10 +1244,11 @@ const App: React.FC = () => {
           inventory={appState.inventory} 
           onUpdateInventory={guard('INVENTORY_EDIT', handleUpdateInventory)} 
           onAddNewItem={guard('INVENTORY_EDIT', handleAddNewItem)} 
-          onBulkImport={guard('INVENTORY_EDIT', handleBulkImport)}
-          onRestockItem={guard('INVENTORY_EDIT', handleRestockItem)} 
           onDeleteItem={guard('INVENTORY_DELETE', handleDeleteItem)} 
           onStatusChange={guard('INVENTORY_EDIT', handleItemStatusChange)}
+          receipts={appState.inventoryReceipts || []}
+          onCreateReceipt={guard('INVENTORY_EDIT', handleCreateReceipt)}
+          canCreateReceipt={isAdmin}
           canEdit={can('INVENTORY_EDIT')}
           canDelete={can('INVENTORY_DELETE')}
         />

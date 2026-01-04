@@ -52,6 +52,39 @@ export interface InventoryItem {
   plannedEta?: string;
 }
 
+export type InventoryReceiptItemMode = 'EXISTING' | 'NEW';
+
+export interface InventoryReceiptItem {
+  mode: InventoryReceiptItemMode;
+  itemId?: string;
+  name: string;
+  category: string;
+  quantity: number;
+  barcode?: string;
+  description?: string;
+  imageUrl?: string;
+  rentalPrice?: number;
+  purchaseLink?: string;
+  minStock?: number;
+  productionNote?: string;
+  location?: string;
+}
+
+export interface InventoryReceipt {
+  id: string;
+  code: string;
+  createdAt: string;
+  source: string;
+  note?: string;
+  createdBy?: {
+    id?: string;
+    name?: string;
+    role?: string;
+    phone?: string;
+  };
+  items: InventoryReceiptItem[];
+}
+
 export type ChecklistDirection = 'OUT' | 'IN';
 export type ChecklistStatus = 'OK' | 'DAMAGED' | 'LOST' | 'MISSING';
 
@@ -463,6 +496,7 @@ export interface AppState {
   saleItems?: SaleItem[];
   saleOrders?: SaleOrder[];
   logs: LogEntry[];
+  inventoryReceipts?: InventoryReceipt[];
   learningTracks?: LearningTrack[];
   learningProfiles?: LearningProfile[];
   learningAttempts?: LearningAttempt[];
