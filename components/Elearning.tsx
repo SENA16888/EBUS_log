@@ -46,6 +46,7 @@ export const Elearning: React.FC<ElearningProps> = ({
   const [profileDraft, setProfileDraft] = useState<LearningProfile | null>(profiles[0] || null);
   const [newProfileName, setNewProfileName] = useState<string>('');
   const [newProfileEmployeeId, setNewProfileEmployeeId] = useState<string>('');
+  const [adminTab, setAdminTab] = useState<'profiles' | 'content'>('profiles');
 
   const profileOptions = useMemo(() => {
     if (isAdminView) return profiles;
@@ -152,6 +153,12 @@ export const Elearning: React.FC<ElearningProps> = ({
   const lessonScore = getLessonScore(selectedLesson);
   const lessonQuestions = useMemo(() => getLessonQuestions(selectedLesson), [selectedLesson, isAdminView]);
   const hasQuizQuestions = lessonQuestions.length > 0;
+
+  const updateSelectedTrack = (updater: (track: LearningTrack) => LearningTrack) => {
+    if (!selectedTrack || !isAdminView || !canEdit) return;
+    const updatedTracks = tracks.map(track => track.id === selectedTrack.id ? updater(track) : track);
+    onUpdateTracks(updatedTracks);
+  };
 
   const updateSelectedLesson = (updater: (lesson: LearningLesson) => LearningLesson) => {
     if (!selectedTrack || !selectedLesson || !isAdminView || !canEdit) return;
@@ -445,25 +452,25 @@ export const Elearning: React.FC<ElearningProps> = ({
   const isLessonLocked = !trackUnlockStatus.unlocked;
   const nextEligibleRank = rankStatuses.find(r => r.eligible);
 
-  return (
-    <div className="space-y-4">
-      <div className="bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 text-white p-4 rounded-2xl shadow-sm">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div>
-            <div className="flex items-center gap-2 font-semibold text-sm uppercase tracking-wide">
-              <GraduationCap size={16} />
-              {isAdminView ? 'Elearning vận hành & bán hàng' : 'Elearning cá nhân'}
-            </div>
-            <h2 className="text-2xl font-bold mt-1">
-              {isAdminView ? 'Xem video, trả lời câu hỏi, mở khóa danh hiệu' : 'Làm bài kiểm tra, theo dõi cấp độ và bảng xếp hạng'}
-            </h2>
-            <p className="text-sm text-slate-100/80 mt-1">
-              {isAdminView
-                ? 'Điều kiện xét bậc dựa trên thời gian làm việc, số lần đi sự kiện, câu trả lời và vai trò đã trải qua.'
-                : 'Tập trung hoàn thành bài học, tích lũy điểm số và nâng cấp danh hiệu cá nhân.'}
-            </p>
+  const renderHero = () => (
+    <div className="bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 text-white p-4 rounded-2xl shadow-sm">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2 font-semibold text-sm uppercase tracking-wide">
+            <GraduationCap size={16} />
+            {isAdminView ? 'Elearning vận hành & bán hàng' : 'Elearning cá nhân'}
           </div>
-          {isAdminView && (
+          <h2 className="text-2xl font-bold mt-1">
+            {isAdminView ? 'Quản trị nội dung & theo dõi học viên' : 'Làm bài kiểm tra, theo dõi cấp độ và bảng xếp hạng'}
+          </h2>
+          <p className="text-sm text-slate-100/80 mt-1">
+            {isAdminView
+              ? 'Quản lý hồ sơ, bảng xếp hạng và điều chỉnh bài học/câu hỏi.'
+              : 'Tập trung hoàn thành bài học, tích lũy điểm số và nâng cấp danh hiệu cá nhân.'}
+          </p>
+        </div>
+        {isAdminView && (
+          <div className="flex flex-col gap-2 items-end">
             <div className="flex gap-2">
               <div className="bg-white/10 px-3 py-2 rounded-lg text-sm">
                 <div className="text-xs text-slate-100/80">Khóa học</div>
@@ -473,305 +480,111 @@ export const Elearning: React.FC<ElearningProps> = ({
                 <div className="text-xs text-slate-100/80">Bài học</div>
                 <div className="font-semibold">{totalLessons}</div>
               </div>
-              <div className="bg-white/10 px-3 py-2 rounded-lg text-sm">
-                <div className="text-xs text-slate-100/80">Đã hoàn thành</div>
-                <div className="font-semibold">{completedLessons}/{totalLessons}</div>
-              </div>
             </div>
-          )}
-        </div>
+            <div className="inline-flex bg-white/10 rounded-xl p-1">
+              <button
+                onClick={() => setAdminTab('profiles')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold ${adminTab === 'profiles' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-100'}`}
+              >
+                Hồ sơ & BXH
+              </button>
+              <button
+                onClick={() => setAdminTab('content')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold ${adminTab === 'content' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-100'}`}
+              >
+                Nội dung & Câu hỏi
+              </button>
+            </div>
+          </div>
+        )}
       </div>
+    </div>
+  );
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-        <div className="xl:col-span-2 space-y-4">
-          <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 flex flex-col md:flex-row gap-3">
-            <div className="flex-1">
-              <label className="text-xs text-slate-500 font-medium">{isAdminView ? 'Chọn nhân sự' : 'Học viên'}</label>
-              {isAdminView ? (
-                <select
-                  value={selectedProfileId}
-                  onChange={e => setSelectedProfileId(e.target.value)}
-                  className="w-full mt-1 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  {profileOptions.map(p => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
-                </select>
-              ) : (
+  if (!isAdminView) {
+    return (
+      <div className="space-y-4">
+        {renderHero()}
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+          <div className="xl:col-span-2 space-y-4">
+            <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 flex flex-col md:flex-row gap-3">
+              <div className="flex-1">
+                <label className="text-xs text-slate-500 font-medium">Học viên</label>
                 <div className="w-full mt-1 border border-slate-200 rounded-lg px-3 py-2 text-sm bg-slate-50 text-slate-700">
                   {activeProfile?.name || 'Chưa gắn hồ sơ'}
                 </div>
-              )}
-              {isAdminView && profileOptions.length === 0 && (
-                <p className="text-xs text-orange-600 mt-1">Chưa có hồ sơ, hãy tạo mới ở bảng bên phải.</p>
-              )}
-              {!isAdminView && profileOptions.length === 0 && (
-                <p className="text-xs text-orange-600 mt-1">Tài khoản chưa gắn hồ sơ Elearning. Liên hệ Admin để tạo.</p>
-              )}
-            </div>
-            <div className="flex-1">
-              <label className="text-xs text-slate-500 font-medium">Chọn khóa học</label>
-              <select
-                value={selectedTrackId}
-                onChange={e => setSelectedTrackId(e.target.value)}
-                className="w-full mt-1 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                {tracks.map(t => (
-                  <option key={t.id} value={t.id}>{t.title} ({t.level})</option>
-                ))}
-              </select>
-            </div>
-            {isAdminView && (
+                {profileOptions.length === 0 && (
+                  <p className="text-xs text-orange-600 mt-1">Tài khoản chưa gắn hồ sơ Elearning. Liên hệ Admin để tạo.</p>
+                )}
+              </div>
               <div className="flex-1">
-                <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 h-full">
-                  <div className="flex items-center gap-2 text-blue-700 text-sm font-semibold">
-                    <ShieldCheck size={16} /> Điều kiện mở khóa
-                  </div>
-                  <p className="text-xs text-slate-600 mt-1">
-                    {trackUnlockStatus.unlocked ? 'Đã đủ điều kiện học và thi.' : 'Chưa đủ, xem yêu cầu chi tiết.'}
-                  </p>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {isAdminView && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {trackSummaries.map(({ track, progress, done }) => {
-                const unlocked = checkTrackUnlock(track).unlocked;
-                return (
-                  <button
-                    key={track.id}
-                    onClick={() => setSelectedTrackId(track.id)}
-                    className={`text-left bg-white border rounded-xl p-4 shadow-sm hover:shadow-md transition ${selectedTrackId === track.id ? 'border-blue-300 shadow-[0_10px_30px_rgba(37,99,235,0.08)]' : 'border-slate-100'}`}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <Sparkles className="text-blue-600" size={18} />
-                        <div>
-                          <p className="text-sm font-semibold text-slate-800">{track.title}</p>
-                          <p className="text-xs text-slate-500">{track.description}</p>
-                        </div>
-                      </div>
-                      <div className="text-xs text-white bg-slate-800 px-2 py-1 rounded-lg">{track.level}</div>
-                    </div>
-                    <div className="mt-3 h-2 bg-slate-100 rounded-full overflow-hidden">
-                      <div className={`h-2 ${unlocked ? 'bg-blue-600' : 'bg-slate-400'}`} style={{ width: `${progress}%` }} />
-                    </div>
-                    <div className="mt-2 text-xs text-slate-600 flex items-center gap-2">
-                      <CheckCircle2 size={14} className="text-green-600" />
-                      {done}/{track.lessons.length} bài đã đạt yêu cầu
-                    </div>
-                    {!unlocked && (
-                      <div className="mt-2 text-[11px] text-orange-600 flex items-center gap-1">
-                        <Lock size={12} /> Chưa mở khóa đầy đủ
-                      </div>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-
-          <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
-            <div className="p-4 border-b border-slate-100 flex items-center justify-between">
-              <div>
-                <p className="text-xs text-slate-500 font-medium uppercase">
-                  {isAdminView ? 'Bài học đang xem' : 'Bài kiểm tra trắc nghiệm'}
-                </p>
-                <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
-                  <PlayCircle className="text-blue-600" size={18} />
-                  {selectedLesson.title}
-                </h3>
-                {isAdminView && (
-                  <p className="text-sm text-slate-500">{selectedLesson.summary}</p>
-                )}
-              </div>
-              <div className="text-right">
-                <div className="text-xs text-slate-500">Điểm trung bình</div>
-                <div className="text-xl font-bold text-blue-700">{lessonScore.normalized.toFixed(1)}/10</div>
-                <div className="text-xs text-slate-500">Đã trả lời {lessonScore.answeredCount}/{lessonQuestions.length}</div>
-              </div>
-            </div>
-
-            {isAdminView && (
-              <div className="aspect-video bg-slate-100">
-                <iframe
-                  src={selectedLesson.videoUrl}
-                  title={selectedLesson.title}
-                  className="w-full h-full"
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                  allowFullScreen
-                />
-              </div>
-            )}
-
-            <div className="p-4">
-              {isAdminView && (
-                <div className="flex flex-wrap gap-2 mb-3">
-                  {selectedLesson.skills.map(skill => (
-                    <span key={skill} className="px-2 py-1 text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-100 rounded-lg">
-                      {skill}
-                    </span>
+                <label className="text-xs text-slate-500 font-medium">Chọn khóa học</label>
+                <select
+                  value={selectedTrackId}
+                  onChange={e => setSelectedTrackId(e.target.value)}
+                  className="w-full mt-1 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  {tracks.map(t => (
+                    <option key={t.id} value={t.id}>{t.title} ({t.level})</option>
                   ))}
-                </div>
-              )}
+                </select>
+              </div>
+            </div>
 
-              {isLessonLocked && !isAdminView && (
-                <div className="bg-orange-50 border border-orange-100 text-orange-700 rounded-lg p-3 mb-3 flex gap-2 items-start">
-                  <Lock size={16} className="mt-0.5" />
-                  <div>
-                    <p className="font-semibold text-sm">Chưa mở khóa bài học</p>
-                    <p className="text-xs">Hoàn thành điều kiện bên cạnh để mở.</p>
-                  </div>
+            <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+              <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+                <div>
+                  <p className="text-xs text-slate-500 font-medium uppercase">Bài kiểm tra trắc nghiệm</p>
+                  <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
+                    <PlayCircle className="text-blue-600" size={18} />
+                    {selectedLesson.title}
+                  </h3>
                 </div>
-              )}
+                <div className="text-right">
+                  <div className="text-xs text-slate-500">Điểm trung bình</div>
+                  <div className="text-xl font-bold text-blue-700">{lessonScore.normalized.toFixed(1)}/10</div>
+                  <div className="text-xs text-slate-500">Đã trả lời {lessonScore.answeredCount}/{lessonQuestions.length}</div>
+                </div>
+              </div>
 
-              <div className="space-y-4">
-                {!hasQuizQuestions && (
-                  <div className="bg-slate-50 border border-slate-100 rounded-lg p-3 text-sm text-slate-600">
-                    {isAdminView ? 'Bài học chưa có câu hỏi.' : 'Bài học chưa có câu trắc nghiệm để làm.'}
+              <div className="p-4">
+                {isLessonLocked && (
+                  <div className="bg-orange-50 border border-orange-100 text-orange-700 rounded-lg p-3 mb-3 flex gap-2 items-start">
+                    <Lock size={16} className="mt-0.5" />
+                    <div>
+                      <p className="font-semibold text-sm">Chưa mở khóa bài học</p>
+                      <p className="text-xs">Hoàn thành điều kiện để mở.</p>
+                    </div>
                   </div>
                 )}
-                {isAdminView && canEdit && (
-                  <div className="flex justify-end">
-                    <button
-                      onClick={handleAddQuestion}
-                      disabled={!canEdit}
-                      className={`px-3 py-2 text-sm font-semibold rounded-md ${canEdit ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-slate-200 text-slate-500 cursor-not-allowed'}`}
-                    >
-                      + Thêm câu hỏi
-                    </button>
-                  </div>
-                )}
-                {lessonQuestions.map((q, idx) => {
-                  if (isAdminView) {
+
+                <div className="space-y-4">
+                  {!hasQuizQuestions && (
+                    <div className="bg-slate-50 border border-slate-100 rounded-lg p-3 text-sm text-slate-600">
+                      Bài học chưa có câu trắc nghiệm để làm.
+                    </div>
+                  )}
+                  {lessonQuestions.map((q, idx) => {
+                    const latest = profileAttempts.filter(a => a.questionId === q.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+                    const questionAnswered = revealed[q.id] || !!latest;
                     return (
-                      <div key={q.id} className="border border-slate-100 rounded-lg p-3 shadow-[0_4px_12px_rgba(15,23,42,0.04)] space-y-3">
-                        <div className="flex items-center justify-between gap-2">
+                      <div key={q.id} className="border border-slate-100 rounded-lg p-3 shadow-[0_4px_12px_rgba(15,23,42,0.04)]">
+                        <div className="flex items-center justify-between gap-2 mb-2">
                           <div className="flex items-center gap-2">
                             <div className="w-7 h-7 rounded-full bg-blue-50 text-blue-700 flex items-center justify-center text-sm font-semibold">{idx + 1}</div>
-                          <input
-                            value={q.prompt}
-                            onChange={e => handleQuestionChange(q.id, { prompt: e.target.value })}
-                            className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
-                            placeholder="Nhập nội dung câu hỏi"
-                            disabled={!canEdit}
-                          />
-                        </div>
-                        <select
-                          value={q.type}
-                          onChange={e => handleQuestionChange(q.id, { type: e.target.value as LearningQuestion['type'] })}
-                          className="text-xs border border-slate-200 rounded-lg px-2 py-1"
-                          disabled={!canEdit}
-                        >
-                          <option value="MULTIPLE_CHOICE">Trắc nghiệm</option>
-                          <option value="OPEN">Tự luận</option>
-                        </select>
-                      </div>
-
-                        {q.type === 'MULTIPLE_CHOICE' ? (
-                          <div className="space-y-2">
-                            {(q.options || []).map((opt, i) => (
-                              <div key={`${q.id}-opt-${i}`} className="flex items-center gap-2">
-                                <input
-                                  type="radio"
-                                  name={`correct-${q.id}`}
-                                  checked={q.correctOption === i}
-                                  onChange={() => handleQuestionChange(q.id, { correctOption: i })}
-                                  disabled={!canEdit}
-                                />
-                                <input
-                                  value={opt}
-                                  onChange={e => handleOptionChange(q.id, i, e.target.value)}
-                                  className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm"
-                                  placeholder={`Lựa chọn ${i + 1}`}
-                                  disabled={!canEdit}
-                                />
-                                {(q.options || []).length > 2 && (
-                                  <button
-                                    onClick={() => handleRemoveOption(q.id, i)}
-                                    className={`text-xs ${canEdit ? 'text-red-500 hover:text-red-600' : 'text-slate-300 cursor-not-allowed'}`}
-                                    disabled={!canEdit}
-                                  >
-                                    Xóa
-                                  </button>
-                                )}
-                              </div>
-                            ))}
-                            <div className="flex items-center gap-2">
-                              <button
-                                onClick={() => handleAddOption(q.id)}
-                                disabled={!canEdit}
-                                className={`text-xs px-3 py-1.5 rounded-md ${canEdit ? 'bg-slate-100 text-slate-700 hover:bg-slate-200' : 'bg-slate-200 text-slate-500 cursor-not-allowed'}`}
-                              >
-                                + Thêm đáp án
-                              </button>
-                              <span className="text-[11px] text-slate-500">Tích chọn đáp án đúng ở đầu dòng.</span>
-                            </div>
+                            <p className="font-medium text-slate-800">{q.prompt}</p>
                           </div>
-                        ) : (
-                          <textarea
-                            value={q.answerGuide || ''}
-                            onChange={e => handleQuestionChange(q.id, { answerGuide: e.target.value })}
-                            className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
-                            placeholder="Gợi ý/đáp án mẫu cho câu tự luận"
-                            rows={3}
-                            disabled={!canEdit}
-                          />
-                        )}
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                          <input
-                            type="number"
-                            value={q.maxScore || 10}
-                            onChange={e => handleQuestionChange(q.id, { maxScore: Number(e.target.value) || 0 })}
-                            className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
-                            placeholder="Điểm tối đa"
-                            disabled={!canEdit}
-                          />
-                          <input
-                            value={(q.answerKeywords || []).join(', ')}
-                            onChange={e => handleQuestionChange(q.id, { answerKeywords: e.target.value.split(',').map(x => x.trim()).filter(Boolean) })}
-                            className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
-                            placeholder="Từ khóa (ngăn cách bởi dấu phẩy)"
-                            disabled={!canEdit}
-                          />
+                          <span className="text-xs px-2 py-1 rounded-full border border-slate-200 bg-slate-50 text-slate-600">
+                            Trắc nghiệm
+                          </span>
                         </div>
-                        <div className="flex justify-end">
-                          <button
-                            onClick={() => handleDeleteQuestion(q.id)}
-                            disabled={!canEdit}
-                            className={`text-xs ${canEdit ? 'text-red-500 hover:text-red-600' : 'text-slate-300 cursor-not-allowed'}`}
-                          >
-                            Xóa câu hỏi
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  }
 
-                  const latest = profileAttempts.filter(a => a.questionId === q.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
-                  const questionAnswered = revealed[q.id] || !!latest;
-                  return (
-                    <div key={q.id} className="border border-slate-100 rounded-lg p-3 shadow-[0_4px_12px_rgba(15,23,42,0.04)]">
-                      <div className="flex items-center justify-between gap-2 mb-2">
-                        <div className="flex items-center gap-2">
-                          <div className="w-7 h-7 rounded-full bg-blue-50 text-blue-700 flex items-center justify-center text-sm font-semibold">{idx + 1}</div>
-                          <p className="font-medium text-slate-800">{q.prompt}</p>
-                        </div>
-                        <span className="text-xs px-2 py-1 rounded-full border border-slate-200 bg-slate-50 text-slate-600">
-                          {q.type === 'MULTIPLE_CHOICE' ? 'Trắc nghiệm' : 'Tự luận'}
-                        </span>
-                      </div>
-
-                      {q.type === 'MULTIPLE_CHOICE' ? (
                         <div className="space-y-2">
                           {q.options?.map((opt, i) => (
                             <label key={opt} className={`flex items-center gap-2 border rounded-lg px-3 py-2 cursor-pointer transition ${answers[q.id]?.selectedOption === i ? 'border-blue-400 bg-blue-50' : 'border-slate-200 hover:border-blue-200'}`}>
                               <input
                                 type="radio"
-                                disabled={isLessonLocked || !canEdit || !activeProfile || isAdminView}
+                                disabled={isLessonLocked || !canEdit || !activeProfile}
                                 checked={answers[q.id]?.selectedOption === i}
                                 onChange={() => setAnswers(prev => ({ ...prev, [q.id]: { ...prev[q.id], selectedOption: i } }))}
                               />
@@ -779,339 +592,47 @@ export const Elearning: React.FC<ElearningProps> = ({
                             </label>
                           ))}
                         </div>
-                      ) : (
-                        <textarea
-                          disabled={isLessonLocked || !canEdit || !activeProfile || isAdminView}
-                          value={answers[q.id]?.answerText || ''}
-                          onChange={e => setAnswers(prev => ({ ...prev, [q.id]: { ...prev[q.id], answerText: e.target.value } }))}
-                          placeholder="Nhập câu trả lời của bạn..."
-                          className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          rows={3}
-                        />
-                      )}
 
-                      <div className="mt-3 flex items-center gap-2">
-                        <button
-                          onClick={() => handleAttemptSubmit(q)}
-                          disabled={isLessonLocked || !canEdit || !activeProfile || isAdminView}
-                          className={`px-3 py-2 rounded-md text-sm font-semibold flex items-center gap-2 ${isLessonLocked || !activeProfile || isAdminView ? 'bg-slate-200 text-slate-500 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
-                        >
-                          <CheckCircle2 size={16} /> Nộp & xem đáp án
-                        </button>
-                        {latest && (
-                          <span className="text-xs text-slate-500">Lần gần nhất: {latest.score}/10</span>
-                        )}
-                      </div>
+                        <div className="mt-3 flex items-center gap-2">
+                          <button
+                            onClick={() => handleAttemptSubmit(q)}
+                            disabled={isLessonLocked || !canEdit || !activeProfile}
+                            className={`px-3 py-2 rounded-md text-sm font-semibold flex items-center gap-2 ${isLessonLocked || !activeProfile ? 'bg-slate-200 text-slate-500 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
+                          >
+                            <CheckCircle2 size={16} /> Nộp & xem đáp án
+                          </button>
+                          {latest && (
+                            <span className="text-xs text-slate-500">Lần gần nhất: {latest.score}/10</span>
+                          )}
+                        </div>
 
-                      {questionAnswered && (
-                        <div className="mt-3 bg-slate-50 border border-slate-100 rounded-lg p-3 text-sm">
-                          {q.type === 'MULTIPLE_CHOICE' ? (
+                        {questionAnswered && (
+                          <div className="mt-3 bg-slate-50 border border-slate-100 rounded-lg p-3 text-sm">
                             <p className="text-green-700 font-medium flex items-center gap-2">
                               <ShieldCheck size={16} />
                               Đáp án đúng: {q.options?.[q.correctOption || 0]}
                             </p>
-                          ) : (
-                            <div className="space-y-1">
-                              <p className="font-semibold text-slate-800">Gợi ý tham khảo</p>
-                              <p className="text-slate-600 text-sm">{q.answerGuide}</p>
-                              {q.answerKeywords && (
-                                <p className="text-[11px] text-slate-500">Từ khóa cần có: {q.answerKeywords.join(', ')}</p>
-                              )}
-                            </div>
-                          )}
-                          {latest && (
-                            <p className="text-xs text-slate-500 mt-1">Điểm bạn đạt: {latest.score}/10 - {latest.feedback}</p>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div className="mt-4 flex flex-wrap gap-2 items-center justify-between">
-                <div className="text-sm text-slate-700 flex items-center gap-2">
-                  <BookOpenCheck size={16} className="text-blue-600" />
-                  {lessonScore.completed
-                    ? 'Bài học đã đạt yêu cầu'
-                    : isAdminView
-                      ? 'Hoàn thành tất cả câu hỏi để đạt chuẩn'
-                      : 'Hoàn thành tất cả câu hỏi trắc nghiệm để đạt chuẩn'}
+                            {latest && (
+                              <p className="text-xs text-slate-500 mt-1">Điểm bạn đạt: {latest.score}/10 - {latest.feedback}</p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
-                {isAdminView && (
-                  <div className="flex gap-2">
-                    <button
-                      onClick={handleMarkLessonDone}
-                      disabled={!lessonScore.completed || !canEdit || !activeProfile}
-                      className={`px-3 py-2 rounded-md text-sm font-semibold flex items-center gap-2 ${lessonScore.completed && canEdit && activeProfile ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-slate-200 text-slate-500 cursor-not-allowed'}`}
-                    >
-                      <Trophy size={16} /> Đánh dấu hoàn thành
-                    </button>
+
+                <div className="mt-4 flex flex-wrap gap-2 items-center justify-between">
+                  <div className="text-sm text-slate-700 flex items-center gap-2">
+                    <BookOpenCheck size={16} className="text-blue-600" />
+                    {lessonScore.completed ? 'Bài học đã đạt yêu cầu' : 'Hoàn thành tất cả câu hỏi trắc nghiệm để đạt chuẩn'}
                   </div>
-                )}
+                </div>
               </div>
             </div>
           </div>
-        </div>
 
-        <div className="space-y-4">
-          {isAdminView ? (
-            <>
-              <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-4 space-y-3">
-                <div className="flex items-center gap-2">
-                  <Users size={16} className="text-blue-600" />
-                  <p className="font-semibold text-slate-800">Hồ sơ học tập</p>
-                </div>
-
-                {activeProfile ? (
-                  <>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div className="bg-slate-50 border border-slate-100 rounded-lg p-3">
-                        <p className="text-xs text-slate-500">Thời gian làm việc</p>
-                        <p className="text-lg font-semibold text-slate-800">{activeProfile.tenureMonths} tháng</p>
-                      </div>
-                      <div className="bg-slate-50 border border-slate-100 rounded-lg p-3">
-                        <p className="text-xs text-slate-500">Số lần đi sự kiện</p>
-                        <p className="text-lg font-semibold text-slate-800">{totalEventCount}</p>
-                      </div>
-                      <div className="bg-slate-50 border border-slate-100 rounded-lg p-3">
-                        <p className="text-xs text-slate-500">Điểm xử lý tình huống</p>
-                        <p className="text-lg font-semibold text-slate-800">{activeProfile.scenarioScore}/10</p>
-                      </div>
-                      <div className="bg-slate-50 border border-slate-100 rounded-lg p-3">
-                        <p className="text-xs text-slate-500">Điểm trung bình bài học</p>
-                    <p className="text-lg font-semibold text-slate-800">{averageQuestionScore}/10</p>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <div className="space-y-1">
-                    <label className="text-xs text-slate-500">Gắn nhân sự (từ module Nhân sự)</label>
-                    <select
-                      value={profileDraft?.employeeId || ''}
-                      onChange={e => setProfileDraft(prev => prev ? { ...prev, employeeId: e.target.value || undefined } : prev)}
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
-                      disabled={!canEdit}
-                    >
-                      <option value="">Chưa gắn</option>
-                      {employees.map(emp => (
-                        <option key={emp.id} value={emp.id}>{emp.name} - {emp.phone}</option>
-                      ))}
-                    </select>
-                    {profileDraft?.employeeId && (
-                      <p className="text-[11px] text-slate-500">
-                        {employeesById.get(profileDraft.employeeId)?.role || ''} • {employeesById.get(profileDraft.employeeId)?.phone || ''}
-                      </p>
-                    )}
-                  </div>
-
-                  <label className="text-xs text-slate-500">Cập nhật nhanh hồ sơ</label>
-                  <div className="grid grid-cols-2 gap-2">
-                        <input
-                          type="number"
-                          value={profileDraft?.tenureMonths || 0}
-                          onChange={e => setProfileDraft(prev => prev ? { ...prev, tenureMonths: Number(e.target.value) } : prev)}
-                          className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
-                          placeholder="Tháng làm việc"
-                          disabled={!canEdit}
-                        />
-                        <input
-                          type="number"
-                          value={profileDraft?.eventsAttended || 0}
-                          onChange={e => setProfileDraft(prev => prev ? { ...prev, eventsAttended: Number(e.target.value) } : prev)}
-                          className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
-                          placeholder="Số sự kiện"
-                          disabled={!canEdit}
-                        />
-                        <input
-                          type="number"
-                          value={profileDraft?.scenarioScore || 0}
-                          onChange={e => setProfileDraft(prev => prev ? { ...prev, scenarioScore: Number(e.target.value) } : prev)}
-                          className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
-                          placeholder="Điểm tình huống"
-                          min={0}
-                          max={10}
-                          disabled={!canEdit}
-                        />
-                        <input
-                          type="text"
-                          value={profileDraft?.currentRank || ''}
-                          onChange={e => setProfileDraft(prev => prev ? { ...prev, currentRank: e.target.value } : prev)}
-                          className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
-                          placeholder="Danh hiệu hiện tại"
-                          disabled={!canEdit}
-                        />
-                      </div>
-                      <textarea
-                        value={profileDraft?.roleHistory.join(', ') || ''}
-                        onChange={e => setProfileDraft(prev => prev ? { ...prev, roleHistory: e.target.value.split(',').map(x => x.trim()).filter(Boolean) } : prev)}
-                        className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
-                        placeholder="Vai trò đã trải qua (phân tách bằng dấu phẩy)"
-                        rows={2}
-                        disabled={!canEdit}
-                      />
-                      <button
-                        onClick={handleSaveProfile}
-                        disabled={!canEdit}
-                        className={`w-full rounded-lg py-2 text-sm font-semibold transition ${canEdit ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-slate-200 text-slate-500 cursor-not-allowed'}`}
-                      >
-                        Lưu hồ sơ
-                      </button>
-                    </div>
-                  </>
-                ) : (
-                  <p className="text-sm text-slate-500">Chưa có hồ sơ. Thêm mới bên dưới.</p>
-                )}
-
-                <div className="border-t border-slate-100 pt-3">
-                  <label className="text-xs text-slate-500">Tạo hồ sơ mới</label>
-                  <div className="flex gap-2 mt-1">
-                    <input
-                      value={newProfileName}
-                      onChange={e => setNewProfileName(e.target.value)}
-                      placeholder="Tên nhân sự"
-                      className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm"
-                      disabled={!canEdit}
-                    />
-                    <select
-                      value={newProfileEmployeeId}
-                      onChange={e => setNewProfileEmployeeId(e.target.value)}
-                      className="w-56 border border-slate-200 rounded-lg px-3 py-2 text-sm"
-                      disabled={!canEdit}
-                    >
-                      <option value="">Chọn từ danh sách nhân sự</option>
-                      {employees.map(emp => (
-                        <option key={emp.id} value={emp.id}>{emp.name} - {emp.phone}</option>
-                      ))}
-                    </select>
-                    <button
-                      onClick={handleCreateProfile}
-                      disabled={!canEdit}
-                      className={`px-3 py-2 rounded-lg text-sm font-semibold ${canEdit ? 'bg-slate-800 text-white hover:bg-slate-900' : 'bg-slate-200 text-slate-500 cursor-not-allowed'}`}
-                    >
-                      Thêm
-                    </button>
-                  </div>
-                  {employees.length > 0 && (
-                    <p className="text-[11px] text-slate-500 mt-1">
-                      Gợi ý: tạo hồ sơ dựa trên nhân sự ở tab Nhân sự để theo dõi lộ trình.
-                    </p>
-                  )}
-                </div>
-              </div>
-
-              <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-4 space-y-3">
-                <div className="flex items-center gap-2">
-                  <Users size={16} className="text-blue-600" />
-                  <p className="font-semibold text-slate-800">Nhân sự chưa có hồ sơ</p>
-                </div>
-                {employeesWithoutProfile.length === 0 ? (
-                  <p className="text-sm text-slate-500">Tất cả nhân sự đã có hồ sơ Elearning.</p>
-                ) : (
-                  <div className="space-y-2">
-                    {employeesWithoutProfile.slice(0, 5).map(emp => (
-                      <div key={emp.id} className="flex items-center justify-between border border-slate-100 rounded-lg px-3 py-2">
-                        <div>
-                          <p className="text-sm font-semibold text-slate-800">{emp.name}</p>
-                          <p className="text-[11px] text-slate-500">{emp.role} • {emp.phone}</p>
-                        </div>
-                        <button
-                          onClick={() => handleCreateProfileFromEmployee(emp.id)}
-                          className="text-xs px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-                          disabled={!canEdit}
-                        >
-                          Tạo hồ sơ
-                        </button>
-                      </div>
-                    ))}
-                    {employeesWithoutProfile.length > 5 && (
-                      <p className="text-[11px] text-slate-500">... và {employeesWithoutProfile.length - 5} nhân sự khác.</p>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-4 space-y-3">
-                <div className="flex items-center gap-2">
-                  <Target size={16} className="text-blue-600" />
-                  <p className="font-semibold text-slate-800">Điều kiện mở khóa khóa học</p>
-                </div>
-                <div className="space-y-2">
-                  {selectedTrack.requirements?.minTenureMonths !== undefined && renderRequirementItem(
-                    `Tối thiểu ${selectedTrack.requirements?.minTenureMonths || 0} tháng làm việc`,
-                    (activeProfile?.tenureMonths || 0) >= (selectedTrack.requirements?.minTenureMonths || 0),
-                    'req-tenure'
-                  )}
-                  {selectedTrack.requirements?.minEvents !== undefined && renderRequirementItem(
-                    `Ít nhất ${selectedTrack.requirements.minEvents} sự kiện`,
-                    totalEventCount >= (selectedTrack.requirements.minEvents || 0),
-                    'req-events'
-                  )}
-                  {selectedTrack.requirements?.minScore !== undefined && renderRequirementItem(
-                    `Điểm trung bình ≥ ${selectedTrack.requirements.minScore}`,
-                    averageQuestionScore >= (selectedTrack.requirements.minScore || 0),
-                    'req-score'
-                  )}
-                  {selectedTrack.requirements?.minScenarioScore !== undefined && renderRequirementItem(
-                    `Điểm xử lý tình huống ≥ ${selectedTrack.requirements.minScenarioScore}`,
-                    (activeProfile?.scenarioScore || 0) >= (selectedTrack.requirements.minScenarioScore || 0),
-                    'req-scenario'
-                  )}
-                  {selectedTrack.requirements?.mandatoryRoles?.length ? renderRequirementItem(
-                    `Đã trải qua: ${selectedTrack.requirements.mandatoryRoles.join(', ')}`,
-                    selectedTrack.requirements.mandatoryRoles.every(r => (activeProfile?.roleHistory || []).includes(r)),
-                    'req-roles'
-                  ) : null}
-                </div>
-              </div>
-
-              <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-4 space-y-3">
-                <div className="flex items-center gap-2">
-                  <Crown size={16} className="text-amber-500" />
-                  <p className="font-semibold text-slate-800">Bậc danh hiệu & lương thưởng</p>
-                </div>
-                <div className="space-y-3">
-                  {rankStatuses.map(({ rank, eligible, reasons }) => (
-                    <div
-                      key={rank.id}
-                      className={`border rounded-lg p-3 ${eligible ? 'border-green-200 bg-green-50' : 'border-slate-100 bg-slate-50'}`}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2">
-                          {eligible ? <Award className="text-green-600" size={18} /> : <Lock className="text-slate-400" size={18} />}
-                          <div>
-                            <p className="font-semibold text-slate-800">{rank.name}</p>
-                            <p className="text-[11px] text-slate-500">Yêu cầu: {rank.minTenureMonths} tháng • {rank.minEvents} sự kiện • Điểm ≥ {rank.minAvgScore}</p>
-                          </div>
-                        </div>
-                        {eligible && canEdit && (
-                          <button
-                            onClick={() => activeProfile && onUpsertProfile({ ...activeProfile, currentRank: rank.name })}
-                            className="text-xs px-2 py-1 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-                          >
-                            Gắn danh hiệu
-                          </button>
-                        )}
-                      </div>
-                      {eligible ? (
-                        <p className="text-xs text-green-700 mt-1">Đã đủ điều kiện. Quy đổi phụ cấp: {rank.benefits.join(' • ')}</p>
-                      ) : (
-                        <ul className="text-[11px] text-slate-600 mt-1 list-disc list-inside space-y-0.5">
-                          {reasons.map(r => <li key={r}>{r}</li>)}
-                        </ul>
-                      )}
-                    </div>
-                  ))}
-                </div>
-                {nextEligibleRank && (
-                  <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 text-sm text-blue-800 flex items-center gap-2">
-                    <Trophy size={16} />
-                    {`Bạn gần đạt: ${nextEligibleRank.rank.name}. Tập trung hoàn thành yêu cầu còn thiếu.`}
-                  </div>
-                )}
-              </div>
-            </>
-          ) : (
+          <div className="space-y-4">
             <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-4 space-y-3">
               <div className="flex items-center gap-2">
                 <Trophy size={16} className="text-blue-600" />
@@ -1148,9 +669,591 @@ export const Elearning: React.FC<ElearningProps> = ({
                 <p className="text-[11px] text-slate-500">Hạng của bạn: {activeLeaderboardIndex + 1}/{leaderboard.length}</p>
               )}
             </div>
-          )}
+          </div>
         </div>
       </div>
+    );
+  }
+
+  // Admin view
+  return (
+    <div className="space-y-4">
+      {renderHero()}
+
+      {adminTab === 'profiles' ? (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="lg:col-span-2 space-y-4">
+            <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 flex flex-col md:flex-row gap-3">
+              <div className="flex-1">
+                <label className="text-xs text-slate-500 font-medium">Chọn nhân sự</label>
+                <select
+                  value={selectedProfileId}
+                  onChange={e => setSelectedProfileId(e.target.value)}
+                  className="w-full mt-1 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  {profileOptions.map(p => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex-1">
+                <label className="text-xs text-slate-500 font-medium">Chọn khóa học</label>
+                <select
+                  value={selectedTrackId}
+                  onChange={e => setSelectedTrackId(e.target.value)}
+                  className="w-full mt-1 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  {tracks.map(t => (
+                    <option key={t.id} value={t.id}>{t.title} ({t.level})</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <Users size={16} className="text-blue-600" />
+                <p className="font-semibold text-slate-800">Hồ sơ học tập</p>
+              </div>
+
+              {activeProfile ? (
+                <>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="bg-slate-50 border border-slate-100 rounded-lg p-3">
+                      <p className="text-xs text-slate-500">Thời gian làm việc</p>
+                      <p className="text-lg font-semibold text-slate-800">{activeProfile.tenureMonths} tháng</p>
+                    </div>
+                    <div className="bg-slate-50 border border-slate-100 rounded-lg p-3">
+                      <p className="text-xs text-slate-500">Số lần đi sự kiện</p>
+                      <p className="text-lg font-semibold text-slate-800">{totalEventCount}</p>
+                    </div>
+                    <div className="bg-slate-50 border border-slate-100 rounded-lg p-3">
+                      <p className="text-xs text-slate-500">Điểm xử lý tình huống</p>
+                      <p className="text-lg font-semibold text-slate-800">{activeProfile.scenarioScore}/10</p>
+                    </div>
+                    <div className="bg-slate-50 border border-slate-100 rounded-lg p-3">
+                      <p className="text-xs text-slate-500">Điểm trung bình bài học</p>
+                      <p className="text-lg font-semibold text-slate-800">{averageQuestionScore}/10</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="space-y-1">
+                      <label className="text-xs text-slate-500">Gắn nhân sự (từ module Nhân sự)</label>
+                      <select
+                        value={profileDraft?.employeeId || ''}
+                        onChange={e => setProfileDraft(prev => prev ? { ...prev, employeeId: e.target.value || undefined } : prev)}
+                        className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                        disabled={!canEdit}
+                      >
+                        <option value="">Chưa gắn</option>
+                        {employees.map(emp => (
+                          <option key={emp.id} value={emp.id}>{emp.name} - {emp.phone}</option>
+                        ))}
+                      </select>
+                      {profileDraft?.employeeId && (
+                        <p className="text-[11px] text-slate-500">
+                          {employeesById.get(profileDraft.employeeId)?.role || ''} • {employeesById.get(profileDraft.employeeId)?.phone || ''}
+                        </p>
+                      )}
+                    </div>
+
+                    <label className="text-xs text-slate-500">Cập nhật nhanh hồ sơ</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <input
+                        type="number"
+                        value={profileDraft?.tenureMonths || 0}
+                        onChange={e => setProfileDraft(prev => prev ? { ...prev, tenureMonths: Number(e.target.value) } : prev)}
+                        className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                        placeholder="Tháng làm việc"
+                        disabled={!canEdit}
+                      />
+                      <input
+                        type="number"
+                        value={profileDraft?.eventsAttended || 0}
+                        onChange={e => setProfileDraft(prev => prev ? { ...prev, eventsAttended: Number(e.target.value) } : prev)}
+                        className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                        placeholder="Số sự kiện"
+                        disabled={!canEdit}
+                      />
+                      <input
+                        type="number"
+                        value={profileDraft?.scenarioScore || 0}
+                        onChange={e => setProfileDraft(prev => prev ? { ...prev, scenarioScore: Number(e.target.value) } : prev)}
+                        className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                        placeholder="Điểm tình huống"
+                        min={0}
+                        max={10}
+                        disabled={!canEdit}
+                      />
+                      <input
+                        type="text"
+                        value={profileDraft?.currentRank || ''}
+                        onChange={e => setProfileDraft(prev => prev ? { ...prev, currentRank: e.target.value } : prev)}
+                        className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                        placeholder="Danh hiệu hiện tại"
+                        disabled={!canEdit}
+                      />
+                    </div>
+                    <textarea
+                      value={profileDraft?.roleHistory.join(', ') || ''}
+                      onChange={e => setProfileDraft(prev => prev ? { ...prev, roleHistory: e.target.value.split(',').map(x => x.trim()).filter(Boolean) } : prev)}
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                      placeholder="Vai trò đã trải qua (phân tách bằng dấu phẩy)"
+                      rows={2}
+                      disabled={!canEdit}
+                    />
+                    <button
+                      onClick={handleSaveProfile}
+                      disabled={!canEdit}
+                      className={`w-full rounded-lg py-2 text-sm font-semibold transition ${canEdit ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-slate-200 text-slate-500 cursor-not-allowed'}`}
+                    >
+                      Lưu hồ sơ
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <p className="text-sm text-slate-500">Chưa có hồ sơ. Thêm mới bên dưới.</p>
+              )}
+
+              <div className="border-t border-slate-100 pt-3">
+                <label className="text-xs text-slate-500">Tạo hồ sơ mới</label>
+                <div className="flex gap-2 mt-1">
+                  <input
+                    value={newProfileName}
+                    onChange={e => setNewProfileName(e.target.value)}
+                    placeholder="Tên nhân sự"
+                    className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                    disabled={!canEdit}
+                  />
+                  <select
+                    value={newProfileEmployeeId}
+                    onChange={e => setNewProfileEmployeeId(e.target.value)}
+                    className="w-56 border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                    disabled={!canEdit}
+                  >
+                    <option value="">Chọn từ danh sách nhân sự</option>
+                    {employees.map(emp => (
+                      <option key={emp.id} value={emp.id}>{emp.name} - {emp.phone}</option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={handleCreateProfile}
+                    disabled={!canEdit}
+                    className={`px-3 py-2 rounded-lg text-sm font-semibold ${canEdit ? 'bg-slate-800 text-white hover:bg-slate-900' : 'bg-slate-200 text-slate-500 cursor-not-allowed'}`}
+                  >
+                    Thêm
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <Crown size={16} className="text-amber-500" />
+                <p className="font-semibold text-slate-800">Bậc danh hiệu & lương thưởng</p>
+              </div>
+              <div className="space-y-3">
+                {rankStatuses.map(({ rank, eligible, reasons }) => (
+                  <div
+                    key={rank.id}
+                    className={`border rounded-lg p-3 ${eligible ? 'border-green-200 bg-green-50' : 'border-slate-100 bg-slate-50'}`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        {eligible ? <Award className="text-green-600" size={18} /> : <Lock className="text-slate-400" size={18} />}
+                        <div>
+                          <p className="font-semibold text-slate-800">{rank.name}</p>
+                          <p className="text-[11px] text-slate-500">Yêu cầu: {rank.minTenureMonths} tháng • {rank.minEvents} sự kiện • Điểm ≥ {rank.minAvgScore}</p>
+                        </div>
+                      </div>
+                      {eligible && canEdit && (
+                        <button
+                          onClick={() => activeProfile && onUpsertProfile({ ...activeProfile, currentRank: rank.name })}
+                          className="text-xs px-2 py-1 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                        >
+                          Gắn danh hiệu
+                        </button>
+                      )}
+                    </div>
+                    {eligible ? (
+                      <p className="text-xs text-green-700 mt-1">Đã đủ điều kiện. Quy đổi phụ cấp: {rank.benefits.join(' • ')}</p>
+                    ) : (
+                      <ul className="text-[11px] text-slate-600 mt-1 list-disc list-inside space-y-0.5">
+                        {reasons.map(r => <li key={r}>{r}</li>)}
+                      </ul>
+                    )}
+                  </div>
+                ))}
+              </div>
+              {nextEligibleRank && (
+                <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 text-sm text-blue-800 flex items-center gap-2">
+                  <Trophy size={16} />
+                  {`Bạn gần đạt: ${nextEligibleRank.rank.name}. Tập trung hoàn thành yêu cầu còn thiếu.`}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <Users size={16} className="text-blue-600" />
+                <p className="font-semibold text-slate-800">Nhân sự chưa có hồ sơ</p>
+              </div>
+              {employeesWithoutProfile.length === 0 ? (
+                <p className="text-sm text-slate-500">Tất cả nhân sự đã có hồ sơ Elearning.</p>
+              ) : (
+                <div className="space-y-2">
+                  {employeesWithoutProfile.slice(0, 8).map(emp => (
+                    <div key={emp.id} className="flex items-center justify-between border border-slate-100 rounded-lg px-3 py-2">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-800">{emp.name}</p>
+                        <p className="text-[11px] text-slate-500">{emp.role} • {emp.phone}</p>
+                      </div>
+                      <button
+                        onClick={() => handleCreateProfileFromEmployee(emp.id)}
+                        className="text-xs px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                        disabled={!canEdit}
+                      >
+                        Tạo hồ sơ
+                      </button>
+                    </div>
+                  ))}
+                  {employeesWithoutProfile.length > 8 && (
+                    <p className="text-[11px] text-slate-500">... và {employeesWithoutProfile.length - 8} nhân sự khác.</p>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <Trophy size={16} className="text-blue-600" />
+                <p className="font-semibold text-slate-800">Bảng xếp hạng</p>
+              </div>
+              {topLeaderboard.length === 0 ? (
+                <p className="text-sm text-slate-500">Chưa có dữ liệu xếp hạng.</p>
+              ) : (
+                <div className="space-y-2">
+                  {topLeaderboard.map((row, index) => (
+                    <div
+                      key={row.profile.id}
+                      className="flex items-center justify-between border rounded-lg px-3 py-2 border-slate-100 bg-slate-50"
+                    >
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 text-xs font-semibold text-slate-500">{index + 1}</div>
+                        <div>
+                          <p className="text-sm font-semibold text-slate-800">{row.profile.name}</p>
+                          <p className="text-[11px] text-slate-500">{row.completed}/{lessonsForStats} bài • {row.averageScore.toFixed(1)}/10</p>
+                        </div>
+                      </div>
+                      <div className="text-xs font-semibold text-slate-700">{row.completionRate}%</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+          <div className="xl:col-span-2 space-y-4">
+            <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 flex flex-col md:flex-row gap-3">
+              <div className="flex-1">
+                <label className="text-xs text-slate-500 font-medium">Chọn khóa học</label>
+                <select
+                  value={selectedTrackId}
+                  onChange={e => setSelectedTrackId(e.target.value)}
+                  className="w-full mt-1 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  {tracks.map(t => (
+                    <option key={t.id} value={t.id}>{t.title} ({t.level})</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex-1">
+                <label className="text-xs text-slate-500 font-medium">Chọn bài học</label>
+                <select
+                  value={selectedLessonId}
+                  onChange={e => setSelectedLessonId(e.target.value)}
+                  className="w-full mt-1 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  {selectedTrack?.lessons.map(l => (
+                    <option key={l.id} value={l.id}>{l.title}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-4 space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Sparkles size={16} className="text-blue-600" />
+                  <p className="font-semibold text-slate-800">Thông tin khóa học</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <input
+                  value={selectedTrack.title}
+                  onChange={e => updateSelectedTrack(track => ({ ...track, title: e.target.value }))}
+                  className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                  placeholder="Tiêu đề khóa học"
+                  disabled={!canEdit}
+                />
+                <input
+                  value={selectedTrack.badge}
+                  onChange={e => updateSelectedTrack(track => ({ ...track, badge: e.target.value }))}
+                  className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                  placeholder="Badge / danh hiệu"
+                  disabled={!canEdit}
+                />
+                <select
+                  value={selectedTrack.level}
+                  onChange={e => updateSelectedTrack(track => ({ ...track, level: e.target.value as LearningTrack['level'] }))}
+                  className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                  disabled={!canEdit}
+                >
+                  <option value="BASE">BASE</option>
+                  <option value="ADVANCED">ADVANCED</option>
+                  <option value="MASTER">MASTER</option>
+                </select>
+                <select
+                  value={selectedTrack.focus}
+                  onChange={e => updateSelectedTrack(track => ({ ...track, focus: e.target.value as LearningTrack['focus'] }))}
+                  className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                  disabled={!canEdit}
+                >
+                  <option value="OPERATIONS">OPERATIONS</option>
+                  <option value="CONTENT">CONTENT</option>
+                  <option value="SALES">SALES</option>
+                  <option value="LOGISTICS">LOGISTICS</option>
+                  <option value="LEADERSHIP">LEADERSHIP</option>
+                </select>
+              </div>
+              <textarea
+                value={selectedTrack.description}
+                onChange={e => updateSelectedTrack(track => ({ ...track, description: e.target.value }))}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                placeholder="Mô tả ngắn"
+                rows={2}
+                disabled={!canEdit}
+              />
+            </div>
+
+            <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-4 space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <BookOpenCheck size={16} className="text-blue-600" />
+                  <p className="font-semibold text-slate-800">Thông tin bài học</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <input
+                  value={selectedLesson.title}
+                  onChange={e => updateSelectedLesson(lesson => ({ ...lesson, title: e.target.value }))}
+                  className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                  placeholder="Tiêu đề bài học"
+                  disabled={!canEdit}
+                />
+                <input
+                  value={selectedLesson.duration || ''}
+                  onChange={e => updateSelectedLesson(lesson => ({ ...lesson, duration: e.target.value }))}
+                  className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                  placeholder="Thời lượng (ví dụ 10:00)"
+                  disabled={!canEdit}
+                />
+                <input
+                  value={selectedLesson.videoUrl}
+                  onChange={e => updateSelectedLesson(lesson => ({ ...lesson, videoUrl: e.target.value }))}
+                  className="border border-slate-200 rounded-lg px-3 py-2 text-sm md:col-span-2"
+                  placeholder="URL video (YouTube embed)"
+                  disabled={!canEdit}
+                />
+              </div>
+              <textarea
+                value={selectedLesson.summary}
+                onChange={e => updateSelectedLesson(lesson => ({ ...lesson, summary: e.target.value }))}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                placeholder="Tóm tắt bài học"
+                rows={2}
+                disabled={!canEdit}
+              />
+              <input
+                value={selectedLesson.skills.join(', ')}
+                onChange={e => updateSelectedLesson(lesson => ({ ...lesson, skills: e.target.value.split(',').map(x => x.trim()).filter(Boolean) }))}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                placeholder="Kỹ năng (phân tách bằng dấu phẩy)"
+                disabled={!canEdit}
+              />
+            </div>
+
+            <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-4 space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 size={16} className="text-blue-600" />
+                  <p className="font-semibold text-slate-800">Câu hỏi</p>
+                </div>
+                <button
+                  onClick={handleAddQuestion}
+                  disabled={!canEdit}
+                  className={`px-3 py-2 text-sm font-semibold rounded-md ${canEdit ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-slate-200 text-slate-500 cursor-not-allowed'}`}
+                >
+                  + Thêm câu hỏi
+                </button>
+              </div>
+
+              {lessonQuestions.length === 0 && (
+                <div className="bg-slate-50 border border-slate-100 rounded-lg p-3 text-sm text-slate-600">
+                  Bài học chưa có câu hỏi.
+                </div>
+              )}
+
+              <div className="space-y-4">
+                {lessonQuestions.map((q, idx) => (
+                  <div key={q.id} className="border border-slate-100 rounded-lg p-3 shadow-[0_4px_12px_rgba(15,23,42,0.04)] space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-full bg-blue-50 text-blue-700 flex items-center justify-center text-sm font-semibold">{idx + 1}</div>
+                        <input
+                          value={q.prompt}
+                          onChange={e => handleQuestionChange(q.id, { prompt: e.target.value })}
+                          className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                          placeholder="Nhập nội dung câu hỏi"
+                          disabled={!canEdit}
+                        />
+                      </div>
+                      <select
+                        value={q.type}
+                        onChange={e => handleQuestionChange(q.id, { type: e.target.value as LearningQuestion['type'] })}
+                        className="text-xs border border-slate-200 rounded-lg px-2 py-1"
+                        disabled={!canEdit}
+                      >
+                        <option value="MULTIPLE_CHOICE">Trắc nghiệm</option>
+                        <option value="OPEN">Tự luận</option>
+                      </select>
+                    </div>
+
+                    {q.type === 'MULTIPLE_CHOICE' ? (
+                      <div className="space-y-2">
+                        {(q.options || []).map((opt, i) => (
+                          <div key={`${q.id}-opt-${i}`} className="flex items-center gap-2">
+                            <input
+                              type="radio"
+                              name={`correct-${q.id}`}
+                              checked={q.correctOption === i}
+                              onChange={() => handleQuestionChange(q.id, { correctOption: i })}
+                              disabled={!canEdit}
+                            />
+                            <input
+                              value={opt}
+                              onChange={e => handleOptionChange(q.id, i, e.target.value)}
+                              className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                              placeholder={`Lựa chọn ${i + 1}`}
+                              disabled={!canEdit}
+                            />
+                            {(q.options || []).length > 2 && (
+                              <button
+                                onClick={() => handleRemoveOption(q.id, i)}
+                                className={`text-xs ${canEdit ? 'text-red-500 hover:text-red-600' : 'text-slate-300 cursor-not-allowed'}`}
+                                disabled={!canEdit}
+                              >
+                                Xóa
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleAddOption(q.id)}
+                            disabled={!canEdit}
+                            className={`text-xs px-3 py-1.5 rounded-md ${canEdit ? 'bg-slate-100 text-slate-700 hover:bg-slate-200' : 'bg-slate-200 text-slate-500 cursor-not-allowed'}`}
+                          >
+                            + Thêm đáp án
+                          </button>
+                          <span className="text-[11px] text-slate-500">Tích chọn đáp án đúng ở đầu dòng.</span>
+                        </div>
+                      </div>
+                    ) : (
+                      <textarea
+                        value={q.answerGuide || ''}
+                        onChange={e => handleQuestionChange(q.id, { answerGuide: e.target.value })}
+                        className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                        placeholder="Gợi ý/đáp án mẫu cho câu tự luận"
+                        rows={3}
+                        disabled={!canEdit}
+                      />
+                    )}
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                      <input
+                        type="number"
+                        value={q.maxScore || 10}
+                        onChange={e => handleQuestionChange(q.id, { maxScore: Number(e.target.value) || 0 })}
+                        className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                        placeholder="Điểm tối đa"
+                        disabled={!canEdit}
+                      />
+                      <input
+                        value={(q.answerKeywords || []).join(', ')}
+                        onChange={e => handleQuestionChange(q.id, { answerKeywords: e.target.value.split(',').map(x => x.trim()).filter(Boolean) })}
+                        className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                        placeholder="Từ khóa (ngăn cách bởi dấu phẩy)"
+                        disabled={!canEdit}
+                      />
+                    </div>
+                    <div className="flex justify-end">
+                      <button
+                        onClick={() => handleDeleteQuestion(q.id)}
+                        disabled={!canEdit}
+                        className={`text-xs ${canEdit ? 'text-red-500 hover:text-red-600' : 'text-slate-300 cursor-not-allowed'}`}
+                      >
+                        Xóa câu hỏi
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <Target size={16} className="text-blue-600" />
+                <p className="font-semibold text-slate-800">Điều kiện mở khóa khóa học</p>
+              </div>
+              <div className="space-y-2">
+                {selectedTrack.requirements?.minTenureMonths !== undefined && renderRequirementItem(
+                  `Tối thiểu ${selectedTrack.requirements?.minTenureMonths || 0} tháng làm việc`,
+                  (activeProfile?.tenureMonths || 0) >= (selectedTrack.requirements?.minTenureMonths || 0),
+                  'req-tenure'
+                )}
+                {selectedTrack.requirements?.minEvents !== undefined && renderRequirementItem(
+                  `Ít nhất ${selectedTrack.requirements.minEvents} sự kiện`,
+                  totalEventCount >= (selectedTrack.requirements.minEvents || 0),
+                  'req-events'
+                )}
+                {selectedTrack.requirements?.minScore !== undefined && renderRequirementItem(
+                  `Điểm trung bình ≥ ${selectedTrack.requirements.minScore}`,
+                  averageQuestionScore >= (selectedTrack.requirements.minScore || 0),
+                  'req-score'
+                )}
+                {selectedTrack.requirements?.minScenarioScore !== undefined && renderRequirementItem(
+                  `Điểm xử lý tình huống ≥ ${selectedTrack.requirements.minScenarioScore}`,
+                  (activeProfile?.scenarioScore || 0) >= (selectedTrack.requirements.minScenarioScore || 0),
+                  'req-scenario'
+                )}
+                {selectedTrack.requirements?.mandatoryRoles?.length ? renderRequirementItem(
+                  `Đã trải qua: ${selectedTrack.requirements.mandatoryRoles.join(', ')}`,
+                  selectedTrack.requirements.mandatoryRoles.every(r => (activeProfile?.roleHistory || []).includes(r)),
+                  'req-roles'
+                ) : null}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
