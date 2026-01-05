@@ -19,6 +19,7 @@ interface EventManagerProps {
   quotations?: Quotation[];
   saleOrders?: any[];
   canEdit?: boolean;
+  isAdmin?: boolean;
   onExportToEvent: (eventId: string, itemId: string, qty: number) => void;
   onExportPackageToEvent?: (eventId: string, packageId: string, qty: number) => void;
   onSyncQuotation?: (eventId: string, quotationId: string) => void;
@@ -232,6 +233,18 @@ const generateEventCode = (dateStr?: string) => {
   return `EB-${cleanDate}-${suffix}`;
 };
 
+const getEventTypeLabel = (type?: EventProfile['eventType']) => {
+  const found = EVENT_TYPE_OPTIONS.find(opt => opt.value === type);
+  return found?.label;
+};
+
+const getAudienceLabels = (aud?: EventProfile['audience']) => {
+  if (!aud || aud.length === 0) return '';
+  return aud
+    .map(a => AUDIENCE_OPTIONS.find(opt => opt.value === a)?.label || a)
+    .join(', ');
+};
+
 const formatMonthLabel = (key: string) => {
   const parsed = new Date(`${key}-01`);
   if (Number.isNaN(parsed.getTime())) return key;
@@ -246,6 +259,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
   quotations = [],
   saleOrders = [],
   canEdit = true,
+  isAdmin = false,
   onExportToEvent,
   onExportPackageToEvent,
   onSyncQuotation,
@@ -383,6 +397,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
 
   const selectedEvent = events.find(e => e.id === selectedEventId);
   const eventProfile = selectedEvent?.eventProfile || {};
+  const canEditProfile = canEdit && isAdmin;
   const linkedQuotation = selectedEvent?.quotationId ? quotations.find(q => q.id === selectedEvent.quotationId) : null;
   const fallbackProcessSteps = useMemo(() => createDefaultProcessSteps(), [selectedEventId]);
   const processSteps = selectedEvent?.processSteps && selectedEvent.processSteps.length > 0 ? selectedEvent.processSteps : fallbackProcessSteps;
@@ -787,7 +802,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
   };
 
   const updateEventProfile = (patch: Partial<EventProfile>) => {
-    if (!selectedEvent || !onUpdateEvent) return;
+    if (!selectedEvent || !onUpdateEvent || !canEditProfile) return;
     onUpdateEvent(selectedEvent.id, { eventProfile: { ...(selectedEvent.eventProfile || {}), ...patch } });
   };
 
@@ -800,6 +815,22 @@ export const EventManager: React.FC<EventManagerProps> = ({
     const current = eventProfile.audience || [];
     const next = current.includes(aud) ? current.filter(a => a !== aud) : [...current, aud];
     updateEventProfile({ audience: next });
+  };
+
+  const generateAiGoal = () => {
+    if (!canEditProfile) return;
+    const org = eventProfile.organization || selectedEvent?.client || 'đối tác';
+    const type = getEventTypeLabel(eventProfile.eventType) || 'chương trình trải nghiệm';
+    const audience = getAudienceLabels(eventProfile.audience) || 'học sinh và phụ huynh';
+    const scale =
+      eventProfile.attendanceMin !== undefined || eventProfile.attendanceMax !== undefined
+        ? `quy mô ${eventProfile.attendanceMin ?? 0} - ${eventProfile.attendanceMax ?? 0} người`
+        : 'quy mô phù hợp';
+    const salesNote = salesScopeIsSelling
+      ? ` thúc đẩy doanh thu mục tiêu ${eventProfile.saleRevenueTarget ? `${eventProfile.saleRevenueTarget.toLocaleString()}đ` : 'đã đặt'}.`
+      : '.';
+    const suggestion = `Tăng nhận diện ${org} qua ${type}, mang lại trải nghiệm học tập sáng tạo cho ${audience}, đảm bảo vận hành trơn tru ${scale} và xây dựng thiện cảm với nhà trường${salesNote}`;
+    updateEventProfile({ generalGoal: suggestion });
   };
 
   const handleStaffSelect = (empId: string) => {
@@ -1234,6 +1265,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
   const vatExpensesTotal = (selectedEvent?.expenses || []).filter(exp => exp.vatInvoiceLink).reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
   const advancePaidAmountNumber = Number(advancePaidAmountInput || selectedEvent?.advancePaidAmount || 0) || 0;
   const advanceRefundAmount = advancePaidAmountNumber - vatExpensesTotal;
+  const salesScopeIsSelling = ['SELLING', 'LIGHT_ADVICE', 'CUSTOM'].includes(eventProfile.salesScope || '');
   const salesScopeLabel = useMemo(() => {
     const found = SALES_SCOPE_OPTIONS.find(opt => opt.value === eventProfile.salesScope);
     if (found?.value === 'CUSTOM' && eventProfile.salesScopeNote) return eventProfile.salesScopeNote;
@@ -1267,6 +1299,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
     .filter(order => (order.type || '') === 'RETURN')
     .reduce((sum, order) => sum + Math.abs(order.total || order.subtotal || 0), 0);
   const saleOrdersRevenue = Math.max(0, saleOrderRevenueTotal - saleOrderReturnTotal);
+  const saleGoodsValue = saleOrdersRevenue;
   const quotationRevenue = linkedQuotation?.totalAmount || 0;
   const revenue = quotationRevenue + saleOrdersRevenue;
   const grossProfit = revenue - totalCosts;
@@ -1277,6 +1310,9 @@ export const EventManager: React.FC<EventManagerProps> = ({
     if (!selectedEvent) return [];
     const lines: string[] = [];
     lines.push(`Sự kiện: ${selectedEvent.name || 'Chưa đặt tên'}${eventProfile.code ? ` (${eventProfile.code})` : ''}`);
+    const typeLabel = getEventTypeLabel(eventProfile.eventType);
+    if (typeLabel) lines.push(`Loại sự kiện: ${typeLabel}`);
+    if (eventProfile.organization) lines.push(`Đơn vị/Trường: ${eventProfile.organization}`);
     lines.push(`Thời gian: ${eventDateLabel || 'Chưa cập nhật'}${programTimeLabel ? ` • ${programTimeLabel}` : ''}`);
     const locationParts = [
       selectedEvent.location || '',
@@ -1284,12 +1320,54 @@ export const EventManager: React.FC<EventManagerProps> = ({
       eventProfile.setupArea ? `Khu vực: ${eventProfile.setupArea}` : ''
     ].filter(Boolean);
     lines.push(`Vị trí: ${locationParts.join(' • ') || 'Chưa cập nhật'}`);
+    if (eventProfile.mapLink) lines.push(`Map: ${eventProfile.mapLink}`);
     lines.push(`Mục tiêu chung: ${eventProfile.generalGoal || 'Chưa cập nhật'}`);
     lines.push(`Phạm vi: ${salesScopeLabel}`);
+    if (salesScopeIsSelling) {
+      lines.push(`Giá trị hàng hóa mang đi: ${saleGoodsValue.toLocaleString()}đ`);
+      if (eventProfile.saleRevenueTarget !== undefined) {
+        lines.push(`Mục tiêu doanh thu: ${eventProfile.saleRevenueTarget.toLocaleString()}đ`);
+      }
+    }
+    const aud = getAudienceLabels(eventProfile.audience);
+    if (aud) lines.push(`Đối tượng: ${aud}`);
+    if (eventProfile.attendanceMin !== undefined || eventProfile.attendanceMax !== undefined) {
+      lines.push(`Quy mô dự kiến: ${eventProfile.attendanceMin ?? 0} - ${eventProfile.attendanceMax ?? 0} người`);
+    }
+    if (eventProfile.partnerOrg) lines.push(`Đơn vị phối hợp/BTC: ${eventProfile.partnerOrg}`);
+    if (eventProfile.schoolContact && eventProfile.schoolContact.name) {
+      const sc = eventProfile.schoolContact;
+      const contactParts = [sc.phone, sc.zalo, sc.role].filter(Boolean).join(' • ');
+      lines.push(`Đầu mối phía trường: ${sc.name}${contactParts ? ` (${contactParts})` : ''}`);
+    }
+    if (eventProfile.einsteinPic) lines.push(`PIC Einstein Bus: ${eventProfile.einsteinPic}`);
     lines.push(`Chi phí tổ chức dự kiến: ${totalCosts.toLocaleString()}đ`);
     lines.push(`Kế hoạch hành động (TIMELINE): ${timelineEntries.length} mốc`);
     return lines;
-  }, [selectedEvent, eventProfile.code, eventProfile.addressDetail, eventProfile.setupArea, eventProfile.generalGoal, eventDateLabel, programTimeLabel, salesScopeLabel, totalCosts, timelineEntries.length]);
+  }, [
+    selectedEvent,
+    eventProfile.code,
+    eventProfile.eventType,
+    eventProfile.organization,
+    eventProfile.addressDetail,
+    eventProfile.setupArea,
+    eventProfile.generalGoal,
+    eventProfile.mapLink,
+    eventProfile.audience,
+    eventProfile.attendanceMin,
+    eventProfile.attendanceMax,
+    eventProfile.partnerOrg,
+    eventProfile.schoolContact,
+    eventProfile.einsteinPic,
+    eventProfile.saleRevenueTarget,
+    eventDateLabel,
+    programTimeLabel,
+    salesScopeLabel,
+    salesScopeIsSelling,
+    saleGoodsValue,
+    totalCosts,
+    timelineEntries.length
+  ]);
 
   return (
     <div className="flex flex-col lg:flex-row gap-6 lg:h-[calc(100vh-100px)]">
@@ -1983,8 +2061,14 @@ export const EventManager: React.FC<EventManagerProps> = ({
                       <h4 className="font-bold text-gray-800 text-xs uppercase flex items-center gap-2">
                         <BookOpen size={16} className="text-blue-600" /> Hồ sơ sự kiện (Event Profile)
                       </h4>
-                      <span className="text-[11px] text-slate-500 font-semibold">Tự động lấy từ thông tin sự kiện, cho phép bổ sung chi tiết</span>
+                      <span className="text-[11px] text-slate-500 font-semibold">Tự động lấy từ thông tin sự kiện{canEditProfile ? ', cho phép admin bổ sung chi tiết' : ' • Chế độ chỉ xem'}</span>
                     </div>
+
+                    {!canEditProfile && (
+                      <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm text-slate-600">
+                        Chỉ Admin được chỉnh sửa Hồ sơ sự kiện. Bạn đang xem ở chế độ đọc.
+                      </div>
+                    )}
 
                     <div className="space-y-4">
                       <div className="flex items-center justify-between">
@@ -2006,6 +2090,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
                             placeholder="Tên đầy đủ"
                             value={eventProfile.organization || ''}
                             onChange={e => updateEventProfile({ organization: e.target.value })}
+                            disabled={!canEditProfile}
                           />
                         </div>
                         <div>
@@ -2014,6 +2099,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
                             className="w-full border rounded-xl p-3 text-sm bg-white"
                             value={eventProfile.eventType || ''}
                             onChange={e => updateEventProfile({ eventType: (e.target.value || undefined) as EventProfile['eventType'] })}
+                            disabled={!canEditProfile}
                           >
                             <option value="">-- Chọn loại sự kiện --</option>
                             {EVENT_TYPE_OPTIONS.map(opt => (
@@ -2034,6 +2120,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
                                 className="w-full border rounded-xl p-3 text-sm"
                                 value={eventProfile.programTimeStart || ''}
                                 onChange={e => updateEventProfile({ programTimeStart: e.target.value })}
+                                disabled={!canEditProfile}
                               />
                               <span className="text-slate-400 text-sm">–</span>
                               <input 
@@ -2041,6 +2128,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
                                 className="w-full border rounded-xl p-3 text-sm"
                                 value={eventProfile.programTimeEnd || ''}
                                 onChange={e => updateEventProfile({ programTimeEnd: e.target.value })}
+                                disabled={!canEditProfile}
                               />
                             </div>
                           </div>
@@ -2050,6 +2138,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
                               className="w-full border rounded-xl p-3 text-sm bg-white"
                               value={eventProfile.programSession || ''}
                               onChange={e => updateEventProfile({ programSession: (e.target.value || undefined) as Event['session'] })}
+                              disabled={!canEditProfile}
                             >
                               <option value="">-- Buổi --</option>
                               {SESSION_OPTIONS.map(opt => (
@@ -2065,6 +2154,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
                             placeholder="Số nhà, phường/quận..."
                             value={eventProfile.addressDetail || ''}
                             onChange={e => updateEventProfile({ addressDetail: e.target.value })}
+                            disabled={!canEditProfile}
                           />
                         </div>
                         <div>
@@ -2074,6 +2164,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
                             placeholder="https://maps.google.com/..."
                             value={eventProfile.mapLink || ''}
                             onChange={e => updateEventProfile({ mapLink: e.target.value })}
+                            disabled={!canEditProfile}
                           />
                         </div>
                         <div className="md:col-span-3">
@@ -2083,6 +2174,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
                             placeholder="Ví dụ: sân/sảnh – STEAM Zone"
                             value={eventProfile.setupArea || ''}
                             onChange={e => updateEventProfile({ setupArea: e.target.value })}
+                            disabled={!canEditProfile}
                           />
                         </div>
                       </div>
@@ -2092,13 +2184,24 @@ export const EventManager: React.FC<EventManagerProps> = ({
                       <h5 className="text-[11px] font-black text-slate-500 uppercase tracking-widest">Mục tiêu & Phạm vi</h5>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="md:col-span-2">
-                          <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Mục tiêu chung</label>
+                          <div className="flex items-center justify-between gap-2">
+                            <label className="block text-[10px] font-black text-gray-400 uppercase">Mục tiêu chung</label>
+                            <button 
+                              type="button"
+                              onClick={generateAiGoal}
+                              disabled={!canEditProfile}
+                              className={`text-[11px] font-bold px-3 py-1 rounded-lg border ${canEditProfile ? 'border-blue-200 text-blue-600 hover:bg-blue-50' : 'border-slate-200 text-slate-400 cursor-not-allowed'}`}
+                            >
+                              Gợi ý mục tiêu (AI)
+                            </button>
+                          </div>
                           <textarea 
                             rows={3}
                             className="w-full border rounded-xl p-3 text-sm"
                             placeholder="3–5 dòng mô tả mục tiêu"
                             value={eventProfile.generalGoal || ''}
                             onChange={e => updateEventProfile({ generalGoal: e.target.value })}
+                            disabled={!canEditProfile}
                           />
                         </div>
                         <div className="md:col-span-2 space-y-2">
@@ -2111,7 +2214,8 @@ export const EventManager: React.FC<EventManagerProps> = ({
                                   key={opt.value}
                                   type="button"
                                   onClick={() => updateEventProfile({ salesScope: opt.value, salesScopeNote: opt.value === 'CUSTOM' ? eventProfile.salesScopeNote : undefined })}
-                                  className={`px-3 py-2 rounded-xl border text-sm font-semibold transition ${active ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-slate-200 text-slate-600 hover:border-slate-300'}`}
+                                  className={`px-3 py-2 rounded-xl border text-sm font-semibold transition ${active ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-slate-200 text-slate-600 hover:border-slate-300'} ${!canEditProfile ? 'opacity-60 cursor-not-allowed' : ''}`}
+                                  disabled={!canEditProfile}
                                 >
                                   {opt.label}
                                 </button>
@@ -2124,8 +2228,30 @@ export const EventManager: React.FC<EventManagerProps> = ({
                               placeholder="Ghi chú phạm vi bán hàng"
                               value={eventProfile.salesScopeNote || ''}
                               onChange={e => updateEventProfile({ salesScopeNote: e.target.value })}
+                              disabled={!canEditProfile}
                             />
                           )}
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:col-span-2">
+                          <div>
+                            <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Mục tiêu doanh thu (đ)</label>
+                            <input 
+                              type="number"
+                              className="w-full border rounded-xl p-3 text-sm"
+                              placeholder="0"
+                              value={eventProfile.saleRevenueTarget ?? ''}
+                              onChange={e => updateEventProfile({ saleRevenueTarget: e.target.value === '' ? undefined : Number(e.target.value) })}
+                              disabled={!canEditProfile}
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Giá trị hàng hóa mang đi (đ)</label>
+                            <input 
+                              className="w-full border rounded-xl p-3 text-sm bg-slate-50"
+                              value={saleGoodsValue.toLocaleString()}
+                              readOnly
+                            />
+                          </div>
                         </div>
                         <div>
                           <p className="block text-[10px] font-black text-gray-400 uppercase mb-2">Đối tượng tham gia</p>
@@ -2136,6 +2262,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
                                   type="checkbox"
                                   checked={(eventProfile.audience || []).includes(opt.value)}
                                   onChange={() => toggleAudience(opt.value)}
+                                  disabled={!canEditProfile}
                                 />
                                 {opt.label}
                               </label>
@@ -2151,6 +2278,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
                               placeholder="0"
                               value={eventProfile.attendanceMin ?? ''}
                               onChange={e => updateEventProfile({ attendanceMin: e.target.value === '' ? undefined : Number(e.target.value) })}
+                              disabled={!canEditProfile}
                             />
                           </div>
                           <div>
@@ -2161,6 +2289,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
                               placeholder="0"
                               value={eventProfile.attendanceMax ?? ''}
                               onChange={e => updateEventProfile({ attendanceMax: e.target.value === '' ? undefined : Number(e.target.value) })}
+                              disabled={!canEditProfile}
                             />
                           </div>
                         </div>
@@ -2177,6 +2306,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
                             placeholder="Tên đơn vị phối hợp"
                             value={eventProfile.partnerOrg || ''}
                             onChange={e => updateEventProfile({ partnerOrg: e.target.value })}
+                            disabled={!canEditProfile}
                           />
                         </div>
                         <div>
@@ -2186,6 +2316,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
                             placeholder="Tên người phụ trách"
                             value={eventProfile.einsteinPic || ''}
                             onChange={e => updateEventProfile({ einsteinPic: e.target.value })}
+                            disabled={!canEditProfile}
                           />
                         </div>
                       </div>
@@ -2197,6 +2328,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
                             placeholder="Tên"
                             value={eventProfile.schoolContact?.name || ''}
                             onChange={e => updateSchoolContact({ name: e.target.value })}
+                            disabled={!canEditProfile}
                           />
                         </div>
                         <div>
@@ -2206,6 +2338,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
                             placeholder="Số điện thoại"
                             value={eventProfile.schoolContact?.phone || ''}
                             onChange={e => updateSchoolContact({ phone: e.target.value })}
+                            disabled={!canEditProfile}
                           />
                         </div>
                         <div>
@@ -2215,6 +2348,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
                             placeholder="Zalo"
                             value={eventProfile.schoolContact?.zalo || ''}
                             onChange={e => updateSchoolContact({ zalo: e.target.value })}
+                            disabled={!canEditProfile}
                           />
                         </div>
                         <div>
@@ -2224,6 +2358,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
                             placeholder="Vai trò"
                             value={eventProfile.schoolContact?.role || ''}
                             onChange={e => updateSchoolContact({ role: e.target.value })}
+                            disabled={!canEditProfile}
                           />
                         </div>
                       </div>

@@ -255,6 +255,7 @@ export interface EventProfile {
   audience?: Array<'MN' | 'TIEU_HOC' | 'THCS' | 'THPT' | 'PH'>;
   attendanceMin?: number;
   attendanceMax?: number;
+  saleRevenueTarget?: number;
   partnerOrg?: string;
   schoolContact?: EventContact;
   einsteinPic?: string;

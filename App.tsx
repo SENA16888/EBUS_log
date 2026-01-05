@@ -1339,6 +1339,7 @@ const App: React.FC = () => {
           quotations={appState.quotations}
           saleOrders={appState.saleOrders || []}
           canEdit={can('EVENTS_EDIT')}
+          isAdmin={currentUser?.role === 'ADMIN'}
           onExportToEvent={guard('EVENTS_EDIT', handleExportToEvent)} 
           onExportPackageToEvent={guard('EVENTS_EDIT', handleExportPackageToEvent)}
           onSyncQuotation={guard('EVENTS_EDIT', handleSyncQuotation)}
