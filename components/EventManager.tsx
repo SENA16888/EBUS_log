@@ -392,6 +392,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
   const [advancePaidAmountInput, setAdvancePaidAmountInput] = useState('');
   const [advancePaidDateInput, setAdvancePaidDateInput] = useState('');
   const [advancePaidConfirmed, setAdvancePaidConfirmed] = useState(false);
+  const [advanceSkipped, setAdvanceSkipped] = useState(false);
   const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
   const [viewingItem, setViewingItem] = useState<InventoryItem | null>(null);
 
@@ -500,12 +501,14 @@ export const EventManager: React.FC<EventManagerProps> = ({
       setAdvancePaidAmountInput('');
       setAdvancePaidDateInput('');
       setAdvancePaidConfirmed(false);
+      setAdvanceSkipped(false);
       return;
     }
     const hasAmount = typeof selectedEvent.advancePaidAmount === 'number' && Number.isFinite(selectedEvent.advancePaidAmount);
     setAdvancePaidAmountInput(hasAmount ? selectedEvent.advancePaidAmount.toString() : '');
     setAdvancePaidDateInput(selectedEvent.advancePaidDate || '');
     setAdvancePaidConfirmed(!!selectedEvent.advancePaidConfirmed);
+    setAdvanceSkipped(!!selectedEvent.advanceSkipped);
   }, [selectedEvent]);
 
   const handleCreateEventSubmit = () => {
@@ -534,6 +537,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
       advancePaidAmount: 0,
       advancePaidDate: '',
       advancePaidConfirmed: false,
+      advanceSkipped: false,
       eventProfile: {
         code: generateEventCode(startDate),
         organization: newEventData.client,
@@ -775,6 +779,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
   };
 
   const handleAdvancePaidAmountChange = (value: string) => {
+    if (advanceSkipped) return;
     setAdvancePaidAmountInput(value);
     if (value === '') return;
     const parsed = Number(value);
@@ -784,7 +789,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
   };
 
   const handleAdvancePaidAmountBlur = () => {
-    if (!selectedEvent || !onUpdateEvent) return;
+    if (!selectedEvent || !onUpdateEvent || advanceSkipped) return;
     const parsed = Number(advancePaidAmountInput);
     const normalized = Number.isFinite(parsed) ? parsed : 0;
     onUpdateEvent(selectedEvent.id, { advancePaidAmount: normalized });
@@ -793,12 +798,19 @@ export const EventManager: React.FC<EventManagerProps> = ({
 
   const handleAdvancePaidDateChange = (value: string) => {
     setAdvancePaidDateInput(value);
+    if (advanceSkipped) return;
     persistAdvancePaid({ advancePaidDate: value });
   };
 
   const handleAdvancePaidConfirmedChange = (checked: boolean) => {
     setAdvancePaidConfirmed(checked);
+    if (advanceSkipped) return;
     persistAdvancePaid({ advancePaidConfirmed: checked });
+  };
+
+  const handleAdvanceSkippedChange = (checked: boolean) => {
+    setAdvanceSkipped(checked);
+    persistAdvancePaid({ advanceSkipped: checked });
   };
 
   const updateEventProfile = (patch: Partial<EventProfile>) => {
@@ -1265,6 +1277,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
   const vatExpensesTotal = (selectedEvent?.expenses || []).filter(exp => exp.vatInvoiceLink).reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
   const advancePaidAmountNumber = Number(advancePaidAmountInput || selectedEvent?.advancePaidAmount || 0) || 0;
   const advanceRefundAmount = advancePaidAmountNumber - vatExpensesTotal;
+  const payableVatAmount = advanceSkipped ? Math.max(0, vatExpensesTotal) : Math.max(0, vatExpensesTotal - advancePaidAmountNumber);
   const salesScopeIsSelling = ['SELLING', 'LIGHT_ADVICE', 'CUSTOM'].includes(eventProfile.salesScope || '');
   const salesScopeLabel = useMemo(() => {
     const found = SALES_SCOPE_OPTIONS.find(opt => opt.value === eventProfile.salesScope);
@@ -2567,50 +2580,81 @@ export const EventManager: React.FC<EventManagerProps> = ({
 
                   {/* ADVANCE PAID SUMMARY */}
                   <div className="bg-white p-6 rounded-2xl border border-emerald-200 shadow-sm space-y-4">
-                    <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
                       <h4 className="font-bold text-gray-800 text-xs uppercase flex items-center gap-2">
                         <CheckCircle size={16} className="text-emerald-600" /> Đã tạm ứng
                       </h4>
-                      <span className="text-[11px] text-slate-500 font-semibold">Chi phí có VAT: {vatExpensesTotal.toLocaleString()}đ</span>
+                      <div className="flex items-center gap-3 flex-wrap justify-end">
+                        <div className="text-[11px] text-slate-500 font-semibold">
+                          Tổng hóa đơn VAT: <span className="font-bold text-slate-700">{vatExpensesTotal.toLocaleString()}đ</span>
+                        </div>
+                        <label className="inline-flex items-center gap-2 text-[11px] font-semibold text-amber-700 bg-amber-50 border border-amber-100 px-3 py-1.5 rounded-lg">
+                          <input 
+                            type="checkbox" 
+                            className="w-4 h-4"
+                            checked={advanceSkipped}
+                            onChange={e => handleAdvanceSkippedChange(e.target.checked)}
+                          />
+                          Chưa làm tạm ứng
+                        </label>
+                      </div>
+                    </div>
+                    <div className="bg-slate-50 border border-slate-100 rounded-xl p-4 flex items-center justify-between flex-wrap gap-3">
+                      <div>
+                        <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Tổng tiền hóa đơn VAT</p>
+                        <p className="text-[11px] text-slate-500">Cộng các chi phí đã đính kèm hóa đơn VAT</p>
+                      </div>
+                      <p className="text-2xl font-black text-slate-800">{vatExpensesTotal.toLocaleString()}đ</p>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <label className="flex items-center gap-2 bg-emerald-50 border border-emerald-100 rounded-xl p-3 text-sm font-semibold text-emerald-700">
+                      <label className={`flex items-center gap-2 bg-emerald-50 border border-emerald-100 rounded-xl p-3 text-sm font-semibold ${advanceSkipped ? 'text-emerald-400 cursor-not-allowed opacity-60' : 'text-emerald-700'}`}>
                         <input 
                           type="checkbox" 
                           className="w-4 h-4"
-                          checked={advancePaidConfirmed}
+                          checked={advancePaidConfirmed && !advanceSkipped}
                           onChange={e => handleAdvancePaidConfirmedChange(e.target.checked)}
+                          disabled={advanceSkipped}
                         />
                         Đã nhận tạm ứng
                       </label>
                       <div>
-                        <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Số tiền đã tạm ứng (VNĐ)</label>
+                        <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">
+                          {advanceSkipped ? 'Số tiền cần thanh toán (VNĐ)' : 'Số tiền đã tạm ứng (VNĐ)'}
+                        </label>
                         <input 
                           type="number"
-                          className="w-full border rounded-xl p-3 text-sm font-bold text-emerald-700 outline-none focus:ring-2 focus:ring-emerald-500"
+                          className={`w-full border rounded-xl p-3 text-sm font-bold outline-none focus:ring-2 focus:ring-emerald-500 ${advanceSkipped ? 'bg-slate-50 text-slate-700' : 'text-emerald-700'}`}
                           placeholder="0"
-                          value={advancePaidAmountInput}
-                          onChange={e => handleAdvancePaidAmountChange(e.target.value)}
-                          onBlur={handleAdvancePaidAmountBlur}
+                          value={advanceSkipped ? vatExpensesTotal.toString() : advancePaidAmountInput}
+                          onChange={advanceSkipped ? undefined : (e => handleAdvancePaidAmountChange(e.target.value))}
+                          onBlur={advanceSkipped ? undefined : handleAdvancePaidAmountBlur}
+                          readOnly={advanceSkipped}
                         />
                       </div>
                       <div>
-                        <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Ngày tạm ứng</label>
+                        <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">
+                          {advanceSkipped ? 'Ngày thanh toán (dự kiến)' : 'Ngày tạm ứng'}
+                        </label>
                         <input 
                           type="date"
-                          className="w-full border rounded-xl p-3 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
+                          className="w-full border rounded-xl p-3 text-sm outline-none focus:ring-2 focus:ring-emerald-500 disabled:bg-slate-50 disabled:text-slate-500"
                           value={advancePaidDateInput}
-                          onChange={e => handleAdvancePaidDateChange(e.target.value)}
+                          onChange={advanceSkipped ? undefined : (e => handleAdvancePaidDateChange(e.target.value))}
+                          disabled={advanceSkipped}
                         />
                       </div>
                     </div>
                     <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-4 flex items-center justify-between flex-wrap gap-3">
                       <div>
-                        <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">Số tiền hoàn ứng dự kiến</p>
-                        <p className="text-[11px] text-emerald-700">= Đã tạm ứng - Chi phí có VAT</p>
+                        <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">
+                          {advanceSkipped ? 'Số tiền cần thanh toán' : 'Số tiền hoàn ứng dự kiến'}
+                        </p>
+                        <p className="text-[11px] text-emerald-700">
+                          {advanceSkipped ? '= Chi phí có VAT (chưa tạm ứng)' : '= Đã tạm ứng - Chi phí có VAT'}
+                        </p>
                       </div>
-                      <p className={`text-2xl font-black ${advanceRefundAmount >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
-                        {advanceRefundAmount.toLocaleString()}đ
+                      <p className={`text-2xl font-black ${advanceSkipped ? 'text-blue-700' : (advanceRefundAmount >= 0 ? 'text-emerald-700' : 'text-red-600')}`}>
+                        {(advanceSkipped ? payableVatAmount : advanceRefundAmount).toLocaleString()}đ
                       </p>
                     </div>
                   </div>
