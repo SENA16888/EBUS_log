@@ -341,6 +341,8 @@ export interface Event {
   advancePaidAmount?: number;
   advancePaidDate?: string;
   advancePaidConfirmed?: boolean;
+  advanceRefundedConfirmed?: boolean;
+  paymentCompleted?: boolean;
   advanceSkipped?: boolean;
   eventProfile?: EventProfile;
   quotationId?: string; 

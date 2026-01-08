@@ -393,6 +393,8 @@ export const EventManager: React.FC<EventManagerProps> = ({
   const [advancePaidAmountInput, setAdvancePaidAmountInput] = useState('');
   const [advancePaidDateInput, setAdvancePaidDateInput] = useState('');
   const [advancePaidConfirmed, setAdvancePaidConfirmed] = useState(false);
+  const [advanceRefundedConfirmed, setAdvanceRefundedConfirmed] = useState(false);
+  const [paymentCompleted, setPaymentCompleted] = useState(false);
   const [advanceSkipped, setAdvanceSkipped] = useState(false);
   const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
   const [viewingItem, setViewingItem] = useState<InventoryItem | null>(null);
@@ -502,6 +504,8 @@ export const EventManager: React.FC<EventManagerProps> = ({
       setAdvancePaidAmountInput('');
       setAdvancePaidDateInput('');
       setAdvancePaidConfirmed(false);
+      setAdvanceRefundedConfirmed(false);
+      setPaymentCompleted(false);
       setAdvanceSkipped(false);
       return;
     }
@@ -509,6 +513,8 @@ export const EventManager: React.FC<EventManagerProps> = ({
     setAdvancePaidAmountInput(hasAmount ? selectedEvent.advancePaidAmount.toString() : '');
     setAdvancePaidDateInput(selectedEvent.advancePaidDate || '');
     setAdvancePaidConfirmed(!!selectedEvent.advancePaidConfirmed);
+    setAdvanceRefundedConfirmed(!!selectedEvent.advanceRefundedConfirmed);
+    setPaymentCompleted(!!selectedEvent.paymentCompleted);
     setAdvanceSkipped(!!selectedEvent.advanceSkipped);
   }, [selectedEvent]);
 
@@ -538,6 +544,8 @@ export const EventManager: React.FC<EventManagerProps> = ({
       advancePaidAmount: 0,
       advancePaidDate: '',
       advancePaidConfirmed: false,
+      advanceRefundedConfirmed: false,
+      paymentCompleted: false,
       advanceSkipped: false,
       eventProfile: {
         code: generateEventCode(startDate),
@@ -807,6 +815,16 @@ export const EventManager: React.FC<EventManagerProps> = ({
     setAdvancePaidConfirmed(checked);
     if (advanceSkipped) return;
     persistAdvancePaid({ advancePaidConfirmed: checked });
+  };
+
+  const handleAdvanceRefundedConfirmedChange = (checked: boolean) => {
+    setAdvanceRefundedConfirmed(checked);
+    persistAdvancePaid({ advanceRefundedConfirmed: checked });
+  };
+
+  const handlePaymentCompletedChange = (checked: boolean) => {
+    setPaymentCompleted(checked);
+    persistAdvancePaid({ paymentCompleted: checked });
   };
 
   const handleAdvanceSkippedChange = (checked: boolean) => {
@@ -1433,6 +1451,21 @@ export const EventManager: React.FC<EventManagerProps> = ({
                             </div>
                           ))}
                           {event.quotationId && <div className="inline-flex items-center gap-1 text-[10px] font-bold bg-green-100 text-green-700 px-2 py-0.5 rounded-full"><LinkIcon size={10}/> Đã gắn báo giá</div>}
+                          {event.advancePaidConfirmed && !event.advanceSkipped && (
+                            <div className="inline-flex items-center gap-1 text-[10px] font-bold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">
+                              <CheckCircle size={10}/> Đã tạm ứng
+                            </div>
+                          )}
+                          {event.advanceRefundedConfirmed && (
+                            <div className="inline-flex items-center gap-1 text-[10px] font-bold bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
+                              <RefreshCw size={10}/> Đã hoàn ứng
+                            </div>
+                          )}
+                          {event.paymentCompleted && (
+                            <div className="inline-flex items-center gap-1 text-[10px] font-bold bg-slate-900 text-white px-2 py-0.5 rounded-full">
+                              <DollarSign size={10}/> Đã thanh toán
+                            </div>
+                          )}
                         </div>
                       </>
                     );
@@ -2645,6 +2678,26 @@ export const EventManager: React.FC<EventManagerProps> = ({
                           disabled={advanceSkipped}
                         />
                       </div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      <label className="inline-flex items-center gap-2 bg-blue-50 border border-blue-100 rounded-xl px-3 py-2 text-sm font-semibold text-blue-700">
+                        <input 
+                          type="checkbox"
+                          className="w-4 h-4"
+                          checked={advanceRefundedConfirmed}
+                          onChange={e => handleAdvanceRefundedConfirmedChange(e.target.checked)}
+                        />
+                        Đã hoàn ứng
+                      </label>
+                      <label className="inline-flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-semibold text-slate-700 md:col-span-2">
+                        <input 
+                          type="checkbox"
+                          className="w-4 h-4"
+                          checked={paymentCompleted}
+                          onChange={e => handlePaymentCompletedChange(e.target.checked)}
+                        />
+                        Đã hoàn thành thanh toán (kết thúc sự kiện)
+                      </label>
                     </div>
                     <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-4 flex items-center justify-between flex-wrap gap-3">
                       <div>

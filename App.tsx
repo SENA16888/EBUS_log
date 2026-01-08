@@ -75,6 +75,8 @@ const App: React.FC = () => {
         advancePaidAmount: ev.advancePaidAmount ?? 0,
         advancePaidDate: ev.advancePaidDate || '',
         advancePaidConfirmed: ev.advancePaidConfirmed ?? false,
+        advanceRefundedConfirmed: ev.advanceRefundedConfirmed ?? false,
+        paymentCompleted: ev.paymentCompleted ?? false,
         advanceSkipped: ev.advanceSkipped ?? false,
         eventProfile: ev.eventProfile || {
           code: ev.startDate ? `EB-${ev.startDate.replace(/-/g, '')}-${String(Math.floor(Math.random() * 900 + 100))}` : `EB-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${String(Math.floor(Math.random() * 900 + 100))}`,
