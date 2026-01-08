@@ -58,10 +58,11 @@ export const initializeAuth = (): Promise<void> => {
 };
 
 // Hàm lưu AppState lên Firebase
-export const saveAppState = async (appState: any): Promise<void> => {
+export const saveAppState = async (appState: any, lastUpdated?: string): Promise<string> => {
   try {
     await initializeAuth();
     const docRef = doc(db, 'appState', 'main');
+    const timestamp = lastUpdated || new Date().toISOString();
 
     // Clean unsupported values before writing
     const safeState = serializeForFirestore(appState);
@@ -70,10 +71,11 @@ export const saveAppState = async (appState: any): Promise<void> => {
 
     await setDoc(docRef, {
       ...safeState,
-      lastUpdated: new Date().toISOString(),
+      lastUpdated: timestamp,
     }, { merge: true });
 
-    console.log('saveAppState: successfully wrote app state to Firestore');
+    console.log('saveAppState: successfully wrote app state to Firestore', { lastUpdated: timestamp });
+    return timestamp;
   } catch (error) {
     console.error('Error saving app state to Firebase:', error);
     throw error;
