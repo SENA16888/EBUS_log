@@ -146,3 +146,48 @@ export const subscribeToAppState = (onChange: (data: any | null) => void): Unsub
   });
   return unsub;
 };
+
+// -------- Presence (active sessions) ----------
+type SessionPayload = {
+  userId: string;
+  userName: string;
+  role: string;
+  phone?: string;
+  deviceId?: string;
+};
+
+export const setSessionOnline = async (sessionId: string, payload: SessionPayload): Promise<string | null> => {
+  try {
+    await initializeAuth();
+    const ref = doc(db, 'activeSessions', sessionId);
+    const lastSeen = new Date().toISOString();
+    await setDoc(ref, { ...payload, lastSeen, online: true }, { merge: true });
+    return lastSeen;
+  } catch (err) {
+    console.error('Failed to set session online', err);
+    return null;
+  }
+};
+
+export const setSessionOffline = async (sessionId: string): Promise<string | null> => {
+  try {
+    await initializeAuth();
+    const ref = doc(db, 'activeSessions', sessionId);
+    const lastSeen = new Date().toISOString();
+    await setDoc(ref, { lastSeen, online: false }, { merge: true });
+    return lastSeen;
+  } catch (err) {
+    console.error('Failed to set session offline', err);
+    return null;
+  }
+};
+
+export const subscribeToSessions = (onChange: (sessions: any[]) => void): Unsubscribe => {
+  const colRef = collection(db, 'activeSessions');
+  return onSnapshot(colRef, (snap) => {
+    const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    onChange(data);
+  }, (err) => {
+    console.error('Presence listener error:', err);
+  });
+};

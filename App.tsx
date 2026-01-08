@@ -11,15 +11,47 @@ import { QuotationManager } from './components/QuotationManager';
 import { AIChat } from './components/AIChat';
 import { Elearning } from './components/Elearning';
 import { AdminLogPage } from './components/AdminLogPage';
-import { AppState, InventoryItem, Event, EventStatus, Transaction, TransactionType, ComboPackage, Employee, Quotation, EventStaffAllocation, EventExpense, EventAdvanceRequest, LogEntry, ChecklistDirection, ChecklistStatus, ChecklistSignature, EventChecklist, LearningAttempt, LearningProfile, AccessPermission, UserAccount, LearningTrack, InventoryReceipt, InventoryReceiptItem } from './types';
+import { AppState, InventoryItem, Event, EventStatus, Transaction, TransactionType, ComboPackage, Employee, Quotation, EventStaffAllocation, EventExpense, EventAdvanceRequest, LogEntry, ChecklistDirection, ChecklistStatus, ChecklistSignature, EventChecklist, LearningAttempt, LearningProfile, AccessPermission, UserAccount, LearningTrack, InventoryReceipt, InventoryReceiptItem, ActiveSession } from './types';
 import { MOCK_INVENTORY, MOCK_EVENTS, MOCK_TRANSACTIONS, MOCK_PACKAGES, MOCK_EMPLOYEES, MOCK_LEARNING_TRACKS, MOCK_LEARNING_PROFILES, MOCK_CAREER_RANKS, DEFAULT_USER_ACCOUNTS, MOCK_INVENTORY_RECEIPTS } from './constants';
 import { MessageSquare } from 'lucide-react';
-import { saveAppState, loadAppState, initializeAuth, subscribeToAppState } from './services/firebaseService';
+import { saveAppState, loadAppState, initializeAuth, subscribeToAppState, subscribeToSessions, setSessionOnline, setSessionOffline } from './services/firebaseService';
 import { ensureInventoryBarcodes, ensureItemBarcode, findDuplicateBarcodeItem, findItemByBarcode, generateBarcode, normalizeBarcode } from './services/barcodeService';
 import { normalizeChecklist } from './services/checklistService';
 import { getDefaultPermissionsForRole, hasPermission, normalizePhone } from './services/accessControl';
 import { AccessManager } from './components/AccessManager';
 import { LoginModal } from './components/LoginModal';
+
+const generateId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+const getSessionId = () => {
+  try {
+    if (typeof sessionStorage !== 'undefined') {
+      const existing = sessionStorage.getItem('ebus_session_id');
+      if (existing) return existing;
+      const created = generateId('sess');
+      sessionStorage.setItem('ebus_session_id', created);
+      return created;
+    }
+  } catch (err) {
+    console.warn('Failed to read sessionStorage for session id', err);
+  }
+  return generateId('sess');
+};
+
+const getDeviceId = () => {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const existing = localStorage.getItem('ebus_device_id');
+      if (existing) return existing;
+      const created = generateId('dev');
+      localStorage.setItem('ebus_device_id', created);
+      return created;
+    }
+  } catch (err) {
+    console.warn('Failed to read localStorage for device id', err);
+  }
+  return generateId('dev');
+};
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'inventory' | 'events' | 'packages' | 'employees' | 'quotations' | 'sales' | 'elearning' | 'logs'>('dashboard');
@@ -49,10 +81,14 @@ const App: React.FC = () => {
       userAccounts: DEFAULT_USER_ACCOUNTS
     };
   });
+  const [activeSessions, setActiveSessions] = useState<ActiveSession[]>([]);
   const initialLastUpdate = typeof localStorage !== 'undefined' ? localStorage.getItem('ebus_last_update') : null;
   const lastSyncedAtRef = useRef<number>(initialLastUpdate ? new Date(initialLastUpdate).getTime() : 0);
   const isApplyingRemoteRef = useRef(false);
   const pendingRemoteTimestampRef = useRef<string | null>(initialLastUpdate);
+  const sessionIdRef = useRef<string>(getSessionId());
+  const deviceIdRef = useRef<string>(getDeviceId());
+  const presenceIntervalRef = useRef<number | undefined>(undefined);
 
   const withDefaults = (state: AppState): AppState => {
     const baseAccounts = state.userAccounts && state.userAccounts.length > 0 ? state.userAccounts : DEFAULT_USER_ACCOUNTS;
@@ -212,6 +248,35 @@ const App: React.FC = () => {
     };
   }, []);
 
+  // Lắng nghe các phiên đăng nhập (presence) để admin xem ai đang online
+  useEffect(() => {
+    let unsubscribe: (() => void) | undefined;
+    const startPresenceListener = async () => {
+      try {
+        await initializeAuth();
+        unsubscribe = subscribeToSessions((sessions) => {
+          const normalized: ActiveSession[] = (sessions || []).map((s: any) => ({
+            id: s.id,
+            userId: s.userId || 'unknown',
+            userName: s.userName || 'Chua ro',
+            role: s.role || 'STAFF',
+            phone: s.phone,
+            deviceId: s.deviceId,
+            lastSeen: s.lastSeen || new Date().toISOString(),
+            online: s.online !== false
+          }));
+          setActiveSessions(normalized);
+        });
+      } catch (err) {
+        console.error('Failed to start presence listener:', err);
+      }
+    };
+    void startPresenceListener();
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, []);
+
   // Lưu dữ liệu vào cả localStorage và Firebase ngay sau khi có thay đổi
   useEffect(() => {
     if (isLoading) return; // Không lưu khi đang tải
@@ -245,6 +310,51 @@ const App: React.FC = () => {
     void saveData();
   }, [appState, isLoading]);
 
+  // Duy tri heartbeat presence cho tai khoan dang dang nhap
+  useEffect(() => {
+    if (presenceIntervalRef.current) {
+      clearInterval(presenceIntervalRef.current);
+      presenceIntervalRef.current = undefined;
+    }
+
+    if (!currentUser) {
+      void pushSessionOffline();
+      return;
+    }
+
+    const sendOnline = () => {
+      void pushSessionOnline(currentUser);
+    };
+
+    sendOnline();
+    presenceIntervalRef.current = window.setInterval(sendOnline, 20000);
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        sendOnline();
+      }
+    };
+
+    window.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      if (presenceIntervalRef.current) {
+        clearInterval(presenceIntervalRef.current);
+        presenceIntervalRef.current = undefined;
+      }
+      window.removeEventListener('visibilitychange', handleVisibility);
+      void pushSessionOffline();
+    };
+  }, [currentUser?.id]);
+
+  useEffect(() => {
+    const handleUnload = () => {
+      void pushSessionOffline();
+    };
+    window.addEventListener('beforeunload', handleUnload);
+    return () => window.removeEventListener('beforeunload', handleUnload);
+  }, []);
+
   const resolveActor = (override?: UserAccount | null) => {
     const actor = override ?? currentUser;
     if (!actor) return undefined;
@@ -270,6 +380,28 @@ const App: React.FC = () => {
     }));
   };
 
+  const pushSessionOnline = async (account: UserAccount) => {
+    try {
+      await setSessionOnline(sessionIdRef.current, {
+        userId: account.id,
+        userName: account.name,
+        role: account.role,
+        phone: account.phone,
+        deviceId: deviceIdRef.current
+      });
+    } catch (err) {
+      console.warn('Failed to update presence online', err);
+    }
+  };
+
+  const pushSessionOffline = async () => {
+    try {
+      await setSessionOffline(sessionIdRef.current);
+    } catch (err) {
+      console.warn('Failed to update presence offline', err);
+    }
+  };
+
   const handleLoginByPhone = (phone: string) => {
     const normalized = normalizePhone(phone);
     const account = (appState.userAccounts || []).find(u => normalizePhone(u.phone) === normalized && u.isActive !== false);
@@ -279,12 +411,14 @@ const App: React.FC = () => {
     }
     setCurrentUserId(account.id);
     addLog(`Dang nhap thanh cong: ${account.name}`, 'SUCCESS', account);
+    void pushSessionOnline(account);
     return true;
   };
 
   const handleLogout = () => {
     setCurrentUserId('');
     addLog('Dang xuat khoi he thong', 'INFO');
+    void pushSessionOffline();
   };
 
   const handleUpsertAccount = (account: UserAccount) => {
@@ -1405,7 +1539,7 @@ const App: React.FC = () => {
         />
       )}
       {activeTab === 'logs' && canViewLogs && (
-        <AdminLogPage logs={appState.logs} accounts={appState.userAccounts || []} />
+        <AdminLogPage logs={appState.logs} accounts={appState.userAccounts || []} activeSessions={activeSessions} />
       )}
       {activeTab === 'events' && (
         <EventManager 

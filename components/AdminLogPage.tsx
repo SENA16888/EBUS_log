@@ -1,10 +1,11 @@
 import React, { useMemo, useState } from 'react';
 import { Search } from 'lucide-react';
-import { LogActor, LogEntry, UserAccount } from '../types';
+import { ActiveSession, LogActor, LogEntry, UserAccount } from '../types';
 
 interface AdminLogPageProps {
   logs: LogEntry[];
   accounts: UserAccount[];
+  activeSessions?: ActiveSession[];
 }
 
 const TYPE_LABELS: Record<LogEntry['type'], string> = {
@@ -26,11 +27,23 @@ const formatLogTime = (value: LogEntry['timestamp']) => {
   return date.toLocaleString('vi-VN');
 };
 
+const formatLastSeen = (value: string) => {
+  const date = new Date(value);
+  const diffMs = Date.now() - date.getTime();
+  const diffMin = Math.round(diffMs / 60000);
+  if (diffMs < 60000) return 'Vua xong';
+  if (diffMin < 60) return `${diffMin} phut truoc`;
+  const diffHr = Math.round(diffMin / 60);
+  if (diffHr < 24) return `${diffHr} gio truoc`;
+  const diffDay = Math.round(diffHr / 24);
+  return `${diffDay} ngay truoc`;
+};
+
 const getLogActor = (log: LogEntry): LogActor | null => {
   return log.actor ?? null;
 };
 
-export const AdminLogPage: React.FC<AdminLogPageProps> = ({ logs, accounts }) => {
+export const AdminLogPage: React.FC<AdminLogPageProps> = ({ logs, accounts, activeSessions = [] }) => {
   const [query, setQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<'ALL' | LogEntry['type']>('ALL');
   const [actorFilter, setActorFilter] = useState<'ALL' | 'SYSTEM' | string>('ALL');
@@ -52,6 +65,14 @@ export const AdminLogPage: React.FC<AdminLogPageProps> = ({ logs, accounts }) =>
     });
     return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
   }, [accounts, logs]);
+
+  const onlineSessions = useMemo(() => {
+    return (activeSessions || []).map(s => {
+      const lastSeenTime = new Date(s.lastSeen || 0).getTime();
+      const isFresh = Date.now() - lastSeenTime < 60_000; // xem online nếu ping < 60s
+      return { ...s, isFresh, lastSeenTime };
+    }).sort((a, b) => b.lastSeenTime - a.lastSeenTime);
+  }, [activeSessions]);
 
   const filteredLogs = useMemo(() => {
     const term = query.trim().toLowerCase();
@@ -111,6 +132,42 @@ export const AdminLogPage: React.FC<AdminLogPageProps> = ({ logs, accounts }) =>
             Tai khoan: <span className="font-semibold text-slate-800">{actorOptions.length}</span>
           </div>
         </div>
+      </div>
+
+      <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Dang dang nhap</p>
+            <p className="text-sm text-slate-500">Realtime • cap nhat tu dong trong 1 phut</p>
+          </div>
+          <div className="px-3 py-1 rounded-full text-xs font-semibold bg-green-50 text-green-700 border border-green-100">
+            {onlineSessions.filter(s => s.isFresh && s.online !== false).length} online
+          </div>
+        </div>
+        {onlineSessions.length === 0 ? (
+          <p className="text-xs text-slate-400">Chua co tai khoan nao dang dang nhap.</p>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {onlineSessions.map(session => (
+              <div
+                key={session.id}
+                className="flex items-start gap-2 px-3 py-2 rounded-lg border border-slate-200 bg-slate-50"
+              >
+                <span
+                  className={`mt-1 w-2 h-2 rounded-full ${session.isFresh && session.online !== false ? 'bg-green-500' : 'bg-amber-400'}`}
+                  aria-label={session.isFresh ? 'Online' : 'Vua thoat'}
+                />
+                <div>
+                  <div className="text-sm font-semibold text-slate-800 leading-tight">{session.userName}</div>
+                  <div className="text-[11px] text-slate-500">
+                    {session.role} • {session.phone || session.userId} • {session.deviceId || 'device?'}
+                  </div>
+                  <div className="text-[11px] text-slate-400">Hoat dong: {formatLastSeen(session.lastSeen)}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">

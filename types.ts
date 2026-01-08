@@ -525,6 +525,17 @@ export interface CareerRank {
   benefits: string[];
 }
 
+export interface ActiveSession {
+  id: string;
+  userId: string;
+  userName: string;
+  role: AccessRole;
+  phone?: string;
+  deviceId?: string;
+  lastSeen: string;
+  online?: boolean;
+}
+
 export interface AppState {
   inventory: InventoryItem[];
   events: Event[];
