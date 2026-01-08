@@ -172,6 +172,7 @@ export interface SaleOrderLine {
   quantity: number;
   soldQuantity?: number;
   discount?: number; // VNĐ discount per unit or per line
+  discountPercent?: number; // Percentage discount applied on unit price
   lineTotal?: number;
 }
 

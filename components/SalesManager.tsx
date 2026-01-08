@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Event, SaleItem, SaleOrder } from '../types';
 import { Plus, X, Trash2, Printer } from 'lucide-react';
 import OrderManager from './OrderManager';
+import { calcLineTotal } from '../services/pricing';
 
 interface SalesManagerProps {
   saleItems: SaleItem[];
@@ -77,7 +78,7 @@ export const SalesManager: React.FC<SalesManagerProps> = ({
   const [returnSelection, setReturnSelection] = useState<Record<string, number>>({});
   const [orderDiscount, setOrderDiscount] = useState(0);
   const [showOrderDetail, setShowOrderDetail] = useState(false);
-  const [editingOrderItems, setEditingOrderItems] = useState<Record<string, { quantity: number; discount: number }>>({});
+  const [editingOrderItems, setEditingOrderItems] = useState<Record<string, { quantity: number; discount: number; discountPercent: number }>>({});
   const selectedSubtotal = selectedList.reduce((acc, { item }) => acc + ((item!.price - (lineDiscounts[item!.id] || 0)) * (selection[item!.id] || 1)), 0);
   const totalAfterDiscount = Math.max(0, selectedSubtotal - orderDiscount);
 
@@ -349,39 +350,58 @@ export const SalesManager: React.FC<SalesManagerProps> = ({
               <div className="space-y-3">
               <div className="text-sm text-slate-500">Khách hàng: {openOrder.customerName} • {openOrder.customerContact}</div>
               <div className="grid grid-cols-1 gap-2">
-                {openOrder.items.map((it: any, idx: number) => (
-                  <div key={idx} className="grid grid-cols-6 gap-2 items-center border-b py-2">
-                    <div className="col-span-3">
-                      <div className="font-bold">{it.name}</div>
-                      <div className="text-xs text-slate-500">{it.itemId}</div>
+                {openOrder.items.map((it: any, idx: number) => {
+                  const edited = editingOrderItems[it.itemId];
+                  const quantity = edited?.quantity ?? it.quantity;
+                  const discount = edited?.discount ?? it.discount ?? 0;
+                  const discountPercent = edited?.discountPercent ?? it.discountPercent ?? 0;
+                  const lineTotal = calcLineTotal(it.price, quantity, discount, discountPercent);
+                  return (
+                    <div key={idx} className="grid grid-cols-8 gap-2 items-center border-b py-2">
+                      <div className="col-span-3">
+                        <div className="font-bold">{it.name}</div>
+                        <div className="text-xs text-slate-500">{it.itemId}</div>
+                      </div>
+                      <div className="text-sm">Đơn giá: {it.price.toLocaleString()}đ</div>
+                      <div>
+                        <label className="text-xs">Bán được</label>
+                        <input
+                          type="number"
+                          min={0}
+                          max={it.quantity}
+                          value={quantity}
+                          onChange={e => setEditingOrderItems(prev => ({ ...prev, [it.itemId]: { ...(prev[it.itemId] || { quantity: it.quantity, discount: it.discount || 0, discountPercent: it.discountPercent || 0 }), quantity: Number(e.target.value) } }))}
+                          className="w-20 border p-1 rounded"
+                          disabled={!canEdit}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs">Chiết khấu</label>
+                        <input
+                          type="number"
+                          min={0}
+                          value={discount}
+                          onChange={e => setEditingOrderItems(prev => ({ ...prev, [it.itemId]: { ...(prev[it.itemId] || { quantity: it.quantity, discount: it.discount || 0, discountPercent: it.discountPercent || 0 }), discount: Number(e.target.value) } }))}
+                          className="w-24 border p-1 rounded"
+                          disabled={!canEdit}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs">% CK</label>
+                        <input
+                          type="number"
+                          min={0}
+                          max={100}
+                          value={discountPercent}
+                          onChange={e => setEditingOrderItems(prev => ({ ...prev, [it.itemId]: { ...(prev[it.itemId] || { quantity: it.quantity, discount: it.discount || 0, discountPercent: it.discountPercent || 0 }), discountPercent: Number(e.target.value) } }))}
+                          className="w-20 border p-1 rounded"
+                          disabled={!canEdit}
+                        />
+                      </div>
+                      <div className="text-right font-black">{lineTotal.toLocaleString()}đ</div>
                     </div>
-                    <div className="text-sm">Đơn giá: {it.price.toLocaleString()}đ</div>
-                    <div>
-                      <label className="text-xs">Bán được</label>
-                      <input
-                        type="number"
-                        min={0}
-                        max={it.quantity}
-                        value={editingOrderItems[it.itemId]?.quantity ?? it.quantity}
-                        onChange={e => setEditingOrderItems(prev => ({ ...prev, [it.itemId]: { ...(prev[it.itemId] || { quantity: it.quantity, discount: it.discount || 0 }), quantity: Number(e.target.value) } }))}
-                        className="w-20 border p-1 rounded"
-                        disabled={!canEdit}
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs">Chiết khấu</label>
-                      <input
-                        type="number"
-                        min={0}
-                        value={editingOrderItems[it.itemId]?.discount ?? it.discount ?? 0}
-                        onChange={e => setEditingOrderItems(prev => ({ ...prev, [it.itemId]: { ...(prev[it.itemId] || { quantity: it.quantity, discount: it.discount || 0 }), discount: Number(e.target.value) } }))}
-                        className="w-28 border p-1 rounded"
-                        disabled={!canEdit}
-                      />
-                    </div>
-                    <div className="text-right font-black">{(((it.price - (editingOrderItems[it.itemId]?.discount ?? it.discount ?? 0)))* (editingOrderItems[it.itemId]?.quantity ?? it.quantity)).toLocaleString()}đ</div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
             <div className="mt-4 flex justify-between items-center gap-2">
@@ -406,8 +426,9 @@ export const SalesManager: React.FC<SalesManagerProps> = ({
                       const edit = editingOrderItems[it.itemId];
                       const qty = edit ? edit.quantity : it.quantity;
                       const discount = edit ? edit.discount : (it.discount || 0);
-                      const lineTotal = Math.max(0, (it.price - (discount || 0)) * qty);
-                      return { ...it, quantity: qty, discount, lineTotal };
+                      const discountPercent = edit ? edit.discountPercent : (it.discountPercent || 0);
+                      const lineTotal = calcLineTotal(it.price, qty, discount, discountPercent);
+                      return { ...it, quantity: qty, discount, discountPercent, lineTotal };
                     });
                     const subtotal = updatedItems.reduce((a: number,b: any) => a + (b.lineTotal || 0), 0);
                     const updatedOrder = { ...openOrder, items: updatedItems, subtotal, total: subtotal };

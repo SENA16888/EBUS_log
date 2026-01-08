@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { EventExportModal } from './EventExportModal';
 import { EventChecklist } from './EventChecklist';
+import { calcLineTotal } from '../services/pricing';
 
 interface EventManagerProps {
   events: Event[];
@@ -1264,7 +1265,8 @@ export const EventManager: React.FC<EventManagerProps> = ({
       const soldQty = item.soldQuantity ?? 0;
       const discount = item.discount || 0;
       const price = item.price || 0;
-      const lineRevenue = Math.max(0, (price - discount) * soldQty);
+      const discountPercent = item.discountPercent || 0;
+      const lineRevenue = Math.max(0, calcLineTotal(price, soldQty, discount, discountPercent));
       return sum + lineRevenue;
     }, 0);
     const orderDiscount = order.orderDiscount || 0;

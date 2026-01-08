@@ -6,6 +6,7 @@ import { AppState, EventStatus } from '../types';
 import { 
   Sparkles, Package, Truck, Calendar, AlertTriangle, Layers, TrendingUp, Users, FileText, Activity, Clock, CheckCircle, ShoppingBag 
 } from 'lucide-react';
+import { calcLineTotal } from '../services/pricing';
 
 interface DashboardProps {
   appState: AppState;
@@ -31,8 +32,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState }) => {
     const items = order.items || [];
     const subtotal = items.reduce((acc: number, item: any) => {
       const discount = item.discount || 0;
+      const discountPercent = item.discountPercent || 0;
       const qty = item.soldQuantity ?? item.quantity ?? 0;
-      const lineTotal = (item.price - discount) * qty;
+      const lineTotal = calcLineTotal(item.price, qty, discount, discountPercent);
       return acc + Math.max(0, lineTotal);
     }, 0);
     const orderDiscount = order.orderDiscount || 0;

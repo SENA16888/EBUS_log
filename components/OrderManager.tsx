@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { ChevronDown, ChevronUp, Printer, Trash2, X } from 'lucide-react';
 import { SaleItem, SaleOrder } from '../types';
+import { calcLineTotal } from '../services/pricing';
 
 interface OrderManagerProps {
   saleOrders: SaleOrder[];
@@ -25,7 +26,7 @@ export const OrderManager: React.FC<OrderManagerProps> = ({
 }) => {
   const [openOrder, setOpenOrder] = useState<SaleOrder | null>(null);
   const [showDetail, setShowDetail] = useState(false);
-  const [editingItems, setEditingItems] = useState<Record<string, { quantity: number; discount: number }>>({});
+  const [editingItems, setEditingItems] = useState<Record<string, { quantity: number; discount: number; discountPercent: number }>>({});
   const [showReturnModal, setShowReturnModal] = useState(false);
   const [returnSelection, setReturnSelection] = useState<Record<string, number>>({});
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
@@ -81,7 +82,9 @@ export const OrderManager: React.FC<OrderManagerProps> = ({
     // Giá trị hàng hóa: tổng giá trị danh mục (price * qty) của các đơn xuất (không tính chiết khấu)
     const totalGoodsValue = saleOrdersOnly.reduce((acc, o) => acc + ((o.items || []).reduce((s, it) => s + ((it.price || 0) * (it.quantity || 0)), 0)), 0);
     // Doanh thu: chỉ tính đơn đã chốt (FINALIZED) và lấy giá sau chiết khấu
-    const totalSalesRevenue = saleOrdersOnly.filter(o => o.status === 'FINALIZED').reduce((acc, o) => acc + ((o.items || []).reduce((s, it) => s + (((it.price || 0) - (it.discount || 0)) * (it.quantity || 0)), 0)), 0);
+    const totalSalesRevenue = saleOrdersOnly
+      .filter(o => o.status === 'FINALIZED')
+      .reduce((acc, o) => acc + ((o.items || []).reduce((s, it) => s + calcLineTotal(it.price || 0, it.quantity || 0, it.discount || 0, it.discountPercent || 0), 0)), 0);
     const totalReturns = returnOrders.reduce((acc, r) => acc + Math.abs(r.total || r.subtotal || 0), 0);
     const net = Math.max(0, totalSalesRevenue - totalReturns);
     return { totalOrders, totalGoodsValue, totalSalesRevenue, totalReturns, net };
@@ -90,9 +93,8 @@ export const OrderManager: React.FC<OrderManagerProps> = ({
   const getOrderRevenue = (order: SaleOrder) => {
     const items = order.items || [];
     const subtotal = items.reduce((acc, item) => {
-      const discount = item.discount || 0;
       const qty = item.soldQuantity ?? 0;
-      const lineTotal = (item.price - discount) * qty;
+      const lineTotal = calcLineTotal(item.price || 0, qty, item.discount || 0, item.discountPercent || 0);
       return acc + Math.max(0, lineTotal);
     }, 0);
     const orderDiscount = order.orderDiscount || 0;
@@ -259,14 +261,16 @@ export const OrderManager: React.FC<OrderManagerProps> = ({
       const rows = (order.items || []).map((item, index) => {
         const soldQty = item.soldQuantity ?? 0;
         const discount = item.discount || 0;
-        const lineRevenue = Math.max(0, (item.price - discount) * soldQty);
+        const discountPercent = item.discountPercent || 0;
+        const lineRevenue = Math.max(0, calcLineTotal(item.price || 0, soldQty, discount, discountPercent));
+        const discountLabel = `${discount.toLocaleString()}đ${discountPercent ? ` (${discountPercent}%)` : ''}`;
         return `
           <tr>
             <td>${index + 1}</td>
             <td>${getBarcode(item.itemId, item.barcode) || '-'}</td>
             <td>${item.name}</td>
             <td class="right">${soldQty}</td>
-            <td class="right">${discount.toLocaleString()}đ</td>
+            <td class="right">${discountLabel}</td>
             <td class="right">${lineRevenue.toLocaleString()}đ</td>
             <td class="right">${lineRevenue.toLocaleString()}đ</td>
           </tr>
@@ -306,7 +310,7 @@ export const OrderManager: React.FC<OrderManagerProps> = ({
       alert('Chưa có đơn trả hàng để in.');
       return null;
     }
-    const returnItemsMap = new Map<string, { itemId: string; barcode?: string; name: string; price: number; discount: number; quantity: number }>();
+    const returnItemsMap = new Map<string, { itemId: string; barcode?: string; name: string; price: number; discount: number; discountPercent: number; quantity: number }>();
     returnOrders.forEach(ret => {
       (ret.items || []).forEach(item => {
         const entry = returnItemsMap.get(item.itemId) || {
@@ -315,6 +319,7 @@ export const OrderManager: React.FC<OrderManagerProps> = ({
           name: item.name,
           price: item.price,
           discount: item.discount || 0,
+          discountPercent: item.discountPercent || 0,
           quantity: 0
         };
         entry.quantity += item.quantity || 0;
@@ -324,21 +329,23 @@ export const OrderManager: React.FC<OrderManagerProps> = ({
     const rows = Array.from(returnItemsMap.values()).map((item, index) => {
       const qty = item.quantity || 0;
       const discount = item.discount || 0;
-      const lineValue = Math.max(0, (item.price - discount) * qty);
+      const discountPercent = item.discountPercent || 0;
+      const lineValue = Math.max(0, calcLineTotal(item.price || 0, qty, discount, discountPercent));
+      const discountLabel = `${discount.toLocaleString()}đ${discountPercent ? ` (${discountPercent}%)` : ''}`;
       return `
         <tr>
           <td>${index + 1}</td>
           <td>${getBarcode(item.itemId, item.barcode) || '-'}</td>
           <td>${item.name}</td>
           <td class="right">${qty}</td>
-          <td class="right">${discount.toLocaleString()}đ</td>
+          <td class="right">${discountLabel}</td>
           <td class="right">${lineValue.toLocaleString()}đ</td>
           <td class="right">${lineValue.toLocaleString()}đ</td>
         </tr>
       `;
     }).join('');
     const totalReturn = Array.from(returnItemsMap.values()).reduce((acc, item) => {
-      const lineValue = Math.max(0, (item.price - (item.discount || 0)) * (item.quantity || 0));
+      const lineValue = Math.max(0, calcLineTotal(item.price || 0, item.quantity || 0, item.discount || 0, item.discountPercent || 0));
       return acc + lineValue;
     }, 0);
     const body = `
@@ -579,9 +586,9 @@ export const OrderManager: React.FC<OrderManagerProps> = ({
                                   onClick={() => {
                                     setOpenOrder(order);
                                     setShowDetail(true);
-                                    const map: Record<string, { quantity: number; discount: number }> = {};
+                                    const map: Record<string, { quantity: number; discount: number; discountPercent: number }> = {};
                                     (order.items || []).forEach(item => {
-                                      map[item.itemId] = { quantity: item.soldQuantity ?? 0, discount: item.discount || 0 };
+                                      map[item.itemId] = { quantity: item.soldQuantity ?? 0, discount: item.discount || 0, discountPercent: item.discountPercent || 0 };
                                     });
                                     setEditingItems(map);
                                   }}
@@ -727,7 +734,13 @@ export const OrderManager: React.FC<OrderManagerProps> = ({
                         const maxQty = matched.quantity ?? 0;
                         const current = editingItems[matched.itemId]?.quantity ?? matched.soldQuantity ?? 0;
                         const nextQty = Math.min(maxQty, current + 1);
-                        setEditingItems(prev => ({ ...prev, [matched.itemId]: { ...(prev[matched.itemId] || { discount: matched.discount || 0 }), quantity: nextQty, discount: prev[matched.itemId]?.discount ?? matched.discount ?? 0 } }));
+                        setEditingItems(prev => ({
+                          ...prev,
+                          [matched.itemId]: {
+                            ...(prev[matched.itemId] || { quantity: matched.soldQuantity ?? 0, discount: matched.discount || 0, discountPercent: matched.discountPercent || 0 }),
+                            quantity: nextQty
+                          }
+                        }));
                         setScanSold('');
                       }
                     }}
@@ -738,39 +751,58 @@ export const OrderManager: React.FC<OrderManagerProps> = ({
                   <span className="text-xs text-slate-500">Enter sau khi quét để +1 số lượng</span>
                 </div>
                 <div className="grid grid-cols-1 gap-2">
-                  {openOrder.items.map((it: any, idx: number) => (
-                    <div key={idx} className="grid grid-cols-6 gap-2 items-center border-b py-2">
-                      <div className="col-span-3">
-                        <div className="font-bold">{it.name}</div>
-                        <div className="text-xs text-slate-500">{it.itemId}</div>
+                  {openOrder.items.map((it: any, idx: number) => {
+                    const edited = editingItems[it.itemId];
+                    const quantity = edited?.quantity ?? it.soldQuantity ?? 0;
+                    const discount = edited?.discount ?? it.discount ?? 0;
+                    const discountPercent = edited?.discountPercent ?? it.discountPercent ?? 0;
+                    const lineTotal = calcLineTotal(it.price || 0, quantity || 0, discount, discountPercent);
+                    return (
+                      <div key={idx} className="grid grid-cols-8 gap-2 items-center border-b py-2">
+                        <div className="col-span-3">
+                          <div className="font-bold">{it.name}</div>
+                          <div className="text-xs text-slate-500">{it.itemId}</div>
+                        </div>
+                        <div className="text-sm">Đơn giá: {it.price.toLocaleString()}đ</div>
+                        <div>
+                          <label className="text-xs">Bán được</label>
+                          <input
+                            type="number"
+                            min={0}
+                            max={it.quantity}
+                            value={quantity}
+                            onChange={e => setEditingItems(prev => ({ ...prev, [it.itemId]: { ...(prev[it.itemId] || { quantity: it.soldQuantity ?? 0, discount: it.discount || 0, discountPercent: it.discountPercent || 0 }), quantity: Number(e.target.value) } }))}
+                            className="w-20 border p-1 rounded"
+                            disabled={!canEdit}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs">Chiết khấu</label>
+                          <input
+                            type="number"
+                            min={0}
+                            value={discount}
+                            onChange={e => setEditingItems(prev => ({ ...prev, [it.itemId]: { ...(prev[it.itemId] || { quantity: it.quantity, discount: it.discount || 0, discountPercent: it.discountPercent || 0 }), discount: Number(e.target.value) } }))}
+                            className="w-24 border p-1 rounded"
+                            disabled={!canEdit}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs">% CK</label>
+                          <input
+                            type="number"
+                            min={0}
+                            max={100}
+                            value={discountPercent}
+                            onChange={e => setEditingItems(prev => ({ ...prev, [it.itemId]: { ...(prev[it.itemId] || { quantity: it.quantity, discount: it.discount || 0, discountPercent: it.discountPercent || 0 }), discountPercent: Number(e.target.value) } }))}
+                            className="w-20 border p-1 rounded"
+                            disabled={!canEdit}
+                          />
+                        </div>
+                        <div className="text-right font-black">{lineTotal.toLocaleString()}đ</div>
                       </div>
-                      <div className="text-sm">Đơn giá: {it.price.toLocaleString()}đ</div>
-                      <div>
-                        <label className="text-xs">Bán được</label>
-                        <input
-                          type="number"
-                          min={0}
-                          max={it.quantity}
-                          value={editingItems[it.itemId]?.quantity ?? it.soldQuantity ?? 0}
-                          onChange={e => setEditingItems(prev => ({ ...prev, [it.itemId]: { ...(prev[it.itemId] || { quantity: it.soldQuantity ?? 0, discount: it.discount || 0 }), quantity: Number(e.target.value) } }))}
-                          className="w-20 border p-1 rounded"
-                          disabled={!canEdit}
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs">Chiết khấu</label>
-                        <input
-                          type="number"
-                          min={0}
-                          value={editingItems[it.itemId]?.discount ?? it.discount ?? 0}
-                          onChange={e => setEditingItems(prev => ({ ...prev, [it.itemId]: { ...(prev[it.itemId] || { quantity: it.quantity, discount: it.discount || 0 }), discount: Number(e.target.value) } }))}
-                          className="w-28 border p-1 rounded"
-                          disabled={!canEdit}
-                        />
-                      </div>
-                      <div className="text-right font-black">{(((it.price - (editingItems[it.itemId]?.discount ?? it.discount ?? 0)))* (editingItems[it.itemId]?.quantity ?? it.soldQuantity ?? 0)).toLocaleString()}đ</div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
               <div className="mt-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3 flex-shrink-0">
@@ -779,7 +811,8 @@ export const OrderManager: React.FC<OrderManagerProps> = ({
                     const edit = editingItems[it.itemId];
                     const qty = edit ? edit.quantity : (it.soldQuantity ?? 0);
                     const discount = edit ? edit.discount : (it.discount || 0);
-                    return Math.max(0, (it.price - discount) * (qty || 0));
+                    const discountPercent = edit ? edit.discountPercent : (it.discountPercent || 0);
+                    return Math.max(0, calcLineTotal(it.price || 0, qty || 0, discount, discountPercent));
                   });
                   const previewSubtotal = previewItems.reduce((a: number, b: number) => a + b, 0);
                   const orderDiscount = openOrder.orderDiscount || 0;
@@ -801,11 +834,12 @@ export const OrderManager: React.FC<OrderManagerProps> = ({
                       const edit = editingItems[it.itemId];
                       const qty = edit ? edit.quantity : (it.soldQuantity ?? 0);
                       const discount = edit ? edit.discount : (it.discount || 0);
+                      const discountPercent = edit ? edit.discountPercent : (it.discountPercent || 0);
                       if (Number.isNaN(qty)) {
-                        return { ...it, soldQuantity: 0, discount, lineTotal: 0 };
+                        return { ...it, soldQuantity: 0, discount, discountPercent, lineTotal: 0 };
                       }
-                      const lineTotal = Math.max(0, (it.price - (discount || 0)) * qty);
-                      return { ...it, soldQuantity: qty, discount, lineTotal };
+                      const lineTotal = Math.max(0, calcLineTotal(it.price || 0, qty, discount, discountPercent));
+                      return { ...it, soldQuantity: qty, discount, discountPercent, lineTotal };
                     });
                     const invalid = updatedItems.some(it => it.soldQuantity === null || Number.isNaN(it.soldQuantity));
                     if (invalid) {
@@ -839,6 +873,9 @@ export const OrderManager: React.FC<OrderManagerProps> = ({
                     const alreadyReturnedQty = orderReturns.reduce((a, r) => a + ((r.items || []).reduce((s: number, ri: any) => s + (ri.itemId === it.itemId ? (ri.quantity || 0) : 0), 0)), 0);
                     const soldQty = it.soldQuantity ?? 0;
                     const maxAllowed = Math.max(0, (it.quantity || 0) - soldQty - alreadyReturnedQty);
+                    const discountPercent = it.discountPercent || 0;
+                    const discountLabel = `${(it.discount || 0).toLocaleString()}đ${discountPercent ? ` (${discountPercent}%)` : ''}`;
+                    const lineTotal = calcLineTotal(it.price || 0, returnSelection[it.itemId] || 0, it.discount || 0, discountPercent);
                     return (
                       <div key={idx} className="grid grid-cols-6 gap-2 items-center border-b py-2">
                         <div className="col-span-3">
@@ -857,8 +894,8 @@ export const OrderManager: React.FC<OrderManagerProps> = ({
                           disabled={maxAllowed === 0 || !canEdit}
                         />
                         </div>
-                        <div className="text-xs text-slate-400">Còn trả tối đa: {maxAllowed} • Chiết khấu cũ: {it.discount || 0}đ</div>
-                        <div className="text-right font-black">{(((it.price - (it.discount || 0)))* (returnSelection[it.itemId] || 0)).toLocaleString()}đ</div>
+                        <div className="text-xs text-slate-400">Còn trả tối đa: {maxAllowed} • Chiết khấu cũ: {discountLabel}</div>
+                        <div className="text-right font-black">{lineTotal.toLocaleString()}đ</div>
                       </div>
                     );
                   })}
@@ -948,8 +985,9 @@ export const OrderManager: React.FC<OrderManagerProps> = ({
                       if (qty > 0) {
                         if (qty > maxAllowed) { alert(`Số lượng trả cho "${it.name}" vượt quá số đã xuất còn lại (${maxAllowed}).`); return; }
                         const discount = it.discount || 0;
-                        const lineTotal = -Math.max(0, (it.price - discount) * qty);
-                        built.push({ itemId: it.itemId, barcode: it.barcode, name: it.name, price: it.price, quantity: qty, discount, lineTotal });
+                        const discountPercent = it.discountPercent || 0;
+                        const lineTotal = -Math.max(0, calcLineTotal(it.price || 0, qty, discount, discountPercent));
+                        built.push({ itemId: it.itemId, barcode: it.barcode, name: it.name, price: it.price, quantity: qty, discount, discountPercent, lineTotal });
                       }
                     }
                     const canComplete = (openOrder.items || []).every((it: any) => {
