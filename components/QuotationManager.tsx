@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Quotation, ComboPackage, InventoryItem, QuotationLineItem } from '../types';
 import { 
   FileText, Plus, X, Search, Trash2, Printer, 
@@ -29,6 +29,9 @@ export const QuotationManager: React.FC<QuotationManagerProps> = ({
 }) => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [viewingQuotation, setViewingQuotation] = useState<Quotation | null>(null);
+  const [pendingPdfId, setPendingPdfId] = useState<string | null>(null);
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const handleCloseViewer = () => { setViewingQuotation(null); setPendingPdfId(null); };
   
   // Create Form State
   const [clientName, setClientName] = useState('');
@@ -46,6 +49,46 @@ export const QuotationManager: React.FC<QuotationManagerProps> = ({
     const subtotal = calculateSubtotal(quoteItems);
     return subtotal - discount;
   };
+
+  const loadPdfLib = async () => {
+    if ((window as any).html2pdf) return (window as any).html2pdf;
+    const mod: any = await import('html2pdf.js');
+    return (window as any).html2pdf || mod?.default || mod;
+  };
+
+  const handleExportPdf = async (quote: Quotation | null) => {
+    if (!quote) return;
+    const target = document.getElementById('quotation-print');
+    if (!target) {
+      console.warn('Không tìm thấy nội dung để xuất PDF.');
+      return;
+    }
+    setIsExportingPdf(true);
+    try {
+      const html2pdf = await loadPdfLib();
+      await html2pdf().set({
+        margin: 10,
+        filename: `${quote.id}.pdf`,
+        html2canvas: { scale: 2 },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+      }).from(target).save();
+    } catch (err) {
+      console.error('Xuất PDF thất bại', err);
+      alert('Xuất PDF thất bại. Vui lòng thử lại.');
+    } finally {
+      setIsExportingPdf(false);
+      setPendingPdfId(null);
+    }
+  };
+
+  useEffect(() => {
+    if (pendingPdfId && viewingQuotation?.id === pendingPdfId) {
+      const timer = setTimeout(() => {
+        handleExportPdf(viewingQuotation);
+      }, 200);
+      return () => clearTimeout(timer);
+    }
+  }, [pendingPdfId, viewingQuotation]);
 
   const handleAddItem = (itemId: string) => {
     if (!canEdit) return;
@@ -186,6 +229,13 @@ export const QuotationManager: React.FC<QuotationManagerProps> = ({
                     title="Xem chi tiết báo giá"
                    >
                      <FileText size={18} />
+                   </button>
+                   <button 
+                    onClick={() => { setViewingQuotation(q); setPendingPdfId(q.id); }}
+                    className="p-2 text-gray-400 hover:text-green-600 transition"
+                    title="Xuất PDF"
+                   >
+                     <Download size={18} />
                    </button>
                    {canDelete && (
                      <button 
@@ -369,21 +419,28 @@ export const QuotationManager: React.FC<QuotationManagerProps> = ({
       {viewingQuotation && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
            <div className="bg-white w-full max-w-3xl rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
-              <div className="p-4 bg-slate-800 text-white flex justify-between items-center print:hidden">
-                 <h3 className="font-bold">Xem trước Báo giá</h3>
-                 <div className="flex gap-2">
-                    <button onClick={() => window.print()} className="p-2 bg-white/10 hover:bg-white/20 rounded flex items-center gap-2 text-xs">
+             <div className="p-4 bg-slate-800 text-white flex justify-between items-center print:hidden">
+                <h3 className="font-bold">Xem trước Báo giá</h3>
+                <div className="flex gap-2">
+                   <button 
+                     onClick={() => handleExportPdf(viewingQuotation)}
+                     className="p-2 bg-white/10 hover:bg-white/20 rounded flex items-center gap-2 text-xs disabled:opacity-60 disabled:cursor-not-allowed"
+                     disabled={isExportingPdf}
+                   >
+                     <Download size={16} /> {isExportingPdf ? 'Đang xuất...' : 'Xuất PDF'}
+                   </button>
+                   <button onClick={() => window.print()} className="p-2 bg-white/10 hover:bg-white/20 rounded flex items-center gap-2 text-xs">
                       <Printer size={16} /> In Báo Giá
                     </button>
                     {canEdit && (
                       <button 
-                        onClick={() => { onUpdateStatus(viewingQuotation.id, 'ACCEPTED'); setViewingQuotation(null); }} 
+                        onClick={() => { onUpdateStatus(viewingQuotation.id, 'ACCEPTED'); handleCloseViewer(); }} 
                         className="p-2 bg-green-600 hover:bg-green-700 rounded flex items-center gap-2 text-xs"
                       >
                         <CheckCircle size={16} /> Chốt Báo Giá
                       </button>
                     )}
-                    <button onClick={() => setViewingQuotation(null)} className="p-2 text-white/50 hover:text-white">
+                    <button onClick={handleCloseViewer} className="p-2 text-white/50 hover:text-white">
                       <X size={20} />
                     </button>
                  </div>
