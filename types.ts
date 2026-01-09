@@ -373,6 +373,7 @@ export interface ComboPackage {
   id: string;
   name: string;
   description: string;
+  category?: string;
   items: ComboItem[];
   packagePrice: number;
 }

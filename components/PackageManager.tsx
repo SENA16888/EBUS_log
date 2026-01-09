@@ -1,7 +1,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { ComboPackage, InventoryItem } from '../types';
-import { Layers, Plus, X, Box, Trash2, Check, Package, Pencil } from 'lucide-react';
+import { Plus, X, Trash2, Package, Pencil } from 'lucide-react';
 
 interface PackageManagerProps {
   packages: ComboPackage[];
@@ -26,11 +26,30 @@ export const PackageManager: React.FC<PackageManagerProps> = ({
   const [editingPkgId, setEditingPkgId] = useState<string | null>(null);
   const [newPkgName, setNewPkgName] = useState('');
   const [newPkgDesc, setNewPkgDesc] = useState('');
+  const [newPkgCategory, setNewPkgCategory] = useState('');
   const [newPkgPrice, setNewPkgPrice] = useState(0);
   const [tempItems, setTempItems] = useState<{itemId: string, quantity: number}[]>([]);
   const [selectedItemId, setSelectedItemId] = useState('');
   const [selectedQty, setSelectedQty] = useState(1);
   const [itemSearchTerm, setItemSearchTerm] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState<string>('ALL');
+  const [packageSearch, setPackageSearch] = useState('');
+
+  const categoryLabel = (category?: string) => category?.trim() || 'Khác/Chưa phân loại';
+
+  const packageCategories = useMemo(() => {
+    const set = new Set<string>();
+    packages.forEach(pkg => {
+      const cat = (pkg.category || '').trim();
+      if (cat) set.add(cat);
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'vi', { sensitivity: 'base' }));
+  }, [packages]);
+
+  const hasUncategorized = useMemo(
+    () => packages.some(pkg => !pkg.category || !pkg.category.trim()),
+    [packages]
+  );
 
   const sortedInventory = useMemo(
     () => [...inventory].sort((a, b) => a.name.localeCompare(b.name, 'vi', { sensitivity: 'base' })),
@@ -59,6 +78,32 @@ export const PackageManager: React.FC<PackageManagerProps> = ({
     }
   }, [showCreateModal]);
 
+  useEffect(() => {
+    if (categoryFilter !== 'ALL' && categoryFilter !== 'UNCATEGORIZED' && !packageCategories.includes(categoryFilter)) {
+      setCategoryFilter('ALL');
+    }
+  }, [categoryFilter, packageCategories]);
+
+  const filteredPackages = useMemo(() => {
+    const normalizedSearch = packageSearch.trim().toLowerCase();
+    return [...packages]
+      .filter(pkg => {
+        if (categoryFilter === 'UNCATEGORIZED') return !pkg.category || !pkg.category.trim();
+        if (categoryFilter !== 'ALL') return pkg.category?.trim() === categoryFilter;
+        return true;
+      })
+      .filter(pkg => {
+        if (!normalizedSearch) return true;
+        const combined = `${pkg.name} ${pkg.description || ''} ${pkg.category || ''}`.toLowerCase();
+        return combined.includes(normalizedSearch);
+      })
+      .sort((a, b) => {
+        const catCompare = categoryLabel(a.category).localeCompare(categoryLabel(b.category), 'vi', { sensitivity: 'base' });
+        if (catCompare !== 0) return catCompare;
+        return a.name.localeCompare(b.name, 'vi', { sensitivity: 'base' });
+      });
+  }, [packages, categoryFilter, packageSearch]);
+
   const handleOpenEdit = (e: React.MouseEvent, pkg: ComboPackage) => {
     if (!canEdit) return;
     e.preventDefault();
@@ -66,6 +111,7 @@ export const PackageManager: React.FC<PackageManagerProps> = ({
     setEditingPkgId(pkg.id);
     setNewPkgName(pkg.name);
     setNewPkgDesc(pkg.description);
+    setNewPkgCategory(pkg.category || '');
     setNewPkgPrice(pkg.packagePrice || 0);
     setTempItems([...pkg.items]);
     setShowCreateModal(true);
@@ -106,6 +152,7 @@ export const PackageManager: React.FC<PackageManagerProps> = ({
       id: editingPkgId || `PKG-${Date.now()}`,
       name: newPkgName,
       description: newPkgDesc,
+      category: newPkgCategory.trim() || undefined,
       packagePrice: Number(newPkgPrice),
       items: tempItems
     };
@@ -115,7 +162,7 @@ export const PackageManager: React.FC<PackageManagerProps> = ({
   };
 
   const closeModal = () => { setShowCreateModal(false); resetForm(); };
-  const resetForm = () => { setNewPkgName(''); setNewPkgDesc(''); setNewPkgPrice(0); setTempItems([]); setSelectedItemId(''); setSelectedQty(1); setEditingPkgId(null); };
+  const resetForm = () => { setNewPkgName(''); setNewPkgDesc(''); setNewPkgCategory(''); setNewPkgPrice(0); setTempItems([]); setSelectedItemId(''); setSelectedQty(1); setEditingPkgId(null); };
 
   return (
     <div className="space-y-6">
@@ -131,8 +178,36 @@ export const PackageManager: React.FC<PackageManagerProps> = ({
         )}
       </div>
 
+      <div className="bg-white border border-slate-100 rounded-xl shadow-sm p-4 space-y-3">
+        <div className="flex flex-col lg:flex-row gap-3">
+          <div className="flex-1">
+            <p className="text-[11px] font-bold text-gray-500 uppercase mb-1">Lọc theo danh mục</p>
+            <select
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+            >
+              <option value="ALL">Tất cả danh mục</option>
+              {packageCategories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+              {hasUncategorized && <option value="UNCATEGORIZED">Khác / Chưa phân loại</option>}
+            </select>
+          </div>
+          <div className="flex-1">
+            <p className="text-[11px] font-bold text-gray-500 uppercase mb-1">Tìm kiếm gói</p>
+            <input
+              type="text"
+              value={packageSearch}
+              onChange={(e) => setPackageSearch(e.target.value)}
+              placeholder="Tên gói, danh mục hoặc mô tả..."
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+            />
+          </div>
+        </div>
+        <p className="text-[12px] text-slate-500">Đang hiển thị {filteredPackages.length}/{packages.length} gói (sắp xếp theo danh mục A-Z, sau đó tên gói).</p>
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-        {packages.map(pkg => {
+        {filteredPackages.map(pkg => {
           const shortages = pkg.items.map(it => {
             const inv = inventory.find(i => i.id === it.itemId);
             const available = inv ? inv.availableQuantity : 0;
@@ -147,7 +222,10 @@ export const PackageManager: React.FC<PackageManagerProps> = ({
                   <h3 className="font-bold text-gray-800 flex items-center gap-2">
                     <Package className="text-blue-500" size={20} /> {pkg.name}
                   </h3>
-                  <p className="text-sm font-bold text-blue-600 mt-1">{pkg.packagePrice?.toLocaleString()} VNĐ</p>
+                  <div className="flex items-center flex-wrap gap-2 mt-1">
+                    <p className="text-sm font-bold text-blue-600">{pkg.packagePrice?.toLocaleString()} VNĐ</p>
+                    <span className="text-[11px] font-semibold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">{categoryLabel(pkg.category)}</span>
+                  </div>
                 </div>
                 <div className="flex items-center gap-3">
                   {needsRestock ? (
@@ -188,6 +266,13 @@ export const PackageManager: React.FC<PackageManagerProps> = ({
             </div>
           );
         })}
+        {filteredPackages.length === 0 && (
+          <div className="col-span-1 md:col-span-2 xl:col-span-3">
+            <div className="bg-white border border-dashed border-slate-200 rounded-xl p-6 text-center text-sm text-slate-500">
+              {packages.length === 0 ? 'Chưa có gói combo nào. Hãy tạo gói mới để bắt đầu.' : 'Không tìm thấy gói nào khớp bộ lọc hiện tại.'}
+            </div>
+          </div>
+        )}
       </div>
 
       {showCreateModal && (
@@ -198,7 +283,10 @@ export const PackageManager: React.FC<PackageManagerProps> = ({
                <button onClick={closeModal} className="text-gray-400 hover:text-gray-600"><X size={24} /></button>
             </div>
             <div className="p-6 overflow-y-auto space-y-4">
-              <input type="text" className="w-full border p-2 rounded-lg" placeholder="Tên gói" value={newPkgName} onChange={(e) => setNewPkgName(e.target.value)} />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <input type="text" className="w-full border p-2 rounded-lg" placeholder="Tên gói" value={newPkgName} onChange={(e) => setNewPkgName(e.target.value)} />
+                <input type="text" className="w-full border p-2 rounded-lg" placeholder="Danh mục (VD: Âm thanh, Ánh sáng)" value={newPkgCategory} onChange={(e) => setNewPkgCategory(e.target.value)} />
+              </div>
               <input type="number" className="w-full border p-2 rounded-lg" placeholder="Giá gói" value={newPkgPrice} onChange={(e) => setNewPkgPrice(Number(e.target.value))} />
               <div className="border-t pt-4">
                 <p className="font-bold mb-2">Thêm thiết bị</p>
