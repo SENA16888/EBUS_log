@@ -11,7 +11,7 @@ import { QuotationManager } from './components/QuotationManager';
 import { AIChat } from './components/AIChat';
 import { Elearning } from './components/Elearning';
 import { AdminLogPage } from './components/AdminLogPage';
-import { AppState, InventoryItem, Event, EventStatus, Transaction, TransactionType, ComboPackage, Employee, Quotation, EventStaffAllocation, EventExpense, EventAdvanceRequest, LogEntry, ChecklistDirection, ChecklistStatus, ChecklistSignature, EventChecklist, LearningAttempt, LearningProfile, AccessPermission, UserAccount, LearningTrack, InventoryReceipt, InventoryReceiptItem, ActiveSession } from './types';
+import { AppState, InventoryItem, Event, EventStatus, Transaction, TransactionType, ComboPackage, Employee, Quotation, EventStaffAllocation, EventExpense, EventAdvanceRequest, LogEntry, ChecklistDirection, ChecklistStatus, ChecklistSignature, EventChecklist, LearningAttempt, LearningProfile, AccessPermission, UserAccount, LearningTrack, InventoryReceipt, InventoryReceiptItem, ActiveSession, PayrollAdjustment } from './types';
 import { MOCK_INVENTORY, MOCK_EVENTS, MOCK_TRANSACTIONS, MOCK_PACKAGES, MOCK_EMPLOYEES, MOCK_LEARNING_TRACKS, MOCK_LEARNING_PROFILES, MOCK_CAREER_RANKS, DEFAULT_USER_ACCOUNTS, MOCK_INVENTORY_RECEIPTS } from './constants';
 import { MessageSquare } from 'lucide-react';
 import { saveAppState, loadAppState, initializeAuth, subscribeToAppState, subscribeToSessions, setSessionOnline, setSessionOffline } from './services/firebaseService';
@@ -78,7 +78,8 @@ const App: React.FC = () => {
       learningProfiles: MOCK_LEARNING_PROFILES,
       learningAttempts: [],
       careerRanks: MOCK_CAREER_RANKS,
-      userAccounts: DEFAULT_USER_ACCOUNTS
+      userAccounts: DEFAULT_USER_ACCOUNTS,
+      payrollAdjustments: []
     };
   });
   const [activeSessions, setActiveSessions] = useState<ActiveSession[]>([]);
@@ -132,7 +133,8 @@ const App: React.FC = () => {
       careerRanks: state.careerRanks || MOCK_CAREER_RANKS,
       inventoryReceipts: state.inventoryReceipts || [],
       logs: normalizedLogs,
-      userAccounts: normalizedAccounts
+      userAccounts: normalizedAccounts,
+      payrollAdjustments: state.payrollAdjustments || []
     };
   };
 
@@ -141,12 +143,19 @@ const App: React.FC = () => {
   const isAdmin = currentUser?.role === 'ADMIN';
   const canViewLogs = currentUser?.role === 'ADMIN';
   const isElearningAdmin = currentUser?.role === 'ADMIN' || currentUser?.role === 'MANAGER';
+  const canViewEmployees = currentUser?.role !== 'STAFF';
 
   useEffect(() => {
     if (activeTab === 'logs' && !canViewLogs) {
       setActiveTab('dashboard');
     }
   }, [activeTab, canViewLogs]);
+
+  useEffect(() => {
+    if (activeTab === 'employees' && !canViewEmployees) {
+      setActiveTab('dashboard');
+    }
+  }, [activeTab, canViewEmployees]);
 
   useEffect(() => {
     if (currentUserId) {
@@ -1144,6 +1153,37 @@ const App: React.FC = () => {
     setAppState(prev => ({ ...prev, employees: prev.employees.filter(e => e.id !== id) }));
     addLog(`Đã xóa nhân sự: ${empName}`, 'SUCCESS');
   };
+  const handleUpsertPayrollAdjustment = (payload: { employeeId: string; month: string; bonusAmount: number; note?: string }) => {
+    const safeMonth = payload.month || new Date().toISOString().slice(0, 7);
+    const cleanAmount = Math.max(0, Number(payload.bonusAmount) || 0);
+    const cleanNote = payload.note?.trim() || '';
+    setAppState(prev => {
+      const list = prev.payrollAdjustments || [];
+      const idx = list.findIndex(adj => adj.employeeId === payload.employeeId && adj.month === safeMonth);
+      const baseId = idx >= 0 ? list[idx].id : `PAY-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      const normalized: PayrollAdjustment = {
+        id: baseId,
+        employeeId: payload.employeeId,
+        month: safeMonth,
+        bonusAmount: cleanAmount,
+        note: cleanNote
+      };
+      const next = [...list];
+      if (cleanAmount === 0 && !cleanNote) {
+        if (idx >= 0) next.splice(idx, 1);
+        return { ...prev, payrollAdjustments: next };
+      }
+      if (idx >= 0) {
+        next[idx] = { ...next[idx], ...normalized };
+      } else {
+        next.push(normalized);
+      }
+      return { ...prev, payrollAdjustments: next };
+    });
+    const empName = appState.employees.find(e => e.id === payload.employeeId)?.name || 'Nhân sự';
+    const actionLabel = cleanAmount === 0 && !cleanNote ? 'Xóa' : 'Cập nhật';
+    addLog(`${actionLabel} thưởng tháng ${safeMonth} cho ${empName}: ${cleanAmount.toLocaleString()}đ${cleanNote ? ` • ${cleanNote}` : ''}`, 'INFO');
+  };
   
   // --- Handlers cho Báo giá ---
   const handleCreateQuotation = (q: Quotation) => { 
@@ -1454,6 +1494,7 @@ const App: React.FC = () => {
       currentUser={currentUser}
       canManageAccess={can('ACCESS_MANAGE')}
       canViewLogs={canViewLogs}
+      canViewEmployees={canViewEmployees}
       onOpenAccess={() => setIsAccessOpen(true)}
       onLogout={handleLogout}
     >
@@ -1487,6 +1528,9 @@ const App: React.FC = () => {
         <EmployeeManager 
           employees={appState.employees} 
           events={appState.events}
+          payrollAdjustments={appState.payrollAdjustments || []}
+          onUpsertPayrollAdjustment={guard('EMPLOYEES_EDIT', handleUpsertPayrollAdjustment)}
+          canAdjustPayroll={can('EMPLOYEES_EDIT')}
           onAddEmployee={guard('EMPLOYEES_EDIT', handleAddEmployee)} 
           onUpdateEmployee={guard('EMPLOYEES_EDIT', handleUpdateEmployee)} 
           onDeleteEmployee={guard('EMPLOYEES_DELETE', handleDeleteEmployee)}

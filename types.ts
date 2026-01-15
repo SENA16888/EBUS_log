@@ -537,6 +537,14 @@ export interface ActiveSession {
   online?: boolean;
 }
 
+export interface PayrollAdjustment {
+  id: string;
+  employeeId: string;
+  month: string; // YYYY-MM
+  bonusAmount: number;
+  note?: string;
+}
+
 export interface AppState {
   inventory: InventoryItem[];
   events: Event[];
@@ -553,4 +561,5 @@ export interface AppState {
   learningAttempts?: LearningAttempt[];
   careerRanks?: CareerRank[];
   userAccounts?: UserAccount[];
+  payrollAdjustments?: PayrollAdjustment[];
 }

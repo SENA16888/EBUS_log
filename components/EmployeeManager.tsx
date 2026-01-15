@@ -1,25 +1,31 @@
-import React, { useMemo, useState } from 'react';
-import { Employee, Event, EventStatus, EventStaffAllocation } from '../types';
-import { Search, Plus, X, Pencil, Trash2, Phone, Mail, User, DollarSign, Calendar } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Employee, Event, EventStatus, EventStaffAllocation, PayrollAdjustment } from '../types';
+import { Search, Plus, X, Pencil, Trash2, Phone, Mail, User, DollarSign, Calendar, Printer, ChevronDown, ChevronUp } from 'lucide-react';
 
 interface EmployeeManagerProps {
   employees: Employee[];
   events?: Event[];
+  payrollAdjustments?: PayrollAdjustment[];
   onAddEmployee: (emp: Employee) => void;
   onUpdateEmployee: (emp: Employee) => void;
   onDeleteEmployee: (id: string) => void;
+  onUpsertPayrollAdjustment?: (payload: { employeeId: string; month: string; bonusAmount: number; note?: string }) => void;
   canEdit?: boolean;
   canDelete?: boolean;
+  canAdjustPayroll?: boolean;
 }
 
 export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
   employees,
   events = [],
+  payrollAdjustments = [],
   onAddEmployee,
   onUpdateEmployee,
   onDeleteEmployee,
+  onUpsertPayrollAdjustment,
   canEdit = true,
-  canDelete = true
+  canDelete = true,
+  canAdjustPayroll = false
 }) => {
   type StaffEventInfo = {
     event: Event;
@@ -27,10 +33,25 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
     date: string;
     isUpcoming: boolean;
   };
+  type PayrollEntry = {
+    employeeId: string;
+    eventName: string;
+    date: string;
+    task?: string;
+    sessions: string[];
+    salary: number;
+    rate?: number;
+    quantity?: number;
+    unit?: EventStaffAllocation['unit'];
+    month: string;
+  };
 
   const [searchTerm, setSearchTerm] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [payrollMonth, setPayrollMonth] = useState(() => new Date().toISOString().slice(0, 7));
+  const [expandedPayrollRows, setExpandedPayrollRows] = useState<Record<string, boolean>>({});
+  const [bonusDrafts, setBonusDrafts] = useState<Record<string, { amount: string; note: string }>>({});
 
   const [formData, setFormData] = useState({
     name: '',
@@ -115,6 +136,165 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
       return acc;
     }, {} as Record<string, { participationCount: number; upcoming: StaffEventInfo[]; history: StaffEventInfo[] }>);
   }, [employees, events, todayStr]);
+  const payrollAdjustmentMap = useMemo(() => {
+    const map = new Map<string, PayrollAdjustment>();
+    payrollAdjustments.forEach(adj => {
+      if (adj.employeeId && adj.month) {
+        map.set(`${adj.employeeId}-${adj.month}`, adj);
+      }
+    });
+    return map;
+  }, [payrollAdjustments]);
+
+  useEffect(() => {
+    const nextDrafts: Record<string, { amount: string; note: string }> = {};
+    employees.forEach(emp => {
+      const adj = payrollAdjustmentMap.get(`${emp.id}-${payrollMonth}`);
+      nextDrafts[emp.id] = {
+        amount: adj ? String(adj.bonusAmount) : '',
+        note: adj?.note || ''
+      };
+    });
+    setBonusDrafts(nextDrafts);
+  }, [employees, payrollAdjustmentMap, payrollMonth]);
+
+  const payrollEntries = useMemo<PayrollEntry[]>(() => {
+    return events.flatMap(event => {
+      return (event.staff || []).map(staff => {
+        const date = staff.shiftDate || event.startDate || event.endDate || '';
+        if (!date) return null;
+        const monthKey = date.slice(0, 7);
+        const salaryAmount = Number.isFinite(staff.salary) ? Number(staff.salary) : (staff.unit === 'FIXED' ? staff.rate : (staff.rate || 0) * (staff.quantity || 0));
+        return {
+          employeeId: staff.employeeId,
+          eventName: event.name,
+          date,
+          task: staff.task,
+          sessions: getStaffSessions(staff),
+          salary: Number.isFinite(salaryAmount) ? salaryAmount : 0,
+          rate: staff.rate,
+          quantity: staff.quantity,
+          unit: staff.unit,
+          month: monthKey
+        } as PayrollEntry;
+      }).filter((entry): entry is PayrollEntry => Boolean(entry));
+    });
+  }, [events]);
+
+  const payrollRows = useMemo(() => {
+    const grouped = new Map<string, PayrollEntry[]>();
+    payrollEntries
+      .filter(entry => entry.month === payrollMonth)
+      .forEach(entry => {
+        const list = grouped.get(entry.employeeId) || [];
+        list.push(entry);
+        grouped.set(entry.employeeId, list);
+      });
+
+    return employees.map(emp => {
+      const entries = [...(grouped.get(emp.id) || [])].sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+      const baseTotal = entries.reduce((sum, entry) => sum + (Number.isFinite(entry.salary) ? entry.salary : 0), 0);
+      const adj = payrollAdjustmentMap.get(`${emp.id}-${payrollMonth}`);
+      const bonusAmount = Number(adj?.bonusAmount) || 0;
+      const bonusNote = adj?.note || '';
+      return {
+        employee: emp,
+        entries,
+        baseTotal,
+        bonusAmount,
+        bonusNote,
+        total: baseTotal + bonusAmount
+      };
+    }).sort((a, b) => b.total - a.total);
+  }, [employees, payrollEntries, payrollMonth, payrollAdjustmentMap]);
+
+  const togglePayrollRow = (id: string) => {
+    setExpandedPayrollRows(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const handleBonusDraftChange = (empId: string, field: 'amount' | 'note', value: string) => {
+    setBonusDrafts(prev => ({
+      ...prev,
+      [empId]: { ...(prev[empId] || { amount: '', note: '' }), [field]: value }
+    }));
+  };
+
+  const handleSaveBonus = (empId: string) => {
+    if (!onUpsertPayrollAdjustment) return;
+    const draft = bonusDrafts[empId] || { amount: '', note: '' };
+    onUpsertPayrollAdjustment({
+      employeeId: empId,
+      month: payrollMonth,
+      bonusAmount: Number(draft.amount) || 0,
+      note: draft.note
+    });
+  };
+
+  const handlePrintPayroll = () => {
+    const printWindow = window.open('', '_blank', 'width=900,height=700');
+    if (!printWindow) {
+      alert('Trình duyệt đang chặn cửa sổ in. Vui lòng cho phép popup.');
+      return;
+    }
+    const rowsHtml = payrollRows.map(row => {
+      const detailHtml = row.entries.length
+        ? row.entries.map(entry => {
+            const sessionText = entry.sessions.length ? entry.sessions.map(sess => sessionLabel[sess] || sess).join(', ') : '';
+            return `<li style="margin-bottom:4px; line-height:1.4;"><strong>${entry.eventName}</strong> • ${formatDate(entry.date)} • ${entry.salary.toLocaleString()} đ${entry.task ? ` • ${entry.task}` : ''}${sessionText ? ` • Ca: ${sessionText}` : ''}</li>`;
+          }).join('')
+        : '<em>Chưa có nguồn lương trong tháng.</em>';
+      return `
+        <tr>
+          <td>
+            <div><strong>${row.employee.name}</strong></div>
+            <div style="font-size:12px; color:#475569;">${row.employee.role || 'Chưa có vị trí'} • ${row.employee.phone}</div>
+          </td>
+          <td style="text-align:right;">${row.baseTotal.toLocaleString()} đ</td>
+          <td style="text-align:right;">${row.bonusAmount.toLocaleString()} đ${row.bonusNote ? `<div class="note">${row.bonusNote}</div>` : ''}</td>
+          <td style="text-align:right;" class="total">${row.total.toLocaleString()} đ</td>
+        </tr>
+        <tr>
+          <td colspan="4">${row.entries.length ? `<ul style="margin:6px 0 0 14px; padding:0;">${detailHtml}</ul>` : detailHtml}</td>
+        </tr>
+      `;
+    }).join('');
+
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Bảng lương tháng ${payrollMonth}</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 16px; color: #0f172a; }
+            h2 { margin: 0 0 12px 0; }
+            table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+            th, td { border: 1px solid #e2e8f0; padding: 8px; font-size: 12px; vertical-align: top; }
+            th { background: #f8fafc; text-align: left; }
+            .total { font-weight: 700; }
+            .note { color: #475569; font-size: 11px; margin-top: 4px; }
+          </style>
+        </head>
+        <body>
+          <h2>Bảng lương tháng ${payrollMonth}</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Nhân sự</th>
+                <th>Tổng lương</th>
+                <th>Thưởng</th>
+                <th>Tổng cộng</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rowsHtml || '<tr><td colspan="4">Chưa có dữ liệu lương cho tháng này.</td></tr>'}
+            </tbody>
+          </table>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.focus();
+    setTimeout(() => printWindow.print(), 200);
+  };
 
   const handleSubmit = () => {
     if (!canEdit) return;
@@ -154,6 +334,144 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
             <Plus size={14} /> Thêm Nhân Viên
           </button>
         )}
+      </div>
+
+      <div className="bg-white border border-slate-100 rounded-xl shadow-sm p-4">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+          <div>
+            <p className="text-[11px] font-semibold text-slate-500 uppercase">Bảng lương</p>
+            <h3 className="text-lg font-bold text-gray-800">Tổng hợp lương theo tháng</h3>
+            <p className="text-sm text-gray-500">Xem nguồn tính lương từng nhân sự, thêm thưởng kèm lý do và in ra PDF.</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              type="month"
+              value={payrollMonth}
+              onChange={(e) => setPayrollMonth(e.target.value)}
+              className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
+            />
+            <button
+              onClick={handlePrintPayroll}
+              className="inline-flex items-center gap-2 bg-slate-900 text-white px-3 py-2 rounded-lg text-sm font-semibold shadow-sm hover:bg-slate-950"
+            >
+              <Printer size={16} /> In PDF
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-4 overflow-x-auto">
+          <table className="min-w-full text-sm border border-slate-100 rounded-lg overflow-hidden">
+            <thead className="bg-slate-50 text-slate-600">
+              <tr>
+                <th className="text-left px-4 py-3">Nhân sự</th>
+                <th className="text-right px-4 py-3">Tổng lương</th>
+                <th className="text-left px-4 py-3">Thưởng (+ lý do)</th>
+                <th className="text-right px-4 py-3">Tổng cộng</th>
+                <th className="text-center px-4 py-3">Chi tiết</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {payrollRows.map(row => {
+                const draft = bonusDrafts[row.employee.id] || { amount: '', note: '' };
+                return (
+                  <React.Fragment key={row.employee.id}>
+                    <tr className="hover:bg-slate-50">
+                      <td className="px-4 py-3">
+                        <p className="font-semibold text-slate-800">{row.employee.name}</p>
+                        <p className="text-xs text-slate-500">{row.employee.role || 'Chưa có vị trí'} • {row.employee.phone}</p>
+                      </td>
+                      <td className="px-4 py-3 text-right font-semibold text-slate-800">{row.baseTotal.toLocaleString()} đ</td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-col gap-2">
+                          <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                            <input
+                              type="number"
+                              min={0}
+                              value={draft.amount}
+                              onChange={(e) => handleBonusDraftChange(row.employee.id, 'amount', e.target.value)}
+                              className="w-full sm:w-32 border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                              placeholder="0"
+                              disabled={!canAdjustPayroll}
+                            />
+                            <input
+                              type="text"
+                              value={draft.note}
+                              onChange={(e) => handleBonusDraftChange(row.employee.id, 'note', e.target.value)}
+                              className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                              placeholder="Lý do thưởng"
+                              disabled={!canAdjustPayroll}
+                            />
+                            {canAdjustPayroll && (
+                              <button
+                                onClick={() => handleSaveBonus(row.employee.id)}
+                                className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-semibold hover:bg-blue-700"
+                              >
+                                Lưu
+                              </button>
+                            )}
+                          </div>
+                          {(row.bonusAmount > 0 || row.bonusNote) && (
+                            <p className="text-[11px] text-slate-500">
+                              Đã lưu: {row.bonusAmount.toLocaleString()} đ {row.bonusNote ? `• ${row.bonusNote}` : ''}
+                            </p>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-right font-bold text-blue-700">{row.total.toLocaleString()} đ</td>
+                      <td className="px-4 py-3 text-center">
+                        <button
+                          onClick={() => togglePayrollRow(row.employee.id)}
+                          className="text-blue-600 hover:text-blue-700 inline-flex items-center gap-1 text-xs font-semibold"
+                        >
+                          {expandedPayrollRows[row.employee.id] ? (
+                            <>
+                              Ẩn <ChevronUp size={14} />
+                            </>
+                          ) : (
+                            <>
+                              Chi tiết <ChevronDown size={14} />
+                            </>
+                          )}
+                        </button>
+                      </td>
+                    </tr>
+                    {expandedPayrollRows[row.employee.id] && (
+                      <tr className="bg-slate-50/60">
+                        <td colSpan={5} className="px-4 py-3">
+                          {row.entries.length === 0 ? (
+                            <p className="text-xs text-slate-500">Chưa có nguồn lương trong tháng này.</p>
+                          ) : (
+                            <div className="grid md:grid-cols-2 gap-3">
+                              {row.entries.map((entry, idx) => (
+                                <div key={`${entry.eventName}-${entry.date}-${idx}`} className="border border-slate-200 rounded-lg bg-white p-3 shadow-sm">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <p className="font-semibold text-slate-800">{entry.eventName}</p>
+                                    <span className="text-[11px] text-slate-500">{formatDate(entry.date)}</span>
+                                  </div>
+                                  <p className="text-xs text-slate-500">
+                                    {entry.sessions.length ? `Ca: ${entry.sessions.map(sess => sessionLabel[sess] || sess).join(', ')}` : 'Ca: -'}
+                                    {entry.task ? ` • ${entry.task}` : ''}
+                                  </p>
+                                  <p className="text-sm font-bold text-green-700 mt-1">{entry.salary.toLocaleString()} đ</p>
+                                  <p className="text-[11px] text-slate-500">
+                                    {entry.unit === 'FIXED' ? 'Khoản cố định' : `Đơn giá ${entry.rate?.toLocaleString() || 0} x ${entry.quantity || 0} ${entry.unit === 'DAY' ? 'ngày' : 'giờ/ca'}`}
+                                  </p>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+          {payrollRows.length === 0 && (
+            <p className="text-sm text-slate-500 p-4">Chưa có dữ liệu lương cho tháng này.</p>
+          )}
+        </div>
       </div>
 
       {/* Search */}

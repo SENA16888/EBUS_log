@@ -15,11 +15,12 @@ interface LayoutProps {
   currentUser?: UserAccount | null;
   canManageAccess?: boolean;
   canViewLogs?: boolean;
+  canViewEmployees?: boolean;
   onOpenAccess?: () => void;
   onLogout?: () => void;
 }
 
-export const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange, logs, currentUser, canManageAccess, canViewLogs, onOpenAccess, onLogout }) => {
+export const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange, logs, currentUser, canManageAccess, canViewLogs, canViewEmployees = true, onOpenAccess, onLogout }) => {
   const tabs: { key: LayoutProps['activeTab']; label: string; icon: LucideIcon }[] = [
     { key: 'dashboard', label: 'Tổng quan', icon: LayoutDashboard },
     { key: 'inventory', label: 'Kho hàng', icon: Package },
@@ -29,7 +30,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange
     { key: 'events', label: 'Sự kiện', icon: CalendarDays },
     { key: 'employees', label: 'Nhân sự', icon: Users },
     { key: 'elearning', label: 'Elearning', icon: GraduationCap }
-  ];
+  ].filter(tab => canViewEmployees || tab.key !== 'employees');
   if (canViewLogs) {
     tabs.push({ key: 'logs', label: 'Nhật ký', icon: ClipboardList });
   }
@@ -107,15 +108,17 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange
             <span className="font-medium text-sm">Sự kiện</span>
           </button>
 
-          <button 
-            onClick={() => onTabChange('employees')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
-              activeTab === 'employees' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
-            }`}
-          >
-            <Users size={20} />
-            <span className="font-medium text-sm">Nhân sự</span>
-          </button>
+          {canViewEmployees && (
+            <button 
+              onClick={() => onTabChange('employees')}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
+                activeTab === 'employees' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+              }`}
+            >
+              <Users size={20} />
+              <span className="font-medium text-sm">Nhân sự</span>
+            </button>
+          )}
 
           <button 
             onClick={() => onTabChange('elearning')}
