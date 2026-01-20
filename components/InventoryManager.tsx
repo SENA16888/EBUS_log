@@ -72,7 +72,8 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
     purchaseLink: '',
     minStock: 5,
     productionNote: '',
-    location: 'Kho tổng'
+    location: 'Kho tổng',
+    plannedEta: ''
   });
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -566,6 +567,18 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
           location: found?.location || 'Kho tổng'
         };
       }
+      if (mode === 'PLANNED') {
+        return {
+          ...item,
+          mode,
+          itemId: '',
+          name: '',
+          barcode: '',
+          category: DEFAULT_CATEGORY,
+          location: 'Kho tổng',
+          quantity: item.quantity || 0
+        };
+      }
       return {
         ...item,
         mode: 'NEW',
@@ -602,7 +615,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
     }
     const errors: string[] = [];
     const payloadItems: InventoryReceiptItem[] = receiptItems.map((item, idx) => {
-      const qty = Math.max(1, Math.round(item.quantity || 0));
+      const qty = item.mode === 'PLANNED' ? Math.max(0, Math.round(item.quantity || 0)) : Math.max(1, Math.round(item.quantity || 0));
       if (item.mode === 'EXISTING') {
         if (!item.itemId) {
           errors.push(`Chọn thiết bị có sẵn cho dòng ${idx + 1}.`);
@@ -622,7 +635,8 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
           purchaseLink: item.purchaseLink || found?.purchaseLink,
           minStock: typeof item.minStock === 'number' ? item.minStock : found?.minStock,
           productionNote: item.productionNote || found?.productionNote,
-          location: item.location || found?.location || 'Kho tổng'
+          location: item.location || found?.location || 'Kho tổng',
+          plannedEta: item.plannedEta
         };
       }
       if (!item.name.trim()) {
@@ -642,7 +656,8 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
         purchaseLink: item.purchaseLink,
         minStock: item.minStock,
         productionNote: item.productionNote,
-        location: item.location
+        location: item.location,
+        plannedEta: item.plannedEta
       };
     }).filter(Boolean) as InventoryReceiptItem[];
     if (errors.length) {
@@ -787,7 +802,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
                 <div className="mt-2 flex flex-wrap gap-2">
                   {receipt.items.slice(0, 4).map(it => (
                     <span key={`${receipt.id}-${it.itemId || it.name}`} className="px-2 py-1 rounded-full text-[11px] font-bold border border-slate-200 bg-white text-slate-700">
-                      {it.name || 'Thiết bị mới'} • +{it.quantity} {it.mode === 'NEW' ? 'mới' : 'bổ sung'}
+                      {it.name || 'Thiết bị mới'} • {it.mode === 'PLANNED' ? `ảo ${it.quantity || 0}` : `+${it.quantity} ${it.mode === 'NEW' ? 'mới' : 'bổ sung'}`}
                     </span>
                   ))}
                   {receipt.items.length > 4 && (
@@ -1093,6 +1108,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
                         >
                           <option value="EXISTING">Bổ sung thiết bị có sẵn</option>
                           <option value="NEW">Thêm thiết bị mới</option>
+                          <option value="PLANNED">Nhập ảo (dự kiến mua/sản xuất)</option>
                         </select>
                       </div>
                       {receiptItems.length > 1 && (
@@ -1131,14 +1147,19 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
                       )}
 
                       <div>
-                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Số lượng nhập</label>
+                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">
+                          {line.mode === 'PLANNED' ? 'Số lượng dự kiến (không tăng tồn kho)' : 'Số lượng nhập'}
+                        </label>
                         <input
                           type="number"
-                          min={1}
+                          min={line.mode === 'PLANNED' ? 0 : 1}
                           value={line.quantity}
                           onChange={e => handleReceiptItemChange(line.tempId, { quantity: Number(e.target.value) })}
                           className="w-full border-2 border-slate-100 rounded-xl p-3 text-xl font-black text-center text-blue-600"
                         />
+                        {line.mode === 'PLANNED' && (
+                          <p className="text-[11px] text-amber-600 mt-1">Tạo danh mục dự kiến mua/sản xuất, không cộng tồn kho.</p>
+                        )}
                       </div>
                     </div>
 
@@ -1211,6 +1232,24 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
                         />
                       </div>
                     </div>
+
+                    {line.mode === 'PLANNED' && (
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-3">
+                        <div>
+                          <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Thời gian dự kiến</label>
+                          <input
+                            type="text"
+                            value={line.plannedEta || ''}
+                            onChange={e => handleReceiptItemChange(line.tempId, { plannedEta: e.target.value })}
+                            placeholder="VD: Tháng 12/2024"
+                            className="w-full border-2 border-slate-100 rounded-xl p-3 text-sm font-semibold bg-white"
+                          />
+                        </div>
+                        <div className="md:col-span-2 bg-amber-50 border border-amber-200 rounded-xl p-3 text-[11px] font-semibold text-amber-700">
+                          Dùng để thêm danh mục dự kiến nhập kho (mua hoặc sản xuất) nhằm xây dựng combo/gói trước. Số lượng kho thực tế giữ nguyên.
+                        </div>
+                      </div>
+                    )}
 
                     <div className="mt-3">
                       <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Ghi chú / Mô tả</label>

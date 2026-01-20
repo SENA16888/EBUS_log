@@ -864,7 +864,7 @@ const App: React.FC = () => {
 
     const sanitizedItems = (payload.items || []).map(item => {
       const quantity = Math.max(1, Math.round(item.quantity || 0));
-      const mode: InventoryReceiptItem['mode'] = item.mode === 'EXISTING' ? 'EXISTING' : 'NEW';
+      const mode: InventoryReceiptItem['mode'] = item.mode === 'EXISTING' ? 'EXISTING' : item.mode === 'PLANNED' ? 'PLANNED' : 'NEW';
       return {
         ...item,
         mode,
@@ -876,8 +876,12 @@ const App: React.FC = () => {
         description: item.description?.trim(),
         purchaseLink: item.purchaseLink?.trim(),
         productionNote: item.productionNote?.trim(),
+        plannedEta: item.plannedEta?.trim()
       };
-    }).filter(item => item.quantity > 0 && (item.mode === 'EXISTING' ? !!item.itemId : !!item.name));
+    }).filter(item => {
+      if (item.mode === 'PLANNED') return !!item.name;
+      return item.quantity > 0 && (item.mode === 'EXISTING' ? !!item.itemId : !!item.name);
+    });
 
     if (!sanitizedItems.length) {
       alert('Vui lòng thêm ít nhất 1 thiết bị vào phiếu.');
@@ -923,6 +927,52 @@ const App: React.FC = () => {
             category: updated.category,
             quantity,
             barcode: target.barcode || item.barcode
+          });
+        } else if (item.mode === 'PLANNED') {
+          const name = item.name.trim();
+          if (!name) {
+            error = `Thiếu tên thiết bị ở dòng ${idx + 1}.`;
+            return;
+          }
+          const category = item.category || 'Khác';
+          const finalBarcode = item.barcode || generateBarcode(name || category);
+          const duplicate = findDuplicateBarcodeItem(nextInventory, finalBarcode);
+          if (duplicate) {
+            error = `Mã barcode ${finalBarcode} đã thuộc về "${duplicate.name}".`;
+            return;
+          }
+          const plannedItem: InventoryItem = {
+            id: `ITEM-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 6)}`,
+            barcode: finalBarcode,
+            name,
+            category,
+            description: item.description || '',
+            location: item.location || 'Kho tổng',
+            totalQuantity: 0,
+            availableQuantity: 0,
+            inUseQuantity: 0,
+            maintenanceQuantity: 0,
+            brokenQuantity: 0,
+            lostQuantity: 0,
+            usageCount: 0,
+            imageUrl: item.imageUrl || 'https://picsum.photos/200/200',
+            rentalPrice: Number.isFinite(item.rentalPrice) ? Number(item.rentalPrice) : 0,
+            purchaseLink: item.purchaseLink || '',
+            minStock: Number.isFinite(item.minStock) ? Number(item.minStock) : 5,
+            productionNote: item.productionNote || '',
+            plannedPurchase: true,
+            plannedQuantity: item.quantity || 0,
+            plannedEta: item.plannedEta || ''
+          };
+          nextInventory.push(plannedItem);
+          receiptItems.push({
+            ...item,
+            mode: 'PLANNED',
+            itemId: plannedItem.id,
+            name: plannedItem.name,
+            category: plannedItem.category,
+            quantity: item.quantity || 0,
+            barcode: plannedItem.barcode
           });
         } else {
           const name = item.name.trim();

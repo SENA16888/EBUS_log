@@ -52,7 +52,7 @@ export interface InventoryItem {
   plannedEta?: string;
 }
 
-export type InventoryReceiptItemMode = 'EXISTING' | 'NEW';
+export type InventoryReceiptItemMode = 'EXISTING' | 'NEW' | 'PLANNED';
 
 export interface InventoryReceiptItem {
   mode: InventoryReceiptItemMode;
@@ -68,6 +68,7 @@ export interface InventoryReceiptItem {
   minStock?: number;
   productionNote?: string;
   location?: string;
+  plannedEta?: string;
 }
 
 export interface InventoryReceipt {
