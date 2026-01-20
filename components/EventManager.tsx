@@ -29,6 +29,7 @@ interface EventManagerProps {
   onUpdateEventItemQuantity?: (eventId: string, itemId: string, qty: number) => void;
   onToggleItemDone?: (eventId: string, itemId: string, done: boolean) => void;
   onCreateEvent: (newEvent: Event) => void;
+  onDeleteEvent?: (eventId: string) => void;
   onAssignStaff?: (eventId: string, staffData: EventStaffAllocation) => void;
   onRemoveStaff?: (eventId: string, employeeId: string) => void;
   onToggleStaffDone?: (eventId: string, employeeId: string, done: boolean) => void;
@@ -268,6 +269,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
   onReturnFromEvent,
   onUpdateEventItemQuantity,
   onCreateEvent,
+  onDeleteEvent,
   onAssignStaff,
   onRemoveStaff,
   onToggleItemDone,
@@ -293,6 +295,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
   const [showExportModal, setShowExportModal] = useState(false);
   const [showPrintModal, setShowPrintModal] = useState(false);
   const [showExportPDFModal, setShowExportPDFModal] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   
   // Create Event Form State
   const [newEventData, setNewEventData] = useState({
@@ -566,6 +569,19 @@ export const EventManager: React.FC<EventManagerProps> = ({
     setNewEventSchedule([]);
     setNewScheduleDate('');
     setSelectedEventId(newEvent.id);
+  };
+
+  const handleConfirmDeleteEvent = () => {
+    if (!selectedEvent || !onDeleteEvent) return;
+    if (!isAdmin) {
+      alert('Chỉ ADMIN được phép xóa sự kiện.');
+      return;
+    }
+    const fallbackId = events.find(ev => ev.id !== selectedEvent.id)?.id || null;
+    onDeleteEvent(selectedEvent.id);
+    setShowDeleteConfirm(false);
+    setSelectedEventId(fallbackId);
+    setSelectedItemIds([]);
   };
 
   const handleAddScheduleDate = () => {
@@ -1209,6 +1225,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
     setResizingBlock(null);
     setShowLayoutFullscreen(false);
     setEditingBlockId(null);
+    setShowDeleteConfirm(false);
     setLayoutForm(prev => ({
       ...prev,
       name: '',
@@ -1497,12 +1514,22 @@ export const EventManager: React.FC<EventManagerProps> = ({
                   <h2 className="text-2xl font-black text-gray-800">{selectedEvent.name}</h2>
                   <p className="text-sm text-gray-500">{selectedEvent.client} • {selectedEvent.location}</p>
                 </div>
-                <button 
-                  onClick={handleCreateOrder}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition ${selectedEvent.isOrderCreated ? 'bg-green-100 text-green-700' : 'bg-slate-800 text-white hover:bg-black'}`}
-                >
-                  {selectedEvent.isOrderCreated ? <><CheckCircle size={16}/> Đã Chốt Đơn</> : <><FileText size={16}/> Chốt Đơn & In</>}
-                </button>
+                <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+                  {isAdmin && onDeleteEvent && (
+                    <button
+                      onClick={() => setShowDeleteConfirm(true)}
+                      className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold border border-red-200 text-red-600 bg-red-50 hover:bg-red-100 transition"
+                    >
+                      <Trash2 size={16}/> Xóa sự kiện
+                    </button>
+                  )}
+                  <button 
+                    onClick={handleCreateOrder}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition ${selectedEvent.isOrderCreated ? 'bg-green-100 text-green-700' : 'bg-slate-800 text-white hover:bg-black'}`}
+                  >
+                    {selectedEvent.isOrderCreated ? <><CheckCircle size={16}/> Đã Chốt Đơn</> : <><FileText size={16}/> Chốt Đơn & In</>}
+                  </button>
+                </div>
               </div>
               
               <div className="flex flex-wrap gap-4 md:gap-8 mt-6">
@@ -2890,6 +2917,40 @@ export const EventManager: React.FC<EventManagerProps> = ({
           </div>
         )}
       </div>
+
+      {/* MODAL: Delete Event */}
+      {showDeleteConfirm && selectedEvent && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden">
+            <div className="p-6 border-b bg-red-50 flex justify-between items-start">
+              <div>
+                <p className="text-[11px] font-black text-red-500 uppercase">Xóa sự kiện</p>
+                <h3 className="text-xl font-bold text-gray-800">{selectedEvent.name}</h3>
+                <p className="text-sm text-slate-600">{selectedEvent.client} • {selectedEvent.location}</p>
+              </div>
+              <button onClick={() => setShowDeleteConfirm(false)} className="text-gray-400 hover:text-gray-600">
+                <X size={24} />
+              </button>
+            </div>
+            <div className="p-6 space-y-3">
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm text-amber-800">
+                <p className="font-bold mb-1">Chỉ ADMIN được xóa sự kiện.</p>
+                <p>Thao tác này sẽ gỡ toàn bộ dữ liệu sự kiện và bỏ liên kết đơn bán (nếu có). Hành động không thể hoàn tác.</p>
+              </div>
+              <div className="text-sm text-slate-600 space-y-1">
+                <p><span className="font-semibold text-slate-800">Thời gian:</span> {eventDateLabel || 'Không rõ'}</p>
+                <p><span className="font-semibold text-slate-800">Khách hàng:</span> {selectedEvent.client}</p>
+              </div>
+            </div>
+            <div className="p-6 bg-slate-50 flex justify-end gap-3">
+              <button onClick={() => setShowDeleteConfirm(false)} className="px-4 py-2 font-bold text-gray-500">Hủy</button>
+              <button onClick={handleConfirmDeleteEvent} className="px-5 py-2 bg-red-600 text-white rounded-lg font-bold hover:bg-red-700 flex items-center gap-2">
+                <Trash2 size={16}/> Xóa vĩnh viễn
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* MODAL: Layout Fullscreen */}
       {showLayoutFullscreen && (

@@ -1237,6 +1237,46 @@ const App: React.FC = () => {
     saveEventStateImmediate(newState); // Save immediately
     addLog(`Tạo sự kiện mới: "${event.name}"`, 'SUCCESS');
   };
+
+  const handleDeleteEvent = (eventId: string) => {
+    if (!isAdmin) {
+      alert('Chỉ ADMIN được phép xóa sự kiện.');
+      return;
+    }
+
+    let deletedName = '';
+    let nextState: AppState | null = null;
+
+    setAppState(prev => {
+      const target = prev.events.find(e => e.id === eventId);
+      if (!target) return prev;
+      deletedName = target.name;
+
+      const cleanedSaleOrders = (prev.saleOrders || []).map(order => {
+        if (order.eventId !== eventId && order.groupId !== eventId) return order;
+        return {
+          ...order,
+          eventId: order.eventId === eventId ? undefined : order.eventId,
+          eventName: order.eventId === eventId ? undefined : order.eventName,
+          groupType: order.groupType === 'EVENT' && order.groupId === eventId ? 'CUSTOMER' : order.groupType,
+          groupId: order.groupId === eventId ? undefined : order.groupId,
+          groupName: order.groupId === eventId ? (order.customerName || order.groupName) : order.groupName
+        };
+      });
+
+      nextState = {
+        ...prev,
+        events: prev.events.filter(e => e.id !== eventId),
+        saleOrders: cleanedSaleOrders
+      };
+      return nextState;
+    });
+
+    if (nextState) {
+      saveEventStateImmediate(nextState);
+      addLog(`ADMIN xóa sự kiện: "${deletedName}"`, 'WARNING');
+    }
+  };
   
   const handleExportToEvent = (eventId: string, itemId: string, qty: number) => {
     let itemName = '', eventName = '';
@@ -1602,6 +1642,7 @@ const App: React.FC = () => {
           onUpdateEventItemQuantity={guard('EVENTS_EDIT', handleUpdateEventItemQuantity)}
           onRemoveEventItems={guard('EVENTS_EDIT', handleRemoveEventItems)}
           onCreateEvent={guard('EVENTS_EDIT', handleCreateEvent)} 
+          onDeleteEvent={isAdmin ? guard('EVENTS_DELETE', handleDeleteEvent) : undefined}
           onAssignStaff={guard('EVENTS_EDIT', handleAssignStaff)}
           onRemoveStaff={guard('EVENTS_EDIT', handleRemoveStaff)}
           onAddExpense={guard('EVENTS_EDIT', handleAddExpense)}
