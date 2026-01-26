@@ -1511,6 +1511,16 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
                         placeholder="Thông số, tình trạng nhập, series..."
                       />
                     </div>
+                    <div className="mt-3">
+                      <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Link hình ảnh</label>
+                      <input
+                        type="text"
+                        value={line.imageUrl || ''}
+                        onChange={e => handleReceiptItemChange(line.tempId, { imageUrl: e.target.value })}
+                        className="w-full border-2 border-slate-100 rounded-xl p-3 text-sm font-semibold bg-white"
+                        placeholder="https:// hình ảnh minh họa"
+                      />
+                    </div>
                   </div>
                 ))}
               </div>
