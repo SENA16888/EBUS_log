@@ -28,6 +28,9 @@ export enum TransactionType {
 }
 
 export interface InventoryItem {
+  lifecycle?: InventoryLifecycle;
+  consumableUnit?: string;
+  maxUsage?: number;
   id: string;
   barcode?: string;
   name: string;
@@ -52,10 +55,15 @@ export interface InventoryItem {
   plannedEta?: string;
 }
 
+export type InventoryLifecycle = 'DEPRECIATION' | 'CONSUMABLE';
+
 export type InventoryReceiptItemMode = 'EXISTING' | 'NEW' | 'PLANNED';
 
 export interface InventoryReceiptItem {
   mode: InventoryReceiptItemMode;
+  lifecycle?: InventoryLifecycle;
+  consumableUnit?: string;
+  maxUsage?: number;
   itemId?: string;
   name: string;
   category: string;

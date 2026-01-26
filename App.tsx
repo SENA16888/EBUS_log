@@ -53,6 +53,15 @@ const getDeviceId = () => {
   return generateId('dev');
 };
 
+const normalizeInventoryLifecycle = (item: InventoryItem): InventoryItem => {
+  const lifecycle = item.lifecycle === 'CONSUMABLE' ? 'CONSUMABLE' : 'DEPRECIATION';
+  const maxUsage = lifecycle === 'DEPRECIATION'
+    ? (typeof item.maxUsage === 'number' && item.maxUsage > 0 ? item.maxUsage : 10)
+    : undefined;
+  const consumableUnit = lifecycle === 'CONSUMABLE' ? (item.consumableUnit || 'cái') : undefined;
+  return { ...item, lifecycle, maxUsage, consumableUnit };
+};
+
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'inventory' | 'events' | 'packages' | 'employees' | 'quotations' | 'sales' | 'elearning' | 'logs'>('dashboard');
   const [isChatOpen, setIsChatOpen] = useState(false);
@@ -106,9 +115,10 @@ const App: React.FC = () => {
       ...log,
       timestamp: log?.timestamp ? (log.timestamp instanceof Date ? log.timestamp : new Date(log.timestamp)) : new Date()
     }));
+    const normalizedInventory = ensureInventoryBarcodes(state.inventory || []).map(normalizeInventoryLifecycle);
     return {
       ...state,
-      inventory: ensureInventoryBarcodes(state.inventory || []),
+      inventory: normalizedInventory,
       events: (state.events || []).map(ev => ({
         ...ev,
         items: ev.items || [],
@@ -767,7 +777,10 @@ const App: React.FC = () => {
             if (!itemSnap) return inv;
             const qty = payload.direction === 'OUT' ? itemSnap.scannedOut : itemSnap.scannedIn;
             if (!qty || qty <= 0) return inv;
-            const nextUsage = payload.direction === 'OUT' ? (inv.usageCount || 0) + qty : inv.usageCount || 0;
+            const lifecycle = inv.lifecycle === 'CONSUMABLE' ? 'CONSUMABLE' : 'DEPRECIATION';
+            const nextUsage = payload.direction === 'OUT'
+              ? (lifecycle === 'DEPRECIATION' ? (inv.usageCount || 0) + qty : inv.usageCount || 0)
+              : inv.usageCount || 0;
             if (payload.direction === 'OUT') {
               return {
                 ...inv,
@@ -795,7 +808,7 @@ const App: React.FC = () => {
 
   // --- Handlers cho Kho hàng ---
   const handleUpdateInventory = (updatedItem: InventoryItem) => {
-    const itemWithBarcode = ensureItemBarcode(updatedItem);
+    const itemWithBarcode = normalizeInventoryLifecycle(ensureItemBarcode(updatedItem));
     let duplicateOwner = '';
     setAppState(prev => {
       const duplicate = findDuplicateBarcodeItem(prev.inventory, itemWithBarcode.barcode, itemWithBarcode.id);
@@ -827,7 +840,7 @@ const App: React.FC = () => {
   };
 
   const handleAddNewItem = (item: InventoryItem) => {
-    const itemWithBarcode = ensureItemBarcode(item);
+    const itemWithBarcode = normalizeInventoryLifecycle(ensureItemBarcode(item));
     let duplicateOwner = '';
     let added = false;
     setAppState(prev => {
@@ -863,12 +876,18 @@ const App: React.FC = () => {
     }
 
     const sanitizedItems = (payload.items || []).map(item => {
-      const quantity = Math.max(1, Math.round(item.quantity || 0));
       const mode: InventoryReceiptItem['mode'] = item.mode === 'EXISTING' ? 'EXISTING' : item.mode === 'PLANNED' ? 'PLANNED' : 'NEW';
+      const quantity = Math.max(mode === 'PLANNED' ? 0 : 1, Math.round(item.quantity || 0));
+      const lifecycle = item.lifecycle === 'CONSUMABLE' ? 'CONSUMABLE' : 'DEPRECIATION';
+      const consumableUnit = (item.consumableUnit || '').trim();
+      const maxUsage = lifecycle === 'DEPRECIATION' ? Number(item.maxUsage) || 0 : undefined;
       return {
         ...item,
         mode,
         quantity,
+        lifecycle,
+        consumableUnit: consumableUnit || undefined,
+        maxUsage: lifecycle === 'DEPRECIATION' ? maxUsage : undefined,
         name: (item.name || '').trim(),
         category: (item.category || 'Khác').trim() || 'Khác',
         barcode: normalizeBarcode(item.barcode || ''),
@@ -898,6 +917,19 @@ const App: React.FC = () => {
       sanitizedItems.forEach((item, idx) => {
         if (error) return;
         const quantity = item.quantity || 1;
+        const lifecycle = item.lifecycle === 'CONSUMABLE' ? 'CONSUMABLE' : 'DEPRECIATION';
+        const consumableUnit = (item.consumableUnit || '').trim();
+        const maxUsage = lifecycle === 'DEPRECIATION' ? Math.max(0, Math.round(item.maxUsage || 0)) : undefined;
+
+        if (lifecycle === 'DEPRECIATION' && (!maxUsage || maxUsage <= 0)) {
+          error = `Thiếu số lần sử dụng tối đa cho dòng ${idx + 1}.`;
+          return;
+        }
+        if (lifecycle === 'CONSUMABLE' && !consumableUnit) {
+          error = `Thiếu đơn vị tính cho dòng ${idx + 1}.`;
+          return;
+        }
+
         if (item.mode === 'EXISTING' && item.itemId) {
           const foundIdx = nextInventory.findIndex(inv => inv.id === item.itemId);
           if (foundIdx === -1) {
@@ -905,8 +937,18 @@ const App: React.FC = () => {
             return;
           }
           const target = nextInventory[foundIdx];
-          const updated: InventoryItem = {
+          const mergedLifecycle = target.lifecycle || lifecycle;
+          const resolvedMaxUsage = mergedLifecycle === 'DEPRECIATION'
+            ? (typeof target.maxUsage === 'number' && target.maxUsage > 0 ? target.maxUsage : maxUsage)
+            : undefined;
+          const resolvedUnit = mergedLifecycle === 'CONSUMABLE'
+            ? (target.consumableUnit || consumableUnit || undefined)
+            : undefined;
+          const updated: InventoryItem = normalizeInventoryLifecycle({
             ...target,
+            lifecycle: mergedLifecycle,
+            consumableUnit: resolvedUnit,
+            maxUsage: resolvedMaxUsage,
             totalQuantity: target.totalQuantity + quantity,
             availableQuantity: target.availableQuantity + quantity,
             location: item.location || target.location,
@@ -917,11 +959,14 @@ const App: React.FC = () => {
             description: item.description || target.description,
             imageUrl: item.imageUrl || target.imageUrl,
             category: item.category || target.category
-          };
+          });
           nextInventory[foundIdx] = updated;
           receiptItems.push({
             ...item,
             mode: 'EXISTING',
+            lifecycle: mergedLifecycle,
+            consumableUnit: resolvedUnit,
+            maxUsage: resolvedMaxUsage,
             itemId: target.id,
             name: target.name,
             category: updated.category,
@@ -941,7 +986,7 @@ const App: React.FC = () => {
             error = `Mã barcode ${finalBarcode} đã thuộc về "${duplicate.name}".`;
             return;
           }
-          const plannedItem: InventoryItem = {
+          const plannedItem: InventoryItem = normalizeInventoryLifecycle({
             id: `ITEM-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 6)}`,
             barcode: finalBarcode,
             name,
@@ -962,12 +1007,18 @@ const App: React.FC = () => {
             productionNote: item.productionNote || '',
             plannedPurchase: true,
             plannedQuantity: item.quantity || 0,
-            plannedEta: item.plannedEta || ''
-          };
+            plannedEta: item.plannedEta || '',
+            lifecycle,
+            consumableUnit: lifecycle === 'CONSUMABLE' ? consumableUnit : undefined,
+            maxUsage: lifecycle === 'DEPRECIATION' ? maxUsage : undefined
+          });
           nextInventory.push(plannedItem);
           receiptItems.push({
             ...item,
             mode: 'PLANNED',
+            lifecycle,
+            consumableUnit: plannedItem.consumableUnit,
+            maxUsage: plannedItem.maxUsage,
             itemId: plannedItem.id,
             name: plannedItem.name,
             category: plannedItem.category,
@@ -987,7 +1038,7 @@ const App: React.FC = () => {
             error = `Mã barcode ${finalBarcode} đã thuộc về "${duplicate.name}".`;
             return;
           }
-          const newItem: InventoryItem = {
+          const newItem: InventoryItem = normalizeInventoryLifecycle({
             id: `ITEM-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 6)}`,
             barcode: finalBarcode,
             name,
@@ -1008,12 +1059,18 @@ const App: React.FC = () => {
             productionNote: item.productionNote || '',
             plannedPurchase: false,
             plannedQuantity: 0,
-            plannedEta: ''
-          };
+            plannedEta: '',
+            lifecycle,
+            consumableUnit: lifecycle === 'CONSUMABLE' ? consumableUnit : undefined,
+            maxUsage: lifecycle === 'DEPRECIATION' ? maxUsage : undefined
+          });
           nextInventory.push(newItem);
           receiptItems.push({
             ...item,
             mode: 'NEW',
+            lifecycle,
+            consumableUnit: newItem.consumableUnit,
+            maxUsage: newItem.maxUsage,
             itemId: newItem.id,
             name: newItem.name,
             category: newItem.category,
@@ -1601,6 +1658,7 @@ const App: React.FC = () => {
           canCreateReceipt={isAdmin}
           canEdit={can('INVENTORY_EDIT')}
           canDelete={can('INVENTORY_DELETE')}
+          isAdmin={isAdmin}
         />
       )}
       {activeTab === 'packages' && (

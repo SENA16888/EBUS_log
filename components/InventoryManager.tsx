@@ -44,6 +44,7 @@ interface InventoryManagerProps {
   canEdit?: boolean;
   canDelete?: boolean;
   canCreateReceipt?: boolean;
+  isAdmin?: boolean;
 }
 
 export const InventoryManager: React.FC<InventoryManagerProps> = ({ 
@@ -56,15 +57,19 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
   onCreateReceipt,
   canEdit = true,
   canDelete = true,
-  canCreateReceipt = false
+  canCreateReceipt = false,
+  isAdmin = false
 }) => {
   const createEmptyReceiptItem = (): (InventoryReceiptItem & { tempId: string }) => ({
     tempId: `draft-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     mode: 'EXISTING',
+    lifecycle: 'DEPRECIATION',
     itemId: '',
     name: '',
     category: DEFAULT_CATEGORY,
     quantity: 1,
+    consumableUnit: '',
+    maxUsage: undefined,
     barcode: '',
     description: '',
     imageUrl: 'https://picsum.photos/200/200',
@@ -103,7 +108,28 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
     createEmptyReceiptItem()
   ]);
 
-  const [newItemData, setNewItemData] = useState({
+  const [newItemData, setNewItemData] = useState<{
+    lifecycle: InventoryReceiptItem['lifecycle'];
+    consumableUnit: string;
+    maxUsage?: number;
+    barcode: string;
+    name: string;
+    category: string;
+    description: string;
+    location: string;
+    totalQuantity: number;
+    imageUrl: string;
+    rentalPrice: number;
+    purchaseLink: string;
+    minStock: number;
+    productionNote: string;
+    plannedPurchase: boolean;
+    plannedQuantity: number;
+    plannedEta: string;
+  }>({
+    lifecycle: 'DEPRECIATION',
+    consumableUnit: '',
+    maxUsage: 0,
     barcode: '',
     name: '',
     category: DEFAULT_CATEGORY,
@@ -203,6 +229,9 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
     e.stopPropagation();
     setEditingItemId(item.id);
     setNewItemData({
+      lifecycle: item.lifecycle || 'DEPRECIATION',
+      consumableUnit: item.consumableUnit || '',
+      maxUsage: item.maxUsage ?? 0,
       barcode: item.barcode || '',
       name: item.name,
       category: item.category,
@@ -264,6 +293,15 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
       alert("Vui lòng nhập danh mục thiết bị");
       return;
     }
+    const lifecycle = newItemData.lifecycle || 'DEPRECIATION';
+    if (lifecycle === 'DEPRECIATION' && (!newItemData.maxUsage || Number(newItemData.maxUsage) <= 0)) {
+      alert('Nhập số lần sử dụng tối đa cho thiết bị khấu hao.');
+      return;
+    }
+    if (lifecycle === 'CONSUMABLE' && !newItemData.consumableUnit.trim()) {
+      alert('Vui lòng nhập đơn vị tính cho hàng tiêu hao.');
+      return;
+    }
     const category = newItemData.category.trim();
     const finalBarcode = normalizeBarcode(newItemData.barcode) || generateBarcode(newItemData.name);
     const duplicateItem = findDuplicateBarcodeItem(inventory, finalBarcode);
@@ -274,6 +312,9 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
     const newItem: InventoryItem = {
       id: `ITEM-${Date.now()}`,
       barcode: finalBarcode,
+      lifecycle,
+      consumableUnit: lifecycle === 'CONSUMABLE' ? (newItemData.consumableUnit.trim() || undefined) : undefined,
+      maxUsage: lifecycle === 'DEPRECIATION' ? Number(newItemData.maxUsage) : undefined,
       name,
       category,
       description: newItemData.description,
@@ -313,17 +354,29 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
       alert("Vui lòng nhập danh mục thiết bị");
       return;
     }
+    const lifecycle = newItemData.lifecycle || existingItem.lifecycle || 'DEPRECIATION';
+    if (lifecycle === 'DEPRECIATION' && (!newItemData.maxUsage || Number(newItemData.maxUsage) <= 0)) {
+      alert('Nhập số lần sử dụng tối đa cho thiết bị khấu hao.');
+      return;
+    }
+    if (lifecycle === 'CONSUMABLE' && !newItemData.consumableUnit.trim()) {
+      alert('Vui lòng nhập đơn vị tính cho hàng tiêu hao.');
+      return;
+    }
     const category = newItemData.category.trim();
-    const lockedBarcode = normalizeBarcode(existingItem.barcode || '');
-    const finalBarcode = lockedBarcode || generateBarcode(existingItem.name);
+    const editableBarcode = isAdmin ? normalizeBarcode(newItemData.barcode || '') : normalizeBarcode(existingItem.barcode || '');
+    const finalBarcode = editableBarcode || generateBarcode(existingItem.name || category);
     const duplicateItem = findDuplicateBarcodeItem(inventory, finalBarcode, existingItem.id);
     if (duplicateItem) {
-      alert(`Mã barcode "${finalBarcode}" đang được sử dụng bởi "${duplicateItem.name}". Barcode sản phẩm đã khóa để tránh trùng lặp.`);
+      alert(`Mã barcode "${finalBarcode}" đang được sử dụng bởi "${duplicateItem.name}".`);
       return;
     }
     const updatedItem: InventoryItem = {
       ...existingItem,
       barcode: finalBarcode,
+      lifecycle,
+      consumableUnit: lifecycle === 'CONSUMABLE' ? (newItemData.consumableUnit.trim() || undefined) : undefined,
+      maxUsage: lifecycle === 'DEPRECIATION' ? Number(newItemData.maxUsage) : undefined,
       name,
       category,
       description: newItemData.description,
@@ -539,6 +592,9 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
         mode: 'EXISTING',
         itemId,
         name: found.name,
+        lifecycle: found.lifecycle || 'DEPRECIATION',
+        consumableUnit: found.consumableUnit || item.consumableUnit,
+        maxUsage: typeof found.maxUsage === 'number' ? found.maxUsage : item.maxUsage,
         category: found.category || item.category,
         quantity: item.quantity || 1,
         barcode: found.barcode || item.barcode,
@@ -564,6 +620,9 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
           name: found?.name || '',
           barcode: found?.barcode || '',
           category: found?.category || item.category,
+          lifecycle: found?.lifecycle || 'DEPRECIATION',
+          consumableUnit: found?.consumableUnit || item.consumableUnit,
+          maxUsage: typeof found?.maxUsage === 'number' ? found.maxUsage : item.maxUsage,
           location: found?.location || 'Kho tổng'
         };
       }
@@ -574,6 +633,9 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
           itemId: '',
           name: '',
           barcode: '',
+          lifecycle: 'DEPRECIATION',
+          consumableUnit: '',
+          maxUsage: item.maxUsage ?? 0,
           category: DEFAULT_CATEGORY,
           location: 'Kho tổng',
           quantity: item.quantity || 0
@@ -585,6 +647,9 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
         itemId: '',
         name: '',
         barcode: '',
+        lifecycle: 'DEPRECIATION',
+        consumableUnit: '',
+        maxUsage: item.maxUsage ?? 0,
         category: DEFAULT_CATEGORY,
         location: 'Kho tổng'
       };
@@ -616,14 +681,32 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
     const errors: string[] = [];
     const payloadItems: InventoryReceiptItem[] = receiptItems.map((item, idx) => {
       const qty = item.mode === 'PLANNED' ? Math.max(0, Math.round(item.quantity || 0)) : Math.max(1, Math.round(item.quantity || 0));
+      const found = item.itemId ? inventory.find(i => i.id === item.itemId) : undefined;
+      const lifecycle = (item.lifecycle || found?.lifecycle || 'DEPRECIATION') as InventoryReceiptItem['lifecycle'];
+      const unit = (item.consumableUnit || found?.consumableUnit || '').trim();
+      const maxUsage = lifecycle === 'DEPRECIATION'
+        ? (typeof item.maxUsage === 'number' ? item.maxUsage : found?.maxUsage)
+        : undefined;
+
+      if (lifecycle === 'DEPRECIATION' && (!maxUsage || maxUsage <= 0)) {
+        errors.push(`Nhập số lần sử dụng tối đa cho dòng ${idx + 1}.`);
+        return null;
+      }
+      if (lifecycle === 'CONSUMABLE' && !unit) {
+        errors.push(`Điền đơn vị tính cho dòng ${idx + 1}.`);
+        return null;
+      }
+
       if (item.mode === 'EXISTING') {
         if (!item.itemId) {
           errors.push(`Chọn thiết bị có sẵn cho dòng ${idx + 1}.`);
           return null;
         }
-        const found = inventory.find(i => i.id === item.itemId);
         return {
           mode: 'EXISTING',
+          lifecycle,
+          consumableUnit: unit || undefined,
+          maxUsage: lifecycle === 'DEPRECIATION' ? maxUsage : undefined,
           itemId: item.itemId,
           name: found?.name || item.name,
           category: found?.category || item.category || DEFAULT_CATEGORY,
@@ -644,7 +727,10 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
         return null;
       }
       return {
-        mode: 'NEW',
+        mode: item.mode === 'PLANNED' ? 'PLANNED' : 'NEW',
+        lifecycle,
+        consumableUnit: unit || undefined,
+        maxUsage: lifecycle === 'DEPRECIATION' ? maxUsage : undefined,
         itemId: item.itemId,
         name: item.name.trim(),
         category: item.category || DEFAULT_CATEGORY,
@@ -698,6 +784,9 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
 
   const resetForms = () => {
     setNewItemData({
+      lifecycle: 'DEPRECIATION',
+      consumableUnit: '',
+      maxUsage: 0,
       barcode: '',
       name: '', category: DEFAULT_CATEGORY, description: '', location: '', totalQuantity: 1,
       imageUrl: 'https://picsum.photos/200/200', rentalPrice: 0, purchaseLink: '',
@@ -819,7 +908,10 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 pb-16">
         {filteredInventory.map(item => {
+          const lifecycle = item.lifecycle === 'CONSUMABLE' ? 'CONSUMABLE' : 'DEPRECIATION';
           const isLowStock = item.availableQuantity <= (item.minStock || 0);
+          const usageCapacity = lifecycle === 'DEPRECIATION' && item.maxUsage ? item.maxUsage * Math.max(1, item.totalQuantity) : null;
+          const remainingUsage = usageCapacity !== null ? Math.max(0, usageCapacity - (item.usageCount || 0)) : null;
           return (
             <div key={item.id} className={`bg-white rounded-2xl shadow-sm border overflow-hidden hover:shadow-lg transition-all duration-300 group relative flex flex-col ${isLowStock ? 'border-orange-200' : 'border-slate-100 hover:border-blue-100'}`}>
               
@@ -850,6 +942,26 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
 
               <div className="p-4 flex-1 flex flex-col">
                 <h3 className="font-black text-slate-800 text-sm leading-snug line-clamp-2 h-10 mb-2.5">{item.name}</h3>
+                <div className="flex flex-wrap gap-2 mb-2">
+                  <span className={`px-2 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border ${lifecycle === 'CONSUMABLE' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-slate-100 text-slate-700 border-slate-200'}`}>
+                    {lifecycle === 'CONSUMABLE' ? 'Tiêu hao' : 'Khấu hao'}
+                  </span>
+                  {lifecycle === 'CONSUMABLE' && item.consumableUnit && (
+                    <span className="px-2 py-1 rounded-full text-[10px] font-bold bg-white border border-amber-200 text-amber-700">
+                      Đơn vị: {item.consumableUnit}
+                    </span>
+                  )}
+                  {usageCapacity !== null && remainingUsage !== null && (
+                    <span className="px-2 py-1 rounded-full text-[10px] font-bold bg-blue-50 border border-blue-100 text-blue-700">
+                      Còn {remainingUsage}/{usageCapacity} lượt
+                    </span>
+                  )}
+                  {usageCapacity !== null && remainingUsage !== null && remainingUsage <= 0 && (
+                    <span className="px-2 py-1 rounded-full text-[10px] font-black bg-red-50 border border-red-200 text-red-700">
+                      Hết khấu hao
+                    </span>
+                  )}
+                </div>
                 <div className="space-y-3 flex-1">
                   <div className="flex justify-between items-end">
                     <div>
@@ -873,7 +985,10 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
                       <History size={14} />
                       <span>Đã sử dụng</span>
                     </div>
-                    <span className="text-sm text-slate-800">{(item.usageCount || 0).toLocaleString()} lần</span>
+                    <span className="text-sm text-slate-800">
+                      {(item.usageCount || 0).toLocaleString()} lần
+                      {usageCapacity !== null ? ` / ${usageCapacity.toLocaleString()}` : ''}
+                    </span>
                   </div>
 
                   {item.barcode && (
@@ -954,6 +1069,68 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
                   </datalist>
                   <p className="text-[10px] text-slate-400 mt-1">Gõ để thêm danh mục mới hoặc chọn gợi ý sẵn có.</p>
                 </div>
+                <div className="md:col-span-2">
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Loại hàng *</label>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setNewItemData(prev => ({
+                        ...prev,
+                        lifecycle: 'DEPRECIATION',
+                        maxUsage: prev.maxUsage && prev.maxUsage > 0 ? prev.maxUsage : 10
+                      }))}
+                      className={`px-4 py-3 rounded-xl text-xs font-black uppercase tracking-widest border-2 transition ${newItemData.lifecycle === 'DEPRECIATION' ? 'bg-slate-800 text-white border-slate-900 shadow' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'}`}
+                    >
+                      Khấu hao
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setNewItemData(prev => ({
+                        ...prev,
+                        lifecycle: 'CONSUMABLE',
+                        consumableUnit: prev.consumableUnit || 'cái',
+                        maxUsage: undefined
+                      }))}
+                      className={`px-4 py-3 rounded-xl text-xs font-black uppercase tracking-widest border-2 transition ${newItemData.lifecycle === 'CONSUMABLE' ? 'bg-amber-500 text-white border-amber-600 shadow' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'}`}
+                    >
+                      Tiêu hao
+                    </button>
+                  </div>
+                  {newItemData.lifecycle === 'DEPRECIATION' ? (
+                    <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+                      <div className="md:col-span-1">
+                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Số lần sử dụng tối đa</label>
+                        <input
+                          type="number"
+                          min={1}
+                          value={newItemData.maxUsage || ''}
+                          onChange={e => setNewItemData({ ...newItemData, maxUsage: Number(e.target.value) })}
+                          className="w-full border-2 border-slate-100 rounded-2xl p-4 text-xl font-black text-center"
+                          placeholder="VD: 30 lần"
+                        />
+                      </div>
+                      <div className="md:col-span-2 text-[11px] text-slate-500 bg-slate-50 border border-slate-100 rounded-2xl p-3">
+                        Mỗi lần thiết bị được trả về từ sự kiện sẽ trừ 1 lần sử dụng. Khi hết lượt, hệ thống đánh dấu thiết bị đã hết khấu hao.
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+                      <div className="md:col-span-1">
+                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Đơn vị tính</label>
+                        <input
+                          type="text"
+                          value={newItemData.consumableUnit}
+                          onChange={e => setNewItemData({ ...newItemData, consumableUnit: e.target.value })}
+                          className="w-full border-2 border-amber-100 rounded-2xl p-4 text-sm font-bold"
+                          placeholder="VD: hộp, cái, bộ..."
+                        />
+                      </div>
+                      <div className="md:col-span-2 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-2xl p-3">
+                        Hàng tiêu hao sẽ tự trừ tồn dựa trên số lượng xuất - số lượng kiểm về sau sự kiện.
+                      </div>
+                    </div>
+                  )}
+                </div>
                 <div>
                   <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Mã barcode</label>
                   <div className="flex gap-2">
@@ -963,19 +1140,22 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
                       placeholder="Để trống hệ thống tự tạo"
                       value={newItemData.barcode}
                       onChange={e => setNewItemData({ ...newItemData, barcode: e.target.value })}
-                      disabled={importMode === 'EDIT'}
+                      disabled={importMode === 'EDIT' && !isAdmin}
                     />
                     <button
                       type="button"
                       onClick={() => setNewItemData(prev => ({ ...prev, barcode: generateBarcode(prev.name || prev.category) }))}
                       className="px-4 py-2 rounded-2xl bg-slate-800 text-white text-xs font-black uppercase tracking-widest hover:bg-black disabled:opacity-40 disabled:cursor-not-allowed"
-                      disabled={importMode === 'EDIT'}
+                      disabled={importMode === 'EDIT' && !isAdmin}
                     >
                       Tạo
                     </button>
                   </div>
-                  {importMode === 'EDIT' && (
+                  {importMode === 'EDIT' && !isAdmin && (
                     <p className="text-[10px] text-amber-600 mt-1">Barcode đã được khóa sau khi tạo để tránh trùng lặp.</p>
+                  )}
+                  {importMode === 'EDIT' && isAdmin && (
+                    <p className="text-[10px] text-emerald-600 mt-1">ADMIN có thể chỉnh sửa barcode, hệ thống sẽ kiểm tra trùng.</p>
                   )}
                   {newItemData.barcode && (
                     <div className="mt-2">
@@ -1110,16 +1290,86 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
                           <option value="NEW">Thêm thiết bị mới</option>
                           <option value="PLANNED">Nhập ảo (dự kiến mua/sản xuất)</option>
                         </select>
-                      </div>
-                      {receiptItems.length > 1 && (
-                        <button onClick={() => handleRemoveReceiptLine(line.tempId)} className="text-xs text-red-500 font-bold hover:underline">Xóa dòng</button>
-                      )}
                     </div>
+                    {receiptItems.length > 1 && (
+                      <button onClick={() => handleRemoveReceiptLine(line.tempId)} className="text-xs text-red-500 font-bold hover:underline">Xóa dòng</button>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 mb-3">
+                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Loại</span>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        disabled={line.mode === 'EXISTING'}
+                        onClick={() => handleReceiptItemChange(line.tempId, {
+                          lifecycle: 'DEPRECIATION',
+                          maxUsage: line.maxUsage && line.maxUsage > 0 ? line.maxUsage : 10
+                        })}
+                        className={`px-3 py-2 rounded-lg text-[11px] font-black uppercase tracking-widest border transition ${line.lifecycle !== 'CONSUMABLE' ? 'bg-slate-800 text-white border-slate-900 shadow' : 'bg-white text-slate-600 border-slate-200'} ${line.mode === 'EXISTING' ? 'opacity-60 cursor-not-allowed' : ''}`}
+                      >
+                        Khấu hao
+                      </button>
+                      <button
+                        type="button"
+                        disabled={line.mode === 'EXISTING'}
+                        onClick={() => handleReceiptItemChange(line.tempId, {
+                          lifecycle: 'CONSUMABLE',
+                          consumableUnit: line.consumableUnit || 'cái',
+                          maxUsage: undefined
+                        })}
+                        className={`px-3 py-2 rounded-lg text-[11px] font-black uppercase tracking-widest border transition ${line.lifecycle === 'CONSUMABLE' ? 'bg-amber-500 text-white border-amber-600 shadow' : 'bg-white text-slate-600 border-slate-200'} ${line.mode === 'EXISTING' ? 'opacity-60 cursor-not-allowed' : ''}`}
+                      >
+                        Tiêu hao
+                      </button>
+                    </div>
+                    {line.mode === 'EXISTING' && (
+                      <span className="text-[11px] text-slate-500">
+                        (Loại hiện tại: {line.lifecycle === 'CONSUMABLE' ? 'Tiêu hao' : 'Khấu hao'})
+                      </span>
+                    )}
+                  </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      {line.mode === 'EXISTING' ? (
-                        <div>
-                          <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Thiết bị có sẵn</label>
+                  {line.lifecycle === 'CONSUMABLE' ? (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
+                      <div>
+                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Đơn vị tiêu hao</label>
+                        <input
+                          type="text"
+                          value={line.consumableUnit || ''}
+                          onChange={e => handleReceiptItemChange(line.tempId, { consumableUnit: e.target.value })}
+                          disabled={line.mode === 'EXISTING'}
+                          className="w-full border-2 border-amber-100 rounded-xl p-3 text-sm font-bold bg-white"
+                          placeholder="VD: hộp, cái, bộ..."
+                        />
+                      </div>
+                      <div className="md:col-span-2 bg-amber-50 border border-amber-200 rounded-xl p-3 text-[11px] font-semibold text-amber-700">
+                        Số lượng tiêu hao = xuất kho - số kiểm về. Hệ thống tự trừ khỏi tồn khi chốt phiếu trả hàng.
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
+                      <div>
+                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Số lần sử dụng tối đa</label>
+                        <input
+                          type="number"
+                          min={1}
+                          value={line.maxUsage ?? ''}
+                          onChange={e => handleReceiptItemChange(line.tempId, { maxUsage: Number(e.target.value) })}
+                          disabled={line.mode === 'EXISTING'}
+                          className="w-full border-2 border-slate-100 rounded-xl p-3 text-sm font-black text-blue-600 bg-white"
+                          placeholder="VD: 20"
+                        />
+                      </div>
+                      <div className="md:col-span-2 bg-slate-50 border border-slate-100 rounded-xl p-3 text-[11px] font-semibold text-slate-600">
+                        Khấu hao tính theo lượt sử dụng. Mỗi lần thiết bị hoàn về, hệ thống trừ 1 lượt cho từng đơn vị được xuất.
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {line.mode === 'EXISTING' ? (
+                      <div>
+                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Thiết bị có sẵn</label>
                           <select
                             value={line.itemId}
                             onChange={e => handleSelectExistingForReceipt(line.tempId, e.target.value)}
