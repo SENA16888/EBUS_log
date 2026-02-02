@@ -1297,7 +1297,8 @@ export const EventManager: React.FC<EventManagerProps> = ({
   const calculateSaleOrderRevenue = (order: any) => {
     const items = order.items || [];
     const subtotal = items.reduce((sum: number, item: any) => {
-      const soldQty = item.soldQuantity ?? 0;
+      // Lấy số lượng đã bán nếu có, fallback sang số lượng xuất kho để phản ánh doanh thu thực mang đi
+      const soldQty = item.soldQuantity ?? item.quantity ?? 0;
       const discount = item.discount || 0;
       const price = item.price || 0;
       const discountPercent = item.discountPercent || 0;
@@ -1343,7 +1344,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
   const otherCosts = selectedEvent?.expenses?.reduce((a, b) => a + b.amount, 0) || 0;
   const totalCosts = staffCosts + otherCosts;
   const saleOrderRevenueTotal = linkedSaleOrders
-    .filter(order => (order.type || 'SALE') !== 'RETURN' && order.status === 'FINALIZED')
+    .filter(order => (order.type || 'SALE') !== 'RETURN')
     .reduce((sum, order) => sum + calculateSaleOrderRevenue(order), 0);
   const saleOrderReturnTotal = linkedSaleOrders
     .filter(order => (order.type || '') === 'RETURN')
