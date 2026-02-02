@@ -1306,7 +1306,10 @@ export const EventManager: React.FC<EventManagerProps> = ({
       return sum + lineRevenue;
     }, 0);
     const orderDiscount = order.orderDiscount || 0;
-    return Math.max(0, subtotal - orderDiscount);
+    const computed = Math.max(0, subtotal - orderDiscount);
+    if (computed > 0) return computed;
+    const fallbackTotal = order.total ?? order.subtotal ?? 0;
+    return Math.max(0, Number(fallbackTotal) || 0);
   };
 
   // Tài chính
