@@ -35,6 +35,7 @@ export const PackageManager: React.FC<PackageManagerProps> = ({
   const [categoryFilter, setCategoryFilter] = useState<string>('ALL');
   const [packageSearch, setPackageSearch] = useState('');
   const [detailItemId, setDetailItemId] = useState<string | null>(null);
+  const [hoverItem, setHoverItem] = useState<{ id: string; x: number; y: number } | null>(null);
 
   const categoryLabel = (category?: string) => category?.trim() || 'Khác/Chưa phân loại';
 
@@ -106,6 +107,7 @@ export const PackageManager: React.FC<PackageManagerProps> = ({
   }, [packages, categoryFilter, packageSearch]);
 
   const detailItem = detailItemId ? inventory.find(i => i.id === detailItemId) : null;
+  const hoverDetailItem = hoverItem ? inventory.find(i => i.id === hoverItem.id) : null;
 
   const handleOpenEdit = (e: React.MouseEvent, pkg: ComboPackage) => {
     if (!canEdit) return;
@@ -252,10 +254,19 @@ export const PackageManager: React.FC<PackageManagerProps> = ({
                     const invItem = inventory.find(i => i.id === pkgItem.itemId);
                     const enough = invItem ? invItem.availableQuantity >= pkgItem.quantity : false;
                     return (
-                      <li key={idx} className="relative group">
+                      <li key={idx}>
                         <button
                           type="button"
                           onClick={() => invItem && setDetailItemId(invItem.id)}
+                          onMouseEnter={(e) => {
+                            if (!invItem) return;
+                            setHoverItem({ id: invItem.id, x: e.clientX, y: e.clientY });
+                          }}
+                          onMouseMove={(e) => {
+                            if (!invItem) return;
+                            setHoverItem({ id: invItem.id, x: e.clientX, y: e.clientY });
+                          }}
+                          onMouseLeave={() => setHoverItem(null)}
                           className={`w-full flex justify-between items-center text-sm text-left rounded-md px-2 py-1 -mx-2 transition ${invItem ? 'hover:bg-slate-50 cursor-pointer' : 'cursor-default'}`}
                           title={invItem ? 'Nhấn để xem chi tiết' : 'Thiết bị không tồn tại trong kho'}
                         >
@@ -268,19 +279,6 @@ export const PackageManager: React.FC<PackageManagerProps> = ({
                           </span>
                           <span className="font-medium bg-blue-50 text-blue-700 px-2 py-0.5 rounded text-xs">x{pkgItem.quantity}</span>
                         </button>
-                        {invItem && (
-                          <div className="absolute left-0 top-full mt-2 w-[260px] bg-white border border-slate-200 shadow-lg rounded-lg p-3 text-[12px] text-slate-700 opacity-0 translate-y-1 pointer-events-none group-hover:opacity-100 group-hover:translate-y-0 transition z-20">
-                            <p className="font-bold text-slate-900 mb-1">{invItem.name}</p>
-                            <p className="text-slate-500 mb-2">{invItem.description || 'Chưa có mô tả.'}</p>
-                            <div className="flex flex-wrap gap-2">
-                              <span className="bg-slate-100 px-2 py-0.5 rounded">Kho: {invItem.location || '—'}</span>
-                              <span className="bg-slate-100 px-2 py-0.5 rounded">Sẵn có: {invItem.availableQuantity}</span>
-                              <span className="bg-slate-100 px-2 py-0.5 rounded">Danh mục: {invItem.category || '—'}</span>
-                              {invItem.barcode && <span className="bg-slate-100 px-2 py-0.5 rounded">Barcode: {invItem.barcode}</span>}
-                            </div>
-                            <p className="mt-2 text-[11px] text-blue-600 font-semibold">Nhấn để xem chi tiết</p>
-                          </div>
-                        )}
                       </li>
                     );
                   })}
@@ -444,6 +442,26 @@ export const PackageManager: React.FC<PackageManagerProps> = ({
               <button onClick={() => setDetailItemId(null)} className="px-4 py-2 font-medium">Đóng</button>
             </div>
           </div>
+        </div>
+      )}
+
+      {hoverDetailItem && hoverItem && (
+        <div
+          className="fixed z-[60] w-[260px] bg-white border border-slate-200 shadow-lg rounded-lg p-3 text-[12px] text-slate-700 pointer-events-none"
+          style={{
+            left: Math.min(hoverItem.x + 16, window.innerWidth - 280),
+            top: Math.min(hoverItem.y + 16, window.innerHeight - 200)
+          }}
+        >
+          <p className="font-bold text-slate-900 mb-1">{hoverDetailItem.name}</p>
+          <p className="text-slate-500 mb-2">{hoverDetailItem.description || 'Chưa có mô tả.'}</p>
+          <div className="flex flex-wrap gap-2">
+            <span className="bg-slate-100 px-2 py-0.5 rounded">Kho: {hoverDetailItem.location || '—'}</span>
+            <span className="bg-slate-100 px-2 py-0.5 rounded">Sẵn có: {hoverDetailItem.availableQuantity}</span>
+            <span className="bg-slate-100 px-2 py-0.5 rounded">Danh mục: {hoverDetailItem.category || '—'}</span>
+            {hoverDetailItem.barcode && <span className="bg-slate-100 px-2 py-0.5 rounded">Barcode: {hoverDetailItem.barcode}</span>}
+          </div>
+          <p className="mt-2 text-[11px] text-blue-600 font-semibold">Nhấn để xem chi tiết</p>
         </div>
       )}
     </div>
