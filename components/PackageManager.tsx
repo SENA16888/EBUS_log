@@ -453,8 +453,19 @@ export const PackageManager: React.FC<PackageManagerProps> = ({
             top: Math.min(hoverItem.y + 16, window.innerHeight - 200)
           }}
         >
-          <p className="font-bold text-slate-900 mb-1">{hoverDetailItem.name}</p>
-          <p className="text-slate-500 mb-2">{hoverDetailItem.description || 'Chưa có mô tả.'}</p>
+          <div className="flex gap-2 mb-2">
+            <div className="h-12 w-12 rounded-md overflow-hidden border border-slate-200 bg-slate-50 flex items-center justify-center">
+              {hoverDetailItem.imageUrl ? (
+                <img src={hoverDetailItem.imageUrl} alt={hoverDetailItem.name} className="h-full w-full object-cover" />
+              ) : (
+                <div className="text-[10px] text-slate-400">No image</div>
+              )}
+            </div>
+            <div className="min-w-0">
+              <p className="font-bold text-slate-900 truncate">{hoverDetailItem.name}</p>
+              <p className="text-slate-500 line-clamp-2">{hoverDetailItem.description || 'Chưa có mô tả.'}</p>
+            </div>
+          </div>
           <div className="flex flex-wrap gap-2">
             <span className="bg-slate-100 px-2 py-0.5 rounded">Kho: {hoverDetailItem.location || '—'}</span>
             <span className="bg-slate-100 px-2 py-0.5 rounded">Sẵn có: {hoverDetailItem.availableQuantity}</span>
