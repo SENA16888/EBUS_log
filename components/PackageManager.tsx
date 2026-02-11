@@ -34,6 +34,7 @@ export const PackageManager: React.FC<PackageManagerProps> = ({
   const [itemSearchTerm, setItemSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string>('ALL');
   const [packageSearch, setPackageSearch] = useState('');
+  const [detailItemId, setDetailItemId] = useState<string | null>(null);
 
   const categoryLabel = (category?: string) => category?.trim() || 'Khác/Chưa phân loại';
 
@@ -103,6 +104,8 @@ export const PackageManager: React.FC<PackageManagerProps> = ({
         return a.name.localeCompare(b.name, 'vi', { sensitivity: 'base' });
       });
   }, [packages, categoryFilter, packageSearch]);
+
+  const detailItem = detailItemId ? inventory.find(i => i.id === detailItemId) : null;
 
   const handleOpenEdit = (e: React.MouseEvent, pkg: ComboPackage) => {
     if (!canEdit) return;
@@ -249,15 +252,35 @@ export const PackageManager: React.FC<PackageManagerProps> = ({
                     const invItem = inventory.find(i => i.id === pkgItem.itemId);
                     const enough = invItem ? invItem.availableQuantity >= pkgItem.quantity : false;
                     return (
-                      <li key={idx} className="flex justify-between items-center text-sm">
-                        <span className="text-gray-700 flex items-center gap-2">
-                          <div className={`w-2 h-2 rounded-full ${enough ? 'bg-green-400' : 'bg-red-400'}`} />
-                          {invItem ? invItem.name : pkgItem.itemId}
-                          {!enough && (
-                            <span className="text-[10px] text-red-500 font-bold ml-2">(thiếu {Math.max(0, pkgItem.quantity - (invItem?.availableQuantity||0))})</span>
-                          )}
-                        </span>
-                        <span className="font-medium bg-blue-50 text-blue-700 px-2 py-0.5 rounded text-xs">x{pkgItem.quantity}</span>
+                      <li key={idx} className="relative group">
+                        <button
+                          type="button"
+                          onClick={() => invItem && setDetailItemId(invItem.id)}
+                          className={`w-full flex justify-between items-center text-sm text-left rounded-md px-2 py-1 -mx-2 transition ${invItem ? 'hover:bg-slate-50 cursor-pointer' : 'cursor-default'}`}
+                          title={invItem ? 'Nhấn để xem chi tiết' : 'Thiết bị không tồn tại trong kho'}
+                        >
+                          <span className="text-gray-700 flex items-center gap-2">
+                            <div className={`w-2 h-2 rounded-full ${enough ? 'bg-green-400' : 'bg-red-400'}`} />
+                            {invItem ? invItem.name : pkgItem.itemId}
+                            {!enough && (
+                              <span className="text-[10px] text-red-500 font-bold ml-2">(thiếu {Math.max(0, pkgItem.quantity - (invItem?.availableQuantity||0))})</span>
+                            )}
+                          </span>
+                          <span className="font-medium bg-blue-50 text-blue-700 px-2 py-0.5 rounded text-xs">x{pkgItem.quantity}</span>
+                        </button>
+                        {invItem && (
+                          <div className="absolute left-0 top-full mt-2 w-[260px] bg-white border border-slate-200 shadow-lg rounded-lg p-3 text-[12px] text-slate-700 opacity-0 translate-y-1 pointer-events-none group-hover:opacity-100 group-hover:translate-y-0 transition z-20">
+                            <p className="font-bold text-slate-900 mb-1">{invItem.name}</p>
+                            <p className="text-slate-500 mb-2">{invItem.description || 'Chưa có mô tả.'}</p>
+                            <div className="flex flex-wrap gap-2">
+                              <span className="bg-slate-100 px-2 py-0.5 rounded">Kho: {invItem.location || '—'}</span>
+                              <span className="bg-slate-100 px-2 py-0.5 rounded">Sẵn có: {invItem.availableQuantity}</span>
+                              <span className="bg-slate-100 px-2 py-0.5 rounded">Danh mục: {invItem.category || '—'}</span>
+                              {invItem.barcode && <span className="bg-slate-100 px-2 py-0.5 rounded">Barcode: {invItem.barcode}</span>}
+                            </div>
+                            <p className="mt-2 text-[11px] text-blue-600 font-semibold">Nhấn để xem chi tiết</p>
+                          </div>
+                        )}
                       </li>
                     );
                   })}
@@ -324,6 +347,101 @@ export const PackageManager: React.FC<PackageManagerProps> = ({
             <div className="p-6 border-t flex justify-end gap-3 bg-slate-50">
                <button onClick={closeModal} className="px-4 py-2 font-medium">Hủy</button>
                <button onClick={handleSubmitPackage} className="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold">Lưu Gói</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {detailItem && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl w-full max-w-3xl flex flex-col max-h-[90vh]">
+            <div className="p-6 border-b flex justify-between items-center bg-slate-50">
+              <div>
+                <h3 className="text-xl font-bold text-slate-900">{detailItem.name}</h3>
+                <p className="text-sm text-slate-500">{detailItem.category || 'Khác/Chưa phân loại'}</p>
+              </div>
+              <button onClick={() => setDetailItemId(null)} className="text-gray-400 hover:text-gray-600"><X size={24} /></button>
+            </div>
+            <div className="p-6 overflow-y-auto space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-[180px_minmax(0,1fr)] gap-4">
+                <div className="bg-slate-50 border border-slate-200 rounded-lg h-[180px] w-[180px] overflow-hidden flex items-center justify-center">
+                  {detailItem.imageUrl ? (
+                    <img src={detailItem.imageUrl} alt={detailItem.name} className="h-full w-full object-cover" />
+                  ) : (
+                    <div className="text-[12px] text-slate-400">Không có ảnh</div>
+                  )}
+                </div>
+                <div className="space-y-3">
+                  <p className="text-sm text-slate-700">{detailItem.description || 'Chưa có mô tả.'}</p>
+                  <div className="flex flex-wrap gap-2 text-[12px]">
+                    <span className="bg-slate-100 px-2 py-0.5 rounded">Mã: {detailItem.id}</span>
+                    {detailItem.barcode && <span className="bg-slate-100 px-2 py-0.5 rounded">Barcode: {detailItem.barcode}</span>}
+                    <span className="bg-slate-100 px-2 py-0.5 rounded">Kho: {detailItem.location || '—'}</span>
+                    <span className="bg-slate-100 px-2 py-0.5 rounded">Giá thuê: {detailItem.rentalPrice?.toLocaleString()} VNĐ</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
+                <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+                  <p className="text-[11px] text-slate-500">Tổng số lượng</p>
+                  <p className="font-bold text-slate-800">{detailItem.totalQuantity}</p>
+                </div>
+                <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+                  <p className="text-[11px] text-slate-500">Sẵn có</p>
+                  <p className="font-bold text-slate-800">{detailItem.availableQuantity}</p>
+                </div>
+                <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+                  <p className="text-[11px] text-slate-500">Đang dùng</p>
+                  <p className="font-bold text-slate-800">{detailItem.inUseQuantity}</p>
+                </div>
+                <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+                  <p className="text-[11px] text-slate-500">Bảo trì</p>
+                  <p className="font-bold text-slate-800">{detailItem.maintenanceQuantity}</p>
+                </div>
+                <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+                  <p className="text-[11px] text-slate-500">Hỏng</p>
+                  <p className="font-bold text-slate-800">{detailItem.brokenQuantity}</p>
+                </div>
+                <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+                  <p className="text-[11px] text-slate-500">Mất</p>
+                  <p className="font-bold text-slate-800">{detailItem.lostQuantity}</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+                  <p className="text-[11px] text-slate-500">Mức tồn tối thiểu</p>
+                  <p className="font-bold text-slate-800">{detailItem.minStock ?? 0}</p>
+                </div>
+                <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+                  <p className="text-[11px] text-slate-500">Số lần sử dụng</p>
+                  <p className="font-bold text-slate-800">{detailItem.usageCount || 0}</p>
+                </div>
+              </div>
+
+              {(detailItem.purchaseLink || detailItem.productionNote || detailItem.plannedPurchase) && (
+                <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 text-sm space-y-2">
+                  {detailItem.purchaseLink && (
+                    <p className="text-slate-700">
+                      <span className="font-semibold">Link mua:</span> {detailItem.purchaseLink}
+                    </p>
+                  )}
+                  {detailItem.productionNote && (
+                    <p className="text-slate-700">
+                      <span className="font-semibold">Ghi chú sản xuất:</span> {detailItem.productionNote}
+                    </p>
+                  )}
+                  {detailItem.plannedPurchase && (
+                    <p className="text-slate-700">
+                      <span className="font-semibold">Dự kiến mua:</span> {detailItem.plannedQuantity || 0} (ETA: {detailItem.plannedEta || '—'})
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="p-6 border-t flex justify-end gap-3 bg-slate-50">
+              <button onClick={() => setDetailItemId(null)} className="px-4 py-2 font-medium">Đóng</button>
             </div>
           </div>
         </div>
