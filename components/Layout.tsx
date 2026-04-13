@@ -26,7 +26,24 @@ interface LayoutProps {
   onLogout?: () => void;
 }
 
-export const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange, logs, currentUser, canManageAccess, canViewLogs, canViewEmployees = true, onOpenAccess, onLogout }) => {
+export const Layout: React.FC<LayoutProps> = ({ 
+  children, 
+  activeTab, 
+  onTabChange, 
+  logs, 
+  currentUser, 
+  canManageAccess, 
+  canViewLogs, 
+  canViewDashboard = true,
+  canViewInventory = true,
+  canViewPackages = true,
+  canViewQuotations = true,
+  canViewSales = true,
+  canViewElearning = true,
+  canViewEmployees = true, 
+  onOpenAccess, 
+  onLogout 
+}) => {
   const tabs: { key: LayoutProps['activeTab']; label: string; icon: LucideIcon }[] = [
     { key: 'dashboard', label: 'Tổng quan', icon: LayoutDashboard },
     { key: 'inventory', label: 'Kho hàng', icon: Package },

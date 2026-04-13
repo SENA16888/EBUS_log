@@ -63,6 +63,9 @@ const normalizeInventoryLifecycle = (item: InventoryItem): InventoryItem => {
 };
 
 const App: React.FC = () => {
+  console.log('App is rendering');
+  console.log('localStorage available:', typeof localStorage !== 'undefined');
+  console.log('sessionStorage available:', typeof sessionStorage !== 'undefined');
   const [activeTab, setActiveTab] = useState<'dashboard' | 'inventory' | 'events' | 'packages' | 'employees' | 'quotations' | 'sales' | 'elearning' | 'logs'>('dashboard');
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -1798,12 +1801,12 @@ const App: React.FC = () => {
     </Layout>
     
     {isLoading && !currentUser && (
-      <div className="fixed inset-0 bg-blue-600 z-[130] flex items-center justify-center">
-        <div className="flex flex-col items-center gap-4 text-white text-center">
-          <div className="w-12 h-12 border-4 border-white border-t-transparent rounded-full animate-spin"></div>
+      <div style={{ position: 'fixed', inset: 0, backgroundColor: '#2563eb', zIndex: 130, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px', color: 'white', textAlign: 'center' }}>
+          <div style={{ width: '48px', height: '48px', border: '4px solid white', borderTop: '4px solid transparent', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></div>
           <div>
-            <p className="text-lg font-bold">Vui lòng chờ...</p>
-            <p className="text-sm mt-1">Đang tải dữ liệu từ hệ thống</p>
+            <p style={{ fontSize: '18px', fontWeight: 'bold', margin: 0 }}>Vui lòng chờ...</p>
+            <p style={{ fontSize: '14px', margin: '4px 0 0 0' }}>Đang tải dữ liệu từ hệ thống</p>
           </div>
         </div>
       </div>
