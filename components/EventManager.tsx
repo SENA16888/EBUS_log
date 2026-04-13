@@ -339,6 +339,19 @@ export const EventManager: React.FC<EventManagerProps> = ({
   // Calendar view state
   const [showCalendarModal, setShowCalendarModal] = useState(false);
   const [calendarSelectedEventId, setCalendarSelectedEventId] = useState<string | null>(null);
+
+  const allowedDetailTabs = useMemo(
+    () => canEdit
+      ? ['EQUIPMENT', 'CHECKLIST', 'TIMELINE', 'STAFF', 'PROFILE', 'LAYOUT', 'COSTS'] as const
+      : ['EQUIPMENT', 'CHECKLIST', 'TIMELINE', 'PROFILE', 'LAYOUT'] as const,
+    [canEdit]
+  );
+
+  useEffect(() => {
+    if (!allowedDetailTabs.includes(detailTab)) {
+      setDetailTab(allowedDetailTabs[0]);
+    }
+  }, [allowedDetailTabs, detailTab]);
   const [showEventDetailModal, setShowEventDetailModal] = useState(false);
   const [calendarView, setCalendarView] = useState(() => {
     const now = new Date();
@@ -1388,9 +1401,11 @@ export const EventManager: React.FC<EventManagerProps> = ({
         <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
           <h3 className="font-bold text-gray-800 text-lg">Sự Kiện</h3>
           <div className="flex items-center gap-2">
-            <button onClick={() => setShowCreateEventModal(true)} className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">
-              <Plus size={20} />
-            </button>
+            {canEdit && (
+              <button onClick={() => setShowCreateEventModal(true)} className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">
+                <Plus size={20} />
+              </button>
+            )}
             <button onClick={() => setShowCalendarModal(true)} title="Xem lịch" className="p-2 bg-slate-100 rounded-lg hover:bg-slate-200 transition">
               <Calendar size={18} />
             </button>
@@ -1485,37 +1500,43 @@ export const EventManager: React.FC<EventManagerProps> = ({
                       <Trash2 size={16}/> Xóa sự kiện
                     </button>
                   )}
-                  <button 
+                  <button
                     onClick={handleCreateOrder}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition ${selectedEvent.isOrderCreated ? 'bg-green-100 text-green-700' : 'bg-slate-800 text-white hover:bg-black'}`}
+                    disabled={!canEdit && !selectedEvent.isOrderCreated}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition ${selectedEvent.isOrderCreated ? 'bg-green-100 text-green-700' : !canEdit ? 'bg-slate-200 text-slate-500 cursor-not-allowed' : 'bg-slate-800 text-white hover:bg-black'}`}
                   >
-                    {selectedEvent.isOrderCreated ? <><CheckCircle size={16}/> Đã Chốt Đơn</> : <><FileText size={16}/> Chốt Đơn & In</>}
+                    {selectedEvent.isOrderCreated ? (
+                      <><CheckCircle size={16}/> Đã Chốt Đơn</>
+                    ) : !canEdit ? (
+                      <><FileText size={16}/> Chưa chốt đơn</>
+                    ) : (
+                      <><FileText size={16}/> Chốt Đơn & In</>
+                    )}
                   </button>
                 </div>
               </div>
               
               <div className="flex flex-wrap gap-4 md:gap-8 mt-6">
-                <button onClick={() => setDetailTab('EQUIPMENT')} className={`pb-3 text-sm font-bold border-b-2 transition flex items-center gap-2 ${detailTab === 'EQUIPMENT' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
-                  <Box size={16}/> Order Thiết Bị
-                </button>
-                <button onClick={() => setDetailTab('CHECKLIST')} className={`pb-3 text-sm font-bold border-b-2 transition flex items-center gap-2 ${detailTab === 'CHECKLIST' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
-                  <ScanBarcode size={16}/> Checklist Barcode
-                </button>
-                <button onClick={() => setDetailTab('TIMELINE')} className={`pb-3 text-sm font-bold border-b-2 transition flex items-center gap-2 ${detailTab === 'TIMELINE' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
-                  <Clock3 size={16}/> Timeline
-                </button>
-                <button onClick={() => setDetailTab('STAFF')} className={`pb-3 text-sm font-bold border-b-2 transition flex items-center gap-2 ${detailTab === 'STAFF' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
-                  <Users size={16}/> Nhân Sự
-                </button>
-                <button onClick={() => setDetailTab('PROFILE')} className={`pb-3 text-sm font-bold border-b-2 transition flex items-center gap-2 ${detailTab === 'PROFILE' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
-                  <BookOpen size={16}/> Hồ sơ sự kiện
-                </button>
-                <button onClick={() => setDetailTab('LAYOUT')} className={`pb-3 text-sm font-bold border-b-2 transition flex items-center gap-2 ${detailTab === 'LAYOUT' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
-                  <MapPin size={16}/> Sơ đồ trạm
-                </button>
-                <button onClick={() => setDetailTab('COSTS')} className={`pb-3 text-sm font-bold border-b-2 transition flex items-center gap-2 ${detailTab === 'COSTS' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
-                  <DollarSign size={16}/> Chi Phí & Lợi Nhuận
-                </button>
+                {([
+                  { key: 'EQUIPMENT', label: 'Order Thiết Bị', icon: Box },
+                  { key: 'CHECKLIST', label: 'Checklist Barcode', icon: ScanBarcode },
+                  { key: 'TIMELINE', label: 'Timeline', icon: Clock3 },
+                  { key: 'PROFILE', label: 'Hồ sơ sự kiện', icon: BookOpen },
+                  { key: 'LAYOUT', label: 'Sơ đồ trạm', icon: MapPin },
+                  { key: 'STAFF', label: 'Nhân Sự', icon: Users, requireEdit: true },
+                  { key: 'COSTS', label: 'Chi Phí & Lợi Nhuận', icon: DollarSign, requireEdit: true }
+                ] as const).map(tab => {
+                  if (tab.requireEdit && !canEdit) return null;
+                  return (
+                    <button
+                      key={tab.key}
+                      onClick={() => setDetailTab(tab.key)}
+                      className={`pb-3 text-sm font-bold border-b-2 transition flex items-center gap-2 ${detailTab === tab.key ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}
+                    >
+                      <tab.icon size={16} /> {tab.label}
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
@@ -1536,17 +1557,29 @@ export const EventManager: React.FC<EventManagerProps> = ({
                     </div>
                   )}
 
-                  <div className="flex flex-wrap gap-2">
-                    <button onClick={() => { setExportMode('SINGLE'); setShowExportModal(true); }} className="bg-white border border-blue-600 text-blue-600 px-4 py-2 rounded-lg text-sm font-bold hover:bg-blue-50">+ Thêm lẻ</button>
-                    <button onClick={() => { setExportMode('COMBO'); setShowExportModal(true); }} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-blue-700">+ Thêm Combo</button>
-                    <button 
-                      onClick={handleRemoveSelectedItems} 
-                      disabled={selectedItemIds.length === 0}
-                      className={`px-4 py-2 rounded-lg text-sm font-bold border ${selectedItemIds.length === 0 ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed' : 'bg-red-50 text-red-600 border-red-200 hover:bg-red-100'}`}
-                    >
-                      Xóa thiết bị đã chọn ({selectedItemIds.length})
-                    </button>
-                  </div>
+                  {canEdit && (
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        onClick={() => { setExportMode('SINGLE'); setShowExportModal(true); }}
+                        className="bg-white border border-blue-600 text-blue-600 px-4 py-2 rounded-lg text-sm font-bold hover:bg-blue-50"
+                      >
+                        + Thêm lẻ
+                      </button>
+                      <button
+                        onClick={() => { setExportMode('COMBO'); setShowExportModal(true); }}
+                        className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-blue-700"
+                      >
+                        + Thêm Combo
+                      </button>
+                      <button
+                        onClick={handleRemoveSelectedItems}
+                        disabled={selectedItemIds.length === 0}
+                        className={`px-4 py-2 rounded-lg text-sm font-bold border ${selectedItemIds.length === 0 ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed' : 'bg-red-50 text-red-600 border-red-200 hover:bg-red-100'}`}
+                      >
+                        Xóa thiết bị đã chọn ({selectedItemIds.length})
+                      </button>
+                    </div>
+                  )}
 
                   <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
                     <div className="overflow-x-auto">
@@ -1561,6 +1594,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
                                 if (!selectedEvent) return;
                                 setSelectedItemIds(e.target.checked ? selectedEvent.items.map(it => it.itemId) : []);
                               }} 
+                              disabled={!canEdit}
                             />
                           </th>
                           <th className="px-3 py-3 font-bold text-gray-500 uppercase text-[10px] text-center">Đã xong</th>
@@ -1589,10 +1623,11 @@ export const EventManager: React.FC<EventManagerProps> = ({
                                   type="checkbox" 
                                   checked={selectedItemIds.includes(alloc.itemId)}
                                   onChange={e => toggleSelectedItem(alloc.itemId, e.target.checked)} 
+                                  disabled={!canEdit}
                                 />
                               </td>
                               <td className="px-4 py-3 text-center">
-                                <input type="checkbox" checked={!!alloc.done} onChange={e => onToggleItemDone?.(selectedEvent.id, alloc.itemId, e.target.checked)} />
+                                <input type="checkbox" checked={!!alloc.done} onChange={e => onToggleItemDone?.(selectedEvent.id, alloc.itemId, e.target.checked)} disabled={!canEdit} />
                               </td>
                           <td className="px-4 py-3">
                                 <button 
@@ -1612,7 +1647,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
                                   <button
                                     type="button"
                                     onClick={() => handleItemQuantityChange(alloc.itemId, alloc.quantity - 1)}
-                                    disabled={alloc.quantity <= (alloc.returnedQuantity || 0)}
+                                    disabled={!canEdit || alloc.quantity <= (alloc.returnedQuantity || 0)}
                                     className="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed"
                                   >
                                     <Minus size={14} />
@@ -1623,11 +1658,13 @@ export const EventManager: React.FC<EventManagerProps> = ({
                                     className="w-16 text-center border border-slate-200 rounded-lg p-1 font-black text-blue-600"
                                     value={alloc.quantity}
                                     onChange={e => handleItemQuantityChange(alloc.itemId, Number(e.target.value))}
+                                    disabled={!canEdit}
                                   />
                                   <button
                                     type="button"
                                     onClick={() => handleItemQuantityChange(alloc.itemId, alloc.quantity + 1)}
-                                    className="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600"
+                                    disabled={!canEdit}
+                                    className="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed"
                                   >
                                     <Plus size={14} />
                                   </button>
@@ -1693,7 +1730,8 @@ export const EventManager: React.FC<EventManagerProps> = ({
                           lang="vi"
                           value={timelineDatetime}
                           onChange={e => setTimelineDatetime(e.target.value)}
-                          className="w-full border border-slate-200 rounded-xl p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white"
+                          disabled={!canEdit}
+                          className={`w-full border border-slate-200 rounded-xl p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none ${canEdit ? 'bg-white' : 'bg-slate-100 text-slate-500'}`}
                         />
                       </div>
                       <div className="w-full md:w-44 space-y-1">
@@ -1701,7 +1739,8 @@ export const EventManager: React.FC<EventManagerProps> = ({
                         <select
                           value={timelinePhase}
                           onChange={e => setTimelinePhase(e.target.value as EventTimelinePhase)}
-                          className="w-full border border-slate-200 rounded-xl p-3 text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none"
+                          disabled={!canEdit}
+                          className={`w-full border border-slate-200 rounded-xl p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none ${canEdit ? 'bg-white' : 'bg-slate-100 text-slate-500'}`}
                         >
                           {TIMELINE_PHASES.map(phase => (
                             <option key={phase.value} value={phase.value}>{phase.label}</option>
@@ -1713,16 +1752,18 @@ export const EventManager: React.FC<EventManagerProps> = ({
                       <label className="text-[11px] font-bold text-slate-600 uppercase">Nội dung công việc</label>
                       <textarea
                         rows={2}
-                        className="w-full border border-slate-200 rounded-xl p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white"
+                        className={`w-full border border-slate-200 rounded-xl p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none ${canEdit ? 'bg-white' : 'bg-slate-100 text-slate-500'}`}
                         placeholder="VD: 08:00 - Xe rời kho, 10:30 - set up sân khấu, 22:00 - thu hồi thiết bị..."
                         value={timelineNote}
                         onChange={e => setTimelineNote(e.target.value)}
+                        disabled={!canEdit}
                       />
                     </div>
                     <div className="flex justify-end">
                       <button
                         onClick={handleAddTimelineEntry}
-                        className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 shadow-sm flex items-center gap-2"
+                        disabled={!canEdit}
+                        className={`px-4 py-2 rounded-lg text-sm font-bold shadow-sm flex items-center gap-2 ${canEdit ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-slate-200 text-slate-500 cursor-not-allowed'}`}
                       >
                         <Plus size={16}/> Lưu mốc
                       </button>
@@ -1912,10 +1953,11 @@ export const EventManager: React.FC<EventManagerProps> = ({
                     <div className="space-y-2">
                       <label className="text-[11px] font-black text-slate-500 uppercase">Tên trạm / khu vực</label>
                       <input 
-                        className="w-full border border-slate-200 rounded-lg p-2.5 text-sm" 
+                        className={`w-full border border-slate-200 rounded-lg p-2.5 text-sm ${canEdit ? 'bg-white' : 'bg-slate-100 text-slate-500'}`}
                         placeholder="VD: Trạm check-in, Khu trải nghiệm 1..."
                         value={layoutForm.name}
                         onChange={e => setLayoutForm(prev => ({ ...prev, name: e.target.value }))}
+                        disabled={!canEdit}
                       />
                     </div>
 
@@ -1927,7 +1969,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
                           : layoutPackageOptions.find(opt => opt.rawId === layoutForm.packageId && opt.source === layoutForm.packageSource)?.value || '';
                         return (
                           <select
-                            className="w-full border border-slate-200 rounded-lg p-2.5 text-sm bg-white"
+                            className={`w-full border border-slate-200 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none ${canEdit ? 'bg-white' : 'bg-slate-100 text-slate-500'}`}
                             value={selectedValue}
                             onChange={e => {
                               const val = e.target.value;
@@ -1942,6 +1984,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
                                 setLayoutForm(prev => ({ ...prev, packageId: '', packageName: '', packageSource: 'QUOTATION', customPackageName: '' }));
                               }
                             }}
+                            disabled={!canEdit}
                           >
                             <option value="">-- Chọn từ báo giá hoặc gói có sẵn --</option>
                             {layoutPackageOptions.map(opt => (
@@ -1953,10 +1996,11 @@ export const EventManager: React.FC<EventManagerProps> = ({
                       })()}
                       {layoutForm.packageSource === 'CUSTOM' && (
                         <input 
-                          className="w-full border border-slate-200 rounded-lg p-2.5 text-sm" 
+                          className={`w-full border border-slate-200 rounded-lg p-2.5 text-sm ${canEdit ? 'bg-white' : 'bg-slate-100 text-slate-500'}`}
                           placeholder="Nhập tên gói bổ sung..."
                           value={layoutForm.customPackageName}
                           onChange={e => setLayoutForm(prev => ({ ...prev, customPackageName: e.target.value }))}
+                          disabled={!canEdit}
                         />
                       )}
                     </div>
@@ -1965,13 +2009,14 @@ export const EventManager: React.FC<EventManagerProps> = ({
                       <label className="text-[11px] font-black text-slate-500 uppercase">Nhân sự phụ trách</label>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                         <select 
-                          className="border border-slate-200 rounded-lg p-2.5 text-sm bg-white"
+                          className={`border border-slate-200 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none ${canEdit ? 'bg-white' : 'bg-slate-100 text-slate-500'}`}
                           value={layoutForm.staffId}
                           onChange={e => {
                             const id = e.target.value;
                             const emp = employees.find(emp => emp.id === id);
                             setLayoutForm(prev => ({ ...prev, staffId: id, staffName: emp?.name || prev.staffName }));
                           }}
+                          disabled={!canEdit}
                         >
                           <option value="">-- Chọn từ danh sách nhân sự --</option>
                           {employees.map(emp => (
@@ -1979,10 +2024,11 @@ export const EventManager: React.FC<EventManagerProps> = ({
                           ))}
                         </select>
                         <input
-                          className="border border-slate-200 rounded-lg p-2.5 text-sm"
+                          className={`border border-slate-200 rounded-lg p-2.5 text-sm ${canEdit ? 'bg-white' : 'bg-slate-100 text-slate-500'}`}
                           placeholder="Hoặc nhập nhanh tên nhân sự khác"
                           value={layoutForm.staffName}
                           onChange={e => setLayoutForm(prev => ({ ...prev, staffName: e.target.value }))}
+                          disabled={!canEdit}
                         />
                       </div>
                     </div>
@@ -1994,20 +2040,29 @@ export const EventManager: React.FC<EventManagerProps> = ({
                           <button
                             key={color}
                             onClick={() => setLayoutForm(prev => ({ ...prev, color }))}
-                            className={`w-8 h-8 rounded-full border-2 ${layoutForm.color === color ? 'border-slate-900 scale-105' : 'border-slate-200'} transition`}
+                            className={`w-8 h-8 rounded-full border-2 ${layoutForm.color === color ? 'border-slate-900 scale-105' : 'border-slate-200'} transition ${canEdit ? '' : 'opacity-50 cursor-not-allowed'}`}
                             style={{ backgroundColor: color }}
                             title={color}
+                            disabled={!canEdit}
                           />
                         ))}
                       </div>
                     </div>
 
                     <div className="flex flex-col gap-2">
-                      <button onClick={handleSaveLayoutBlock} className="w-full bg-slate-900 text-white py-2.5 rounded-lg text-sm font-bold hover:bg-black transition shadow-sm">
+                      <button
+                        onClick={handleSaveLayoutBlock}
+                        disabled={!canEdit}
+                        className={`w-full py-2.5 rounded-lg text-sm font-bold transition shadow-sm ${canEdit ? 'bg-slate-900 text-white hover:bg-black' : 'bg-slate-200 text-slate-500 cursor-not-allowed'}`}
+                      >
                         {editingBlockId ? 'Lưu thay đổi block' : '+ Thêm block vào sơ đồ'}
                       </button>
                       {editingBlockId && (
-                        <button onClick={resetLayoutForm} className="w-full bg-slate-100 text-slate-600 py-2.5 rounded-lg text-sm font-bold hover:bg-slate-200 transition shadow-sm">
+                        <button
+                          onClick={resetLayoutForm}
+                          disabled={!canEdit}
+                          className={`w-full py-2.5 rounded-lg text-sm font-bold transition shadow-sm ${canEdit ? 'bg-slate-100 text-slate-600 hover:bg-slate-200' : 'bg-slate-100 text-slate-400 cursor-not-allowed'}`}
+                        >
                           Hủy chỉnh sửa
                         </button>
                       )}
@@ -2023,6 +2078,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
                           <div 
                             key={block.id} 
                             onClick={() => {
+                              if (!canEdit) return;
                               setSelectedLayoutBlockId(block.id);
                               setEditingBlockId(block.id);
                               setLayoutForm({
@@ -2036,7 +2092,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
                                 color: block.color || LAYOUT_COLORS[0]
                               });
                             }}
-                            className={`p-3 rounded-xl border flex justify-between items-start gap-3 cursor-pointer transition ${selectedLayoutBlockId === block.id ? 'border-blue-500 bg-blue-50' : 'border-slate-200 bg-slate-50/60 hover:border-blue-200 hover:bg-blue-50/60'}`}
+                            className={`p-3 rounded-xl border flex justify-between items-start gap-3 ${canEdit ? 'cursor-pointer transition' : 'bg-slate-50 cursor-not-allowed'} ${selectedLayoutBlockId === block.id ? 'border-blue-500 bg-blue-50' : 'border-slate-200 bg-slate-50/60 hover:border-blue-200 hover:bg-blue-50/60'}`}
                           >
                             <div className="flex items-start gap-3">
                               <span className="w-3 h-3 rounded-full mt-1" style={{ backgroundColor: block.color }}></span>
@@ -2047,8 +2103,9 @@ export const EventManager: React.FC<EventManagerProps> = ({
                               </div>
                             </div>
                             <button 
-                              onClick={e => { e.stopPropagation(); handleRemoveLayoutBlock(block.id); }}
-                              className="text-gray-300 hover:text-red-500"
+                              onClick={e => { e.stopPropagation(); if (canEdit) handleRemoveLayoutBlock(block.id); }}
+                              disabled={!canEdit}
+                              className={`text-gray-300 ${canEdit ? 'hover:text-red-500' : 'opacity-50 cursor-not-allowed'}`}
                             >
                               <Trash2 size={14}/>
                             </button>
@@ -2065,12 +2122,12 @@ export const EventManager: React.FC<EventManagerProps> = ({
                         <p className="text-sm text-slate-600">Tải ảnh mặt bằng, kéo thả block để đặt khu vực và nhân sự.</p>
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
-                        <label className="inline-flex items-center gap-2 px-3 py-2 bg-blue-600 text-white text-sm font-bold rounded-lg cursor-pointer hover:bg-blue-700">
+                        <label className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-bold ${canEdit ? 'bg-blue-600 text-white cursor-pointer hover:bg-blue-700' : 'bg-slate-200 text-slate-500 cursor-not-allowed'}`}>
                           <Upload size={16}/> Tải ảnh mặt bằng
-                          <input type="file" accept="image/*" className="hidden" onChange={e => handleFloorplanUpload(e.target.files?.[0])} />
+                          <input type="file" accept="image/*" className="hidden" onChange={e => canEdit && handleFloorplanUpload(e.target.files?.[0])} disabled={!canEdit} />
                         </label>
                         {eventLayout.floorplanImage && (
-                          <button onClick={handleRemoveFloorplan} className="px-3 py-2 bg-slate-100 text-slate-600 rounded-lg text-sm font-bold hover:bg-slate-200 flex items-center gap-2">
+                          <button onClick={handleRemoveFloorplan} disabled={!canEdit} className={`px-3 py-2 rounded-lg text-sm font-bold flex items-center gap-2 ${canEdit ? 'bg-slate-100 text-slate-600 hover:bg-slate-200' : 'bg-slate-100 text-slate-400 cursor-not-allowed'}`}>
                             <X size={16}/> Xóa ảnh
                           </button>
                         )}

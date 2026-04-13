@@ -152,20 +152,32 @@ const App: React.FC = () => {
   const can = (permission: AccessPermission) => hasPermission(currentUser, permission);
   const isAdmin = currentUser?.role === 'ADMIN';
   const canViewLogs = currentUser?.role === 'ADMIN';
-  const isElearningAdmin = currentUser?.role === 'ADMIN' || currentUser?.role === 'MANAGER';
+  const canViewDashboard = currentUser?.role !== 'STAFF';
+  const canViewInventory = currentUser?.role !== 'STAFF';
+  const canViewPackages = currentUser?.role !== 'STAFF';
+  const canViewQuotations = currentUser?.role !== 'STAFF';
+  const canViewSales = currentUser?.role !== 'STAFF';
+  const canViewElearning = currentUser?.role !== 'STAFF';
   const canViewEmployees = currentUser?.role !== 'STAFF';
+  const isElearningAdmin = currentUser?.role === 'ADMIN' || currentUser?.role === 'MANAGER';
 
   useEffect(() => {
     if (activeTab === 'logs' && !canViewLogs) {
-      setActiveTab('dashboard');
+      setActiveTab('events');
     }
   }, [activeTab, canViewLogs]);
 
   useEffect(() => {
-    if (activeTab === 'employees' && !canViewEmployees) {
-      setActiveTab('dashboard');
+    if ((activeTab === 'employees' && !canViewEmployees) ||
+        (activeTab === 'dashboard' && !canViewDashboard) ||
+        (activeTab === 'quotations' && !canViewQuotations) ||
+        (activeTab === 'inventory' && !canViewInventory) ||
+        (activeTab === 'packages' && !canViewPackages) ||
+        (activeTab === 'sales' && !canViewSales) ||
+        (activeTab === 'elearning' && !canViewElearning)) {
+      setActiveTab('events');
     }
-  }, [activeTab, canViewEmployees]);
+  }, [activeTab, canViewDashboard, canViewEmployees, canViewInventory, canViewPackages, canViewQuotations, canViewSales, canViewElearning]);
 
   useEffect(() => {
     if (currentUserId) {
@@ -1641,6 +1653,12 @@ const App: React.FC = () => {
       currentUser={currentUser}
       canManageAccess={can('ACCESS_MANAGE')}
       canViewLogs={canViewLogs}
+      canViewDashboard={canViewDashboard}
+      canViewInventory={canViewInventory}
+      canViewPackages={canViewPackages}
+      canViewQuotations={canViewQuotations}
+      canViewSales={canViewSales}
+      canViewElearning={canViewElearning}
       canViewEmployees={canViewEmployees}
       onOpenAccess={() => setIsAccessOpen(true)}
       onLogout={handleLogout}

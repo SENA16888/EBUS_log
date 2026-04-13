@@ -66,7 +66,7 @@ export const getDefaultPermissionsForRole = (role: AccessRole): AccessPermission
     return ALL_ACCESS_PERMISSIONS.filter(p => !p.endsWith('_DELETE') && p !== 'ACCESS_MANAGE');
   }
   if (role === 'STAFF') {
-    return ['EVENTS_EDIT', 'ELEARNING_EDIT'];
+    return [];
   }
   return ALL_ACCESS_PERMISSIONS;
 };
@@ -74,5 +74,6 @@ export const getDefaultPermissionsForRole = (role: AccessRole): AccessPermission
 export const hasPermission = (account: UserAccount | null | undefined, permission: AccessPermission): boolean => {
   if (!account) return false;
   if (account.role === 'ADMIN') return true;
+  if (account.role === 'STAFF') return false;
   return (account.permissions || []).includes(permission);
 };

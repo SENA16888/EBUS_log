@@ -7,9 +7,10 @@ import { Barcode, CheckSquare, ClipboardList, CornerDownLeft, Eraser, PenLine, S
 interface EventChecklistProps {
   event: Event;
   inventory: InventoryItem[];
-  onScan: (payload: { eventId: string; barcode: string; direction: ChecklistDirection; status?: ChecklistStatus; quantity?: number; note?: string }) => void;
+  onScan?: (payload: { eventId: string; barcode: string; direction: ChecklistDirection; status?: ChecklistStatus; quantity?: number; note?: string }) => void;
   onUpdateNote?: (eventId: string, itemId: string, note: string) => void;
   onSaveSignature?: (eventId: string, payload: { direction: ChecklistDirection; manager?: ChecklistSignature; operator?: ChecklistSignature; note?: string; itemsSnapshot?: { itemId: string; name?: string; orderQty: number; scannedOut: number; scannedIn: number; damaged: number; lost: number; missing: number; }[]; createSlip?: boolean }) => void;
+  canEdit?: boolean;
 }
 
 const SignaturePad: React.FC<{ value?: string; onChange: (dataUrl: string | null) => void }> = ({ value, onChange }) => {
@@ -109,7 +110,7 @@ const SignaturePad: React.FC<{ value?: string; onChange: (dataUrl: string | null
   );
 };
 
-export const EventChecklist: React.FC<EventChecklistProps> = ({ event, inventory, onScan, onUpdateNote, onSaveSignature }) => {
+export const EventChecklist: React.FC<EventChecklistProps> = ({ event, inventory, onScan, onUpdateNote, onSaveSignature, canEdit = true }) => {
   const [scanValue, setScanValue] = useState('');
   const [direction, setDirection] = useState<ChecklistDirection>('OUT');
   const [scanMode, setScanMode] = useState<'CONTINUOUS' | 'MANUAL'>('CONTINUOUS');
@@ -218,9 +219,10 @@ export const EventChecklist: React.FC<EventChecklistProps> = ({ event, inventory
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canEdit) return;
     if (!scanValue.trim()) return;
     const finalQty = Math.max(1, quantity || 1);
-    onScan({
+    onScan?.({
       eventId: event.id,
       barcode: scanValue,
       direction,
@@ -242,7 +244,8 @@ export const EventChecklist: React.FC<EventChecklistProps> = ({ event, inventory
   };
 
   const handleQuickStatus = (itemId: string, barcode: string | undefined, status: ChecklistStatus) => {
-    onScan({
+    if (!canEdit) return;
+    onScan?.({
       eventId: event.id,
       barcode: barcode || itemId,
       direction: 'IN',
@@ -253,10 +256,12 @@ export const EventChecklist: React.FC<EventChecklistProps> = ({ event, inventory
   };
 
   const handleNoteBlur = (itemId: string, value: string) => {
+    if (!canEdit) return;
     onUpdateNote?.(event.id, itemId, value);
   };
 
   const handleSaveSignature = (role: 'OPERATOR' | 'MANAGER', createSlip?: boolean) => {
+    if (!canEdit) return;
     if (!onSaveSignature) return;
     const snapshot = rows.map(row => ({
       itemId: row.itemId,
@@ -300,6 +305,7 @@ export const EventChecklist: React.FC<EventChecklistProps> = ({ event, inventory
   };
 
   const handleCreateSlip = () => {
+    if (!canEdit) return;
     if (!onSaveSignature) return;
     if (!managerName.trim() || !managerSignatureData || !operatorName.trim() || !operatorSignatureData) {
       alert('Cần đủ chữ ký của Quản lý kho và Người lập phiếu trước khi xuất phiếu.');
@@ -432,21 +438,27 @@ export const EventChecklist: React.FC<EventChecklistProps> = ({ event, inventory
             </div>
           </div>
 
+          {!canEdit && (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900 text-sm font-semibold">
+              Bạn đang xem Checklist ở chế độ chỉ đọc. Không thể ghi nhận hoặc cập nhật thông tin.
+            </div>
+          )}
+
           <form onSubmit={handleSubmit} className="mt-4 space-y-3">
             <div className="flex flex-wrap gap-2">
-              <button type="button" onClick={() => setDirection('OUT')} className={`px-3 py-2 rounded-xl text-xs font-black uppercase tracking-widest flex items-center gap-2 ${direction === 'OUT' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
+              <button type="button" onClick={() => canEdit && setDirection('OUT')} disabled={!canEdit} className={`px-3 py-2 rounded-xl text-xs font-black uppercase tracking-widest flex items-center gap-2 ${direction === 'OUT' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'} ${!canEdit ? 'opacity-50 cursor-not-allowed' : ''}`}>
                 <CheckSquare size={14}/> Quét hàng đi
               </button>
-              <button type="button" onClick={() => setDirection('IN')} className={`px-3 py-2 rounded-xl text-xs font-black uppercase tracking-widest flex items-center gap-2 ${direction === 'IN' ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
+              <button type="button" onClick={() => canEdit && setDirection('IN')} disabled={!canEdit} className={`px-3 py-2 rounded-xl text-xs font-black uppercase tracking-widest flex items-center gap-2 ${direction === 'IN' ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-600'} ${!canEdit ? 'opacity-50 cursor-not-allowed' : ''}`}>
                 <CornerDownLeft size={14}/> Check hàng về
               </button>
             </div>
 
             <div className="flex flex-wrap gap-2">
-              <button type="button" onClick={() => setScanMode('CONTINUOUS')} className={`px-3 py-2 rounded-xl text-xs font-black uppercase tracking-widest ${scanMode === 'CONTINUOUS' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600'}`}>
+              <button type="button" onClick={() => canEdit && setScanMode('CONTINUOUS')} disabled={!canEdit} className={`px-3 py-2 rounded-xl text-xs font-black uppercase tracking-widest ${scanMode === 'CONTINUOUS' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600'} ${!canEdit ? 'opacity-50 cursor-not-allowed' : ''}`}>
                 Liên tục
               </button>
-              <button type="button" onClick={() => setScanMode('MANUAL')} className={`px-3 py-2 rounded-xl text-xs font-black uppercase tracking-widest ${scanMode === 'MANUAL' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600'}`}>
+              <button type="button" onClick={() => canEdit && setScanMode('MANUAL')} disabled={!canEdit} className={`px-3 py-2 rounded-xl text-xs font-black uppercase tracking-widest ${scanMode === 'MANUAL' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600'} ${!canEdit ? 'opacity-50 cursor-not-allowed' : ''}`}>
                 Nhập SL
               </button>
             </div>
@@ -459,9 +471,10 @@ export const EventChecklist: React.FC<EventChecklistProps> = ({ event, inventory
                   value={scanValue}
                   onChange={e => setScanValue(normalizeBarcode(e.target.value))}
                   onKeyDown={handleScanKeyDown}
-                  className="w-full border-2 border-slate-200 rounded-xl p-3 text-xl font-mono tracking-widest"
+                  className={`w-full border-2 border-slate-200 rounded-xl p-3 text-xl font-mono tracking-widest ${canEdit ? 'bg-white' : 'bg-slate-100 text-slate-500'}`}
                   placeholder="Quét mã hoặc nhập tay..."
                   autoFocus
+                  disabled={!canEdit}
                 />
                 {matchedItem && (
                   <div className="mt-1 p-2 rounded-lg border border-slate-200 bg-slate-50 flex items-center gap-2 text-xs">
@@ -479,7 +492,8 @@ export const EventChecklist: React.FC<EventChecklistProps> = ({ event, inventory
                   min={1}
                   value={quantity}
                   onChange={e => setQuantity(Number(e.target.value))}
-                  className="w-full border-2 border-slate-200 rounded-xl p-3 text-center text-lg font-black"
+                  className={`w-full border-2 border-slate-200 rounded-xl p-3 text-center text-lg font-black ${canEdit ? 'bg-white' : 'bg-slate-100 text-slate-500'}`}
+                  disabled={!canEdit}
                 />
                 {scanMode === 'MANUAL' && (
                   <p className="mt-2 text-[11px] text-slate-500">Ở chế độ Nhập SL, quét mã xong rồi nhập số lượng trước khi nhấn Ghi nhận.</p>
@@ -490,8 +504,8 @@ export const EventChecklist: React.FC<EventChecklistProps> = ({ event, inventory
                 <select
                   value={status}
                   onChange={e => setStatus(e.target.value as ChecklistStatus)}
-                  className="w-full border-2 border-slate-200 rounded-xl p-3 text-sm font-semibold"
-                  disabled={direction === 'OUT'}
+                  className={`w-full border-2 border-slate-200 rounded-xl p-3 text-sm font-semibold ${canEdit && direction !== 'OUT' ? 'bg-white' : 'bg-slate-100 text-slate-500'}`}
+                  disabled={!canEdit || direction === 'OUT'}
                 >
                   <option value="OK">OK</option>
                   <option value="DAMAGED">Hỏng</option>
@@ -505,12 +519,13 @@ export const EventChecklist: React.FC<EventChecklistProps> = ({ event, inventory
               <input
                 value={note}
                 onChange={e => setNote(e.target.value)}
-                className="w-full border-2 border-slate-200 rounded-xl p-3 text-sm"
+                className={`w-full border-2 border-slate-200 rounded-xl p-3 text-sm ${canEdit ? 'bg-white' : 'bg-slate-100 text-slate-500'}`}
                 placeholder="VD: Quét cho xe 29A-12345, tình trạng xước nhẹ..."
+                disabled={!canEdit}
               />
             </div>
 
-            <button type="submit" className="w-full bg-slate-800 text-white py-3 rounded-xl font-black uppercase tracking-widest text-sm hover:bg-black flex items-center justify-center gap-2">
+            <button type="submit" disabled={!canEdit} className={`w-full py-3 rounded-xl font-black uppercase tracking-widest text-sm flex items-center justify-center gap-2 ${canEdit ? 'bg-slate-800 text-white hover:bg-black' : 'bg-slate-200 text-slate-500 cursor-not-allowed'}`}>
               <Barcode size={16}/> Ghi nhận
             </button>
           </form>
@@ -589,8 +604,9 @@ export const EventChecklist: React.FC<EventChecklistProps> = ({ event, inventory
                       <input
                         defaultValue={row.note}
                         onBlur={e => handleNoteBlur(row.itemId, e.target.value)}
-                        className="w-full border border-slate-200 rounded-lg p-2 text-xs"
+                        className={`w-full border border-slate-200 rounded-lg p-2 text-xs ${canEdit ? 'bg-white' : 'bg-slate-100 text-slate-500'}`}
                         placeholder="Ghi chú riêng cho mã này"
+                        disabled={!canEdit}
                       />
                     </td>
                     <td className="px-3 py-2">
@@ -598,21 +614,24 @@ export const EventChecklist: React.FC<EventChecklistProps> = ({ event, inventory
                         <button
                           type="button"
                           onClick={() => handleQuickStatus(row.itemId, row.barcode, 'OK')}
-                          className="px-2 py-1 rounded-lg bg-slate-100 text-slate-700 text-[11px] font-bold"
+                          disabled={!canEdit}
+                          className={`px-2 py-1 rounded-lg text-[11px] font-bold ${canEdit ? 'bg-slate-100 text-slate-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}
                         >
                           +1 OK
                         </button>
                         <button
                           type="button"
                           onClick={() => handleQuickStatus(row.itemId, row.barcode, 'DAMAGED')}
-                          className="px-2 py-1 rounded-lg bg-amber-100 text-amber-700 text-[11px] font-bold"
+                          disabled={!canEdit}
+                          className={`px-2 py-1 rounded-lg text-[11px] font-bold ${canEdit ? 'bg-amber-100 text-amber-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}
                         >
                           +1 Hỏng
                         </button>
                         <button
                           type="button"
                           onClick={() => handleQuickStatus(row.itemId, row.barcode, 'LOST')}
-                          className="px-2 py-1 rounded-lg bg-red-100 text-red-700 text-[11px] font-bold"
+                          disabled={!canEdit}
+                          className={`px-2 py-1 rounded-lg text-[11px] font-bold ${canEdit ? 'bg-red-100 text-red-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}
                         >
                           +1 Mất
                         </button>
@@ -674,8 +693,9 @@ export const EventChecklist: React.FC<EventChecklistProps> = ({ event, inventory
                       <input
                         defaultValue={row.note}
                         onBlur={e => handleNoteBlur(row.itemId, e.target.value)}
-                        className="w-full border border-slate-200 rounded-lg p-2 text-xs"
+                        className={`w-full border border-slate-200 rounded-lg p-2 text-xs ${canEdit ? 'bg-white' : 'bg-slate-100 text-slate-500'}`}
                         placeholder="Ghi chú riêng cho mã này"
+                        disabled={!canEdit}
                       />
                     </td>
                     <td className="px-3 py-2">
@@ -683,21 +703,24 @@ export const EventChecklist: React.FC<EventChecklistProps> = ({ event, inventory
                         <button
                           type="button"
                           onClick={() => handleQuickStatus(row.itemId, row.barcode, 'OK')}
-                          className="px-2 py-1 rounded-lg bg-slate-100 text-slate-700 text-[11px] font-bold"
+                          disabled={!canEdit}
+                          className={`px-2 py-1 rounded-lg text-[11px] font-bold ${canEdit ? 'bg-slate-100 text-slate-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}
                         >
                           +1 OK
                         </button>
                         <button
                           type="button"
                           onClick={() => handleQuickStatus(row.itemId, row.barcode, 'DAMAGED')}
-                          className="px-2 py-1 rounded-lg bg-amber-100 text-amber-700 text-[11px] font-bold"
+                          disabled={!canEdit}
+                          className={`px-2 py-1 rounded-lg text-[11px] font-bold ${canEdit ? 'bg-amber-100 text-amber-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}
                         >
                           +1 Hỏng
                         </button>
                         <button
                           type="button"
                           onClick={() => handleQuickStatus(row.itemId, row.barcode, 'LOST')}
-                          className="px-2 py-1 rounded-lg bg-red-100 text-red-700 text-[11px] font-bold"
+                          disabled={!canEdit}
+                          className={`px-2 py-1 rounded-lg text-[11px] font-bold ${canEdit ? 'bg-red-100 text-red-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}
                         >
                           +1 Mất
                         </button>

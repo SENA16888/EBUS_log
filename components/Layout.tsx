@@ -15,6 +15,12 @@ interface LayoutProps {
   currentUser?: UserAccount | null;
   canManageAccess?: boolean;
   canViewLogs?: boolean;
+  canViewDashboard?: boolean;
+  canViewInventory?: boolean;
+  canViewPackages?: boolean;
+  canViewQuotations?: boolean;
+  canViewSales?: boolean;
+  canViewElearning?: boolean;
   canViewEmployees?: boolean;
   onOpenAccess?: () => void;
   onLogout?: () => void;
@@ -30,7 +36,15 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange
     { key: 'events', label: 'Sự kiện', icon: CalendarDays },
     { key: 'employees', label: 'Nhân sự', icon: Users },
     { key: 'elearning', label: 'Elearning', icon: GraduationCap }
-  ].filter(tab => canViewEmployees || tab.key !== 'employees');
+  ].filter(tab =>
+    (tab.key !== 'dashboard' || canViewDashboard) &&
+    (tab.key !== 'inventory' || canViewInventory) &&
+    (tab.key !== 'packages' || canViewPackages) &&
+    (tab.key !== 'quotations' || canViewQuotations) &&
+    (tab.key !== 'sales' || canViewSales) &&
+    (tab.key !== 'elearning' || canViewElearning) &&
+    (tab.key !== 'employees' || canViewEmployees)
+  );
   if (canViewLogs) {
     tabs.push({ key: 'logs', label: 'Nhật ký', icon: ClipboardList });
   }
@@ -48,99 +62,21 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange
         </div>
 
         <nav className="flex-1 px-3 space-y-1 mt-3">
-          <button 
-            onClick={() => onTabChange('dashboard')}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-sm ${
-              activeTab === 'dashboard' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
-            }`}
-          >
-            <LayoutDashboard size={20} />
-            <span className="font-medium text-sm">Tổng quan</span>
-          </button>
-          
-          <button 
-            onClick={() => onTabChange('inventory')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
-              activeTab === 'inventory' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
-            }`}
-          >
-            <Package size={20} />
-            <span className="font-medium text-sm">Kho hàng</span>
-          </button>
-
-          <button 
-            onClick={() => onTabChange('packages')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
-              activeTab === 'packages' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
-            }`}
-          >
-            <Layers size={20} />
-            <span className="font-medium text-sm">Gói thiết bị</span>
-          </button>
-
-          <button 
-            onClick={() => onTabChange('quotations')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
-              activeTab === 'quotations' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
-            }`}
-          >
-            <FileText size={20} />
-            <span className="font-medium text-sm">Báo giá khách</span>
-          </button>
-
-          <button 
-            onClick={() => onTabChange('sales')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
-              activeTab === 'sales' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
-            }`}
-          >
-            <Layers size={20} />
-            <span className="font-medium text-sm">Hàng bán</span>
-          </button>
-
-          <button 
-            onClick={() => onTabChange('events')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
-              activeTab === 'events' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
-            }`}
-          >
-            <CalendarDays size={20} />
-            <span className="font-medium text-sm">Sự kiện</span>
-          </button>
-
-          {canViewEmployees && (
-            <button 
-              onClick={() => onTabChange('employees')}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
-                activeTab === 'employees' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
-              }`}
-            >
-              <Users size={20} />
-              <span className="font-medium text-sm">Nhân sự</span>
-            </button>
-          )}
-
-          <button 
-            onClick={() => onTabChange('elearning')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
-              activeTab === 'elearning' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
-            }`}
-          >
-            <GraduationCap size={20} />
-            <span className="font-medium text-sm">Elearning</span>
-          </button>
-
-          {canViewLogs && (
-            <button 
-              onClick={() => onTabChange('logs')}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
-                activeTab === 'logs' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
-              }`}
-            >
-              <ClipboardList size={20} />
-              <span className="font-medium text-sm">Nhật ký</span>
-            </button>
-          )}
+          {tabs.map(tab => {
+            const isActive = activeTab === tab.key;
+            return (
+              <button
+                key={tab.key}
+                onClick={() => onTabChange(tab.key)}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors text-sm ${
+                  isActive ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                }`}
+              >
+                <tab.icon size={20} />
+                <span className="font-medium text-sm">{tab.label}</span>
+              </button>
+            );
+          })}
         </nav>
 
         <div className="p-4 border-t border-slate-800">
