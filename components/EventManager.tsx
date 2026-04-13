@@ -1,6 +1,6 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { Event, InventoryItem, EventStatus, ComboPackage, Employee, EventExpense, EventAdvanceRequest, EventStaffAllocation, Quotation, EventProcessStep, EventLayout, EventLayoutBlock, LayoutPackageSource, ChecklistDirection, ChecklistStatus, ChecklistSignature, EventTimelineEntry, EventTimelinePhase, EventProfile } from '../types';
+import { Event, InventoryItem, EventStatus, ComboPackage, Employee, EventExpense, EventAdvanceRequest, EventStaffAllocation, Quotation, EventLayout, EventLayoutBlock, LayoutPackageSource, ChecklistDirection, ChecklistStatus, ChecklistSignature, EventTimelineEntry, EventTimelinePhase, EventProfile } from '../types';
 import { 
   Calendar, MapPin, Box, ArrowLeft, Plus, Minus, X, Layers, 
   Users, DollarSign, Trash2, Truck, BookOpen, 
@@ -73,17 +73,6 @@ const PROCESS_STEPS_TEMPLATE = [
     checklist: ['Gửi ảnh', 'Báo cáo']
   }
 ];
-
-const createDefaultProcessSteps = (): EventProcessStep[] =>
-  PROCESS_STEPS_TEMPLATE.map(step => ({
-    id: step.id,
-    title: step.title,
-    checklist: step.checklist.map((label, index) => ({
-      id: `${step.id}-${index}`,
-      label,
-      checked: false
-    }))
-  }));
 
 type EventSession = NonNullable<Event['session']>;
 type EventScheduleItem = { date: string; sessions: EventSession[] };
@@ -287,7 +276,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
   onSaveChecklistSignature
 }) => {
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
-  const [detailTab, setDetailTab] = useState<'EQUIPMENT' | 'STAFF' | 'PROFILE' | 'COSTS' | 'FLOWS' | 'LAYOUT' | 'CHECKLIST' | 'TIMELINE'>('EQUIPMENT');
+  const [detailTab, setDetailTab] = useState<'EQUIPMENT' | 'STAFF' | 'PROFILE' | 'COSTS' | 'LAYOUT' | 'CHECKLIST' | 'TIMELINE'>('EQUIPMENT');
   const [selectedLayoutBlockId, setSelectedLayoutBlockId] = useState<string | null>(null);
   
   // Modals
@@ -406,8 +395,6 @@ export const EventManager: React.FC<EventManagerProps> = ({
   const eventProfile = selectedEvent?.eventProfile || {};
   const canEditProfile = canEdit && isAdmin;
   const linkedQuotation = selectedEvent?.quotationId ? quotations.find(q => q.id === selectedEvent.quotationId) : null;
-  const fallbackProcessSteps = useMemo(() => createDefaultProcessSteps(), [selectedEventId]);
-  const processSteps = selectedEvent?.processSteps && selectedEvent.processSteps.length > 0 ? selectedEvent.processSteps : fallbackProcessSteps;
   const linkedSaleOrders = useMemo(() => {
     if (!selectedEvent) return [];
     return saleOrders.filter(o => o.eventId === selectedEvent.id || (selectedEvent.saleOrderIds || []).includes(o.id));
@@ -463,14 +450,11 @@ export const EventManager: React.FC<EventManagerProps> = ({
   }, [timelineEntries]);
 
   useEffect(() => {
-    if (canEdit && selectedEvent && (!selectedEvent.processSteps || selectedEvent.processSteps.length === 0) && onUpdateEvent) {
-      onUpdateEvent(selectedEvent.id, { processSteps: createDefaultProcessSteps() });
-    }
     setSelectedItemIds([]);
     setAdvanceTitle('');
     setAdvanceNote('');
     setAdvanceAmount('');
-  }, [selectedEvent, onUpdateEvent, canEdit]);
+  }, [selectedEvent]);
   useEffect(() => {
     if (!selectedEvent) {
       setTimelineDatetime('');
@@ -555,7 +539,6 @@ export const EventManager: React.FC<EventManagerProps> = ({
         organization: newEventData.client,
         programSession: primarySession
       },
-      processSteps: createDefaultProcessSteps(),
       timeline: [],
       layout: {
         floorplanImage: '',
@@ -935,30 +918,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
     onUpdateEventItemQuantity(selectedEvent.id, itemId, safeQty);
   };
 
-  const updateProcessSteps = (steps: EventProcessStep[]) => {
-    if (!selectedEvent || !onUpdateEvent) return;
-    onUpdateEvent(selectedEvent.id, { processSteps: steps });
-  };
 
-  const handleToggleProcessChecklist = (stepId: EventProcessStep['id'], itemId: string) => {
-    const nextSteps = processSteps.map(step => {
-      if (step.id !== stepId) return step;
-      return {
-        ...step,
-        checklist: step.checklist.map(item => item.id === itemId ? { ...item, checked: !item.checked } : item)
-      };
-    });
-    updateProcessSteps(nextSteps);
-
-    // Nếu hoàn tất bước "Hoàn tất sự kiện" thì chốt trạng thái sự kiện
-    if (stepId === 'CLOSE' && selectedEvent && onUpdateEvent) {
-      const closeStep = nextSteps.find(s => s.id === 'CLOSE');
-      const allDone = closeStep ? closeStep.checklist.every(c => c.checked) : false;
-      if (allDone && selectedEvent.status !== EventStatus.COMPLETED) {
-        onUpdateEvent(selectedEvent.id, { status: EventStatus.COMPLETED });
-      }
-    }
-  };
 
   const eventLayout: EventLayout = selectedEvent?.layout || { floorplanImage: '', blocks: [] };
 
@@ -1358,8 +1318,6 @@ export const EventManager: React.FC<EventManagerProps> = ({
   const revenue = quotationRevenue + saleOrdersRevenue;
   const grossProfit = revenue - totalCosts;
   const profitMargin = revenue > 0 ? (grossProfit / revenue) * 100 : 0;
-  const totalChecklistCount = processSteps.reduce((acc, step) => acc + step.checklist.length, 0);
-  const totalChecklistDone = processSteps.reduce((acc, step) => acc + step.checklist.filter(item => item.checked).length, 0);
   const eventProfileSummary = useMemo(() => {
     if (!selectedEvent) return [];
     const lines: string[] = [];
@@ -1557,9 +1515,6 @@ export const EventManager: React.FC<EventManagerProps> = ({
                 </button>
                 <button onClick={() => setDetailTab('COSTS')} className={`pb-3 text-sm font-bold border-b-2 transition flex items-center gap-2 ${detailTab === 'COSTS' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
                   <DollarSign size={16}/> Chi Phí & Lợi Nhuận
-                </button>
-                <button onClick={() => setDetailTab('FLOWS')} className={`pb-3 text-sm font-bold border-b-2 transition flex items-center gap-2 ${detailTab === 'FLOWS' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
-                  <Layers size={16}/> Luồng xử lý
                 </button>
               </div>
             </div>
@@ -2859,60 +2814,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
                 </div>
               )}
 
-              {detailTab === 'FLOWS' && selectedEvent && (
-                <div className="space-y-4">
-                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
-                    <div>
-                      <p className="text-xs font-black uppercase tracking-widest text-slate-400">Luồng xử lý công việc</p>
-                      <p className="text-sm font-bold text-slate-700">Tick checklist để đánh dấu hoàn thành.</p>
-                    </div>
-                    <div className="text-xs text-slate-400 font-medium">
-                      Tổng tiến độ: {totalChecklistDone}/{totalChecklistCount}
-                    </div>
-                  </div>
 
-                  <div className="overflow-x-auto pb-2">
-                    <div className="flex items-stretch gap-3 min-w-[1100px]">
-                      {processSteps.map((step, index) => {
-                        const doneCount = step.checklist.filter(item => item.checked).length;
-                        const totalCount = step.checklist.length;
-                        const isComplete = totalCount > 0 && doneCount === totalCount;
-                        return (
-                          <div key={step.id} className="flex items-stretch gap-3">
-                            <div className={`relative w-64 p-4 rounded-2xl border shadow-sm ${isComplete ? 'border-green-200 bg-green-50' : 'border-slate-200 bg-white'}`}>
-                              <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-2">
-                                  <span className={`h-6 w-6 rounded-full text-[11px] font-black flex items-center justify-center ${isComplete ? 'bg-green-600 text-white' : 'bg-slate-900 text-white'}`}>{index + 1}</span>
-                                  <p className="font-black text-sm text-slate-800">{step.title}</p>
-                                </div>
-                                <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${isComplete ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'}`}>{doneCount}/{totalCount}</span>
-                              </div>
-                              <div className="mt-3 space-y-2">
-                                {step.checklist.map(item => (
-                                  <label key={item.id} className="flex items-start gap-2 text-xs text-slate-700">
-                                    <input
-                                      type="checkbox"
-                                      className="mt-0.5"
-                                      checked={item.checked}
-                                      onChange={() => handleToggleProcessChecklist(step.id, item.id)}
-                                    />
-                                    <span className={item.checked ? 'line-through text-slate-400' : 'text-slate-700'}>{item.label}</span>
-                                  </label>
-                                ))}
-                              </div>
-                            </div>
-                            {index < processSteps.length - 1 && (
-                              <div className="flex items-center text-slate-300">
-                                <ChevronRight size={28} />
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-              )}
             </div>
           </>
         ) : (
