@@ -1778,8 +1778,22 @@ const App: React.FC = () => {
       </div>
       <AIChat appState={appState} isOpen={isChatOpen} onClose={() => setIsChatOpen(false)} />
     </Layout>
+    
+    {isLoading && !currentUser && (
+      <div className="fixed inset-0 bg-white/80 backdrop-blur-sm z-[130] flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 border-4 border-slate-200 border-t-blue-600 rounded-full animate-spin"></div>
+          <div className="text-center">
+            <p className="text-lg font-bold text-slate-800">Vui lòng chờ...</p>
+            <p className="text-sm text-slate-500 mt-1">Đang tải dữ liệu từ hệ thống</p>
+          </div>
+        </div>
+      </div>
+    )}
+    
     <LoginModal
       isOpen={!currentUser}
+      isLoading={isLoading}
       accounts={appState.userAccounts || []}
       onLogin={handleLoginByPhone}
     />
