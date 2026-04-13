@@ -112,6 +112,7 @@ const SignaturePad: React.FC<{ value?: string; onChange: (dataUrl: string | null
 export const EventChecklist: React.FC<EventChecklistProps> = ({ event, inventory, onScan, onUpdateNote, onSaveSignature }) => {
   const [scanValue, setScanValue] = useState('');
   const [direction, setDirection] = useState<ChecklistDirection>('OUT');
+  const [scanMode, setScanMode] = useState<'CONTINUOUS' | 'MANUAL'>('CONTINUOUS');
   const [status, setStatus] = useState<ChecklistStatus>('OK');
   const [quantity, setQuantity] = useState(1);
   const [note, setNote] = useState('');
@@ -124,6 +125,7 @@ export const EventChecklist: React.FC<EventChecklistProps> = ({ event, inventory
   const [signNote, setSignNote] = useState('');
 
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const quantityInputRef = useRef<HTMLInputElement | null>(null);
 
   const checklist: EventChecklistType = useMemo(
     () => normalizeChecklist(event.checklist || createEmptyChecklist()),
@@ -227,6 +229,13 @@ export const EventChecklist: React.FC<EventChecklistProps> = ({ event, inventory
     setQuantity(1);
     if (direction === 'OUT') setNote('');
     inputRef.current?.focus();
+  };
+
+  const handleScanKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && scanMode === 'MANUAL') {
+      e.preventDefault();
+      quantityInputRef.current?.focus();
+    }
   };
 
   const handleQuickStatus = (itemId: string, barcode: string | undefined, status: ChecklistStatus) => {
@@ -430,6 +439,15 @@ export const EventChecklist: React.FC<EventChecklistProps> = ({ event, inventory
               </button>
             </div>
 
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={() => setScanMode('CONTINUOUS')} className={`px-3 py-2 rounded-xl text-xs font-black uppercase tracking-widest ${scanMode === 'CONTINUOUS' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                Liên tục
+              </button>
+              <button type="button" onClick={() => setScanMode('MANUAL')} className={`px-3 py-2 rounded-xl text-xs font-black uppercase tracking-widest ${scanMode === 'MANUAL' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                Nhập SL
+              </button>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
               <div className="md:col-span-3">
                 <label className="text-[10px] font-black text-slate-400 uppercase">Mã barcode / ID</label>
@@ -437,6 +455,7 @@ export const EventChecklist: React.FC<EventChecklistProps> = ({ event, inventory
                   ref={inputRef}
                   value={scanValue}
                   onChange={e => setScanValue(normalizeBarcode(e.target.value))}
+                  onKeyDown={handleScanKeyDown}
                   className="w-full border-2 border-slate-200 rounded-xl p-3 text-xl font-mono tracking-widest"
                   placeholder="Quét mã hoặc nhập tay..."
                   autoFocus
@@ -452,12 +471,16 @@ export const EventChecklist: React.FC<EventChecklistProps> = ({ event, inventory
               <div>
                 <label className="text-[10px] font-black text-slate-400 uppercase">Số lượng</label>
                 <input
+                  ref={quantityInputRef}
                   type="number"
                   min={1}
                   value={quantity}
                   onChange={e => setQuantity(Number(e.target.value))}
                   className="w-full border-2 border-slate-200 rounded-xl p-3 text-center text-lg font-black"
                 />
+                {scanMode === 'MANUAL' && (
+                  <p className="mt-2 text-[11px] text-slate-500">Ở chế độ Nhập SL, quét mã xong rồi nhập số lượng trước khi nhấn Ghi nhận.</p>
+                )}
               </div>
               <div>
                 <label className="text-[10px] font-black text-slate-400 uppercase">Tình trạng</label>
