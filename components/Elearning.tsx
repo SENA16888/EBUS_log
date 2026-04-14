@@ -45,6 +45,7 @@ export const Elearning: React.FC<ElearningProps> = ({
   const [selectedLessonId, setSelectedLessonId] = useState<string>('');
   const [answers, setAnswers] = useState<Record<string, AnswerDraft>>({});
   const [revealed, setRevealed] = useState<Record<string, boolean>>({});
+  const [newSkillText, setNewSkillText] = useState<string>('');
 
   const profileOptions = useMemo(() => {
     if (isAdminView) return profiles;
@@ -89,14 +90,11 @@ export const Elearning: React.FC<ElearningProps> = ({
     setViewMode('lesson');
   };
 
-  const handleAttemptSubmit = (question: LearningQuestion) => {
-    if (isAdminView) return;
-    if (!canEdit) return;
-    if (!activeProfile || !selectedTrack || !selectedLesson) return;
+  const createAttemptFromDraft = (question: LearningQuestion): LearningAttempt | null => {
+    if (!activeProfile || !selectedTrack || !selectedLesson) return null;
     const draft = answers[question.id];
     if (!draft || (question.type === 'MULTIPLE_CHOICE' && draft.selectedOption === undefined) || (question.type === 'OPEN' && !draft.answerText?.trim())) {
-      alert('Vui lòng trả lời câu hỏi này.');
-      return;
+      return null;
     }
 
     const maxScore = question.maxScore || 10;
@@ -119,8 +117,8 @@ export const Elearning: React.FC<ElearningProps> = ({
       feedback = `Điểm ${score}/${maxScore}. ${question.answerGuide || 'Tham khảo đáp án gợi ý.'}`;
     }
 
-    const attempt: LearningAttempt = {
-      id: `attempt-${Date.now()}`,
+    return {
+      id: `attempt-${Date.now()}-${question.id}`,
       learnerId: activeProfile.id,
       trackId: selectedTrack.id,
       lessonId: selectedLesson.id,
@@ -132,9 +130,154 @@ export const Elearning: React.FC<ElearningProps> = ({
       feedback,
       createdAt: new Date().toISOString()
     };
+  };
 
-    onSubmitAttempt(attempt);
-    setRevealed(prev => ({ ...prev, [question.id]: true }));
+  const handleSubmitAll = () => {
+    if (isAdminView) return;
+    if (!canEdit) return;
+    if (!activeProfile || !selectedTrack || !selectedLesson) return;
+
+    const unanswered = lessonQuestions.filter(q => {
+      const latest = profileAttempts.filter(a => a.questionId === q.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+      return !latest;
+    });
+
+    for (const question of unanswered) {
+      const draft = answers[question.id];
+      if (!draft || (question.type === 'MULTIPLE_CHOICE' && draft.selectedOption === undefined) || (question.type === 'OPEN' && !draft.answerText?.trim())) {
+        alert('Vui lòng hoàn tất tất cả câu hỏi trước khi nộp bài.');
+        return;
+      }
+    }
+
+    unanswered.forEach(question => {
+      const attempt = createAttemptFromDraft(question);
+      if (attempt) {
+        onSubmitAttempt(attempt);
+        setRevealed(prev => ({ ...prev, [question.id]: true }));
+      }
+    });
+  };
+
+  const updateSelectedTrack = (updater: (track: LearningTrack) => LearningTrack) => {
+    if (!selectedTrack || !canEdit) return;
+    const updatedTracks = tracks.map(track => track.id === selectedTrack.id ? updater(track) : track);
+    onUpdateTracks(updatedTracks);
+  };
+
+  const updateSelectedLesson = (updater: (lesson: LearningLesson) => LearningLesson) => {
+    if (!selectedTrack || !selectedLesson || !canEdit) return;
+    updateSelectedTrack(track => ({
+      ...track,
+      lessons: track.lessons.map(lesson => lesson.id === selectedLesson.id ? updater(lesson) : lesson)
+    }));
+  };
+
+  const handleAddLesson = (trackId: string) => {
+    if (!canEdit) return;
+    const newLesson: LearningLesson = {
+      id: `lesson-${Date.now()}`,
+      title: 'Bài học mới',
+      mediaType: 'video',
+      mediaUrl: '',
+      duration: '',
+      summary: '',
+      skills: [],
+      questions: []
+    };
+    const updatedTracks = tracks.map(track => track.id === trackId ? {
+      ...track,
+      lessons: [...track.lessons, newLesson]
+    } : track);
+    onUpdateTracks(updatedTracks);
+    setSelectedTrackId(trackId);
+    setSelectedLessonId(newLesson.id);
+    setViewMode('lesson');
+  };
+
+  const handleLessonFieldChange = <K extends keyof LearningLesson>(field: K, value: LearningLesson[K]) => {
+    updateSelectedLesson(lesson => ({ ...lesson, [field]: value }));
+  };
+
+  const handleAddSkill = () => {
+    if (!newSkillText.trim()) return;
+    updateSelectedLesson(lesson => ({ ...lesson, skills: [...lesson.skills, newSkillText.trim()] }));
+    setNewSkillText('');
+  };
+
+  const handleRemoveSkill = (index: number) => {
+    updateSelectedLesson(lesson => ({ ...lesson, skills: lesson.skills.filter((_, i) => i !== index) }));
+  };
+
+  const handleSkillChange = (index: number, value: string) => {
+    updateSelectedLesson(lesson => ({
+      ...lesson,
+      skills: lesson.skills.map((skill, i) => i === index ? value : skill)
+    }));
+  };
+
+  const handleAddQuestion = () => {
+    const newQuestion: LearningQuestion = {
+      id: `question-${Date.now()}`,
+      prompt: 'Câu hỏi mới',
+      type: 'MULTIPLE_CHOICE',
+      options: ['Lựa chọn 1', 'Lựa chọn 2'],
+      correctOption: 0,
+      answerGuide: '',
+      answerKeywords: [],
+      maxScore: 10
+    };
+    updateSelectedLesson(lesson => ({ ...lesson, questions: [...lesson.questions, newQuestion] }));
+  };
+
+  const handleDeleteQuestion = (questionId: string) => {
+    updateSelectedLesson(lesson => ({ ...lesson, questions: lesson.questions.filter(q => q.id !== questionId) }));
+  };
+
+  const handleQuestionChange = (questionId: string, patch: Partial<LearningQuestion>) => {
+    updateSelectedLesson(lesson => ({
+      ...lesson,
+      questions: lesson.questions.map(q => q.id === questionId ? { ...q, ...patch } : q)
+    }));
+  };
+
+  const handleOptionChange = (questionId: string, index: number, value: string) => {
+    updateSelectedLesson(lesson => ({
+      ...lesson,
+      questions: lesson.questions.map(q => {
+        if (q.id !== questionId) return q;
+        const options = [...(q.options || [])];
+        options[index] = value;
+        return { ...q, options };
+      })
+    }));
+  };
+
+  const handleAddOption = (questionId: string) => {
+    updateSelectedLesson(lesson => ({
+      ...lesson,
+      questions: lesson.questions.map(q => {
+        if (q.id !== questionId) return q;
+        const options = [...(q.options || []), `Lựa chọn ${((q.options || []).length || 0) + 1}`];
+        return { ...q, options };
+      })
+    }));
+  };
+
+  const handleRemoveOption = (questionId: string, index: number) => {
+    updateSelectedLesson(lesson => ({
+      ...lesson,
+      questions: lesson.questions.map(q => {
+        if (q.id !== questionId) return q;
+        const options = (q.options || []).filter((_, idx) => idx !== index);
+        const correctOption = q.correctOption !== undefined && q.correctOption >= options.length ? Math.max(0, options.length - 1) : q.correctOption;
+        return { ...q, options, correctOption };
+      })
+    }));
+  };
+
+  const handleSetCorrectOption = (questionId: string, index: number) => {
+    handleQuestionChange(questionId, { correctOption: index });
   };
 
   const renderTopicsView = () => (
@@ -181,6 +324,16 @@ export const Elearning: React.FC<ElearningProps> = ({
                 </button>
               ))}
             </div>
+            {isAdminView && canEdit && (
+              <div className="mt-4">
+                <button
+                  onClick={() => handleAddLesson(track.id)}
+                  className="w-full inline-flex items-center justify-center gap-2 rounded-lg border border-blue-200 bg-blue-50 text-blue-700 px-4 py-3 text-sm font-medium hover:bg-blue-100 transition-colors"
+                >
+                  + Thêm bài học mới
+                </button>
+              </div>
+            )}
           </div>
         ))}
       </div>
@@ -207,6 +360,205 @@ export const Elearning: React.FC<ElearningProps> = ({
         <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
           <div className="p-6">
             <h2 className="text-2xl font-bold text-slate-800 mb-4">{selectedLesson.title}</h2>
+
+            {isAdminView && canEdit && (
+              <div className="mb-6 rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <label className="block">
+                    <div className="text-xs font-semibold text-slate-600 mb-2">Tiêu đề bài học</div>
+                    <input
+                      value={selectedLesson.title}
+                      onChange={e => handleLessonFieldChange('title', e.target.value)}
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </label>
+                  <label className="block">
+                    <div className="text-xs font-semibold text-slate-600 mb-2">Thời lượng</div>
+                    <input
+                      value={selectedLesson.duration || ''}
+                      onChange={e => handleLessonFieldChange('duration', e.target.value)}
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </label>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2 mt-4">
+                  <label className="block">
+                    <div className="text-xs font-semibold text-slate-600 mb-2">Loại nội dung</div>
+                    <select
+                      value={selectedLesson.mediaType}
+                      onChange={e => handleLessonFieldChange('mediaType', e.target.value as LearningLesson['mediaType'])}
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="video">Video</option>
+                      <option value="pdf">PDF</option>
+                    </select>
+                  </label>
+                  <label className="block">
+                    <div className="text-xs font-semibold text-slate-600 mb-2">Link video / tài liệu</div>
+                    <input
+                      value={selectedLesson.mediaUrl}
+                      onChange={e => handleLessonFieldChange('mediaUrl', e.target.value)}
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </label>
+                </div>
+
+                <label className="block mt-4">
+                  <div className="text-xs font-semibold text-slate-600 mb-2">Mô tả ngắn</div>
+                  <textarea
+                    value={selectedLesson.summary}
+                    onChange={e => handleLessonFieldChange('summary', e.target.value)}
+                    rows={4}
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </label>
+
+                <div className="mt-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-xs font-semibold text-slate-600">Kỹ năng học được</div>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {selectedLesson.skills.map((skill, index) => (
+                      <div key={skill + index} className="flex items-center gap-2 rounded-full border border-slate-300 bg-white px-3 py-1 text-sm">
+                        <input
+                          value={skill}
+                          onChange={e => handleSkillChange(index, e.target.value)}
+                          className="bg-transparent text-slate-800 outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveSkill(index)}
+                          className="text-xs text-red-600 hover:text-red-800"
+                        >
+                          x
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-3 flex flex-col sm:flex-row sm:items-center sm:gap-2">
+                    <input
+                      value={newSkillText}
+                      onChange={e => setNewSkillText(e.target.value)}
+                      placeholder="Thêm kỹ năng mới"
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddSkill}
+                      className="mt-2 inline-flex items-center justify-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors sm:mt-0"
+                    >
+                      Thêm kỹ năng
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-6 border-t border-slate-200 pt-5">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-sm font-semibold text-slate-800">Câu hỏi bài học</div>
+                    <button
+                      type="button"
+                      onClick={handleAddQuestion}
+                      className="inline-flex items-center justify-center rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 transition-colors"
+                    >
+                      Thêm câu hỏi
+                    </button>
+                  </div>
+                  <div className="mt-4 space-y-4">
+                    {selectedLesson.questions.map((question, index) => (
+                      <div key={question.id} className="rounded-2xl border border-slate-200 bg-white p-4">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="text-sm font-semibold text-slate-800">Câu {index + 1}</div>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteQuestion(question.id)}
+                            className="text-sm text-red-600 hover:text-red-800"
+                          >
+                            Xóa câu hỏi
+                          </button>
+                        </div>
+                        <label className="block mt-3">
+                          <div className="text-xs text-slate-600 mb-2">Nội dung câu hỏi</div>
+                          <input
+                            value={question.prompt}
+                            onChange={e => handleQuestionChange(question.id, { prompt: e.target.value })}
+                            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                        </label>
+                        <div className="grid gap-4 sm:grid-cols-2 mt-3">
+                          <label className="block">
+                            <div className="text-xs text-slate-600 mb-2">Loại câu hỏi</div>
+                            <select
+                              value={question.type}
+                              onChange={e => handleQuestionChange(question.id, { type: e.target.value as LearningQuestion['type'] })}
+                              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            >
+                              <option value="MULTIPLE_CHOICE">Trắc nghiệm</option>
+                              <option value="OPEN">Tự luận</option>
+                            </select>
+                          </label>
+                          <label className="block">
+                            <div className="text-xs text-slate-600 mb-2">Điểm tối đa</div>
+                            <input
+                              type="number"
+                              min={0}
+                              value={question.maxScore ?? 10}
+                              onChange={e => handleQuestionChange(question.id, { maxScore: Number(e.target.value) })}
+                              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                          </label>
+                        </div>
+                        {question.type === 'MULTIPLE_CHOICE' && (
+                          <div className="mt-4 space-y-3">
+                            <div className="text-xs text-slate-600">Các lựa chọn</div>
+                            <div className="space-y-2">
+                              {question.options?.map((option, optIndex) => (
+                                <div key={`${question.id}-opt-${optIndex}`} className="flex items-center gap-2">
+                                  <label className="inline-flex items-center gap-2 flex-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                                    <input
+                                      type="radio"
+                                      checked={question.correctOption === optIndex}
+                                      onChange={() => handleSetCorrectOption(question.id, optIndex)}
+                                    />
+                                    <input
+                                      value={option}
+                                      onChange={e => handleOptionChange(question.id, optIndex, e.target.value)}
+                                      className="w-full bg-transparent outline-none text-sm"
+                                    />
+                                  </label>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveOption(question.id, optIndex)}
+                                    className="text-sm text-red-600 hover:text-red-800"
+                                  >
+                                    Xóa
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleAddOption(question.id)}
+                              className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-slate-100 px-3 py-2 text-sm text-slate-700 hover:bg-slate-200 transition-colors"
+                            >
+                              Thêm lựa chọn
+                            </button>
+                          </div>
+                        )}
+                        <label className="block mt-4">
+                          <div className="text-xs text-slate-600 mb-2">Gợi ý / đáp án</div>
+                          <input
+                            value={question.answerGuide || ''}
+                            onChange={e => handleQuestionChange(question.id, { answerGuide: e.target.value })}
+                            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Media Section */}
             <div className="mb-6">
@@ -343,18 +695,23 @@ export const Elearning: React.FC<ElearningProps> = ({
                           rows={3}
                         />
                       )}
-
-                      <button
-                        onClick={() => handleAttemptSubmit(q)}
-                        className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
-                      >
-                        Trả lời
-                      </button>
                     </div>
                   )}
                 </div>
               );
             })}
+          </div>
+
+          <div className="mt-6 border-t border-slate-200 pt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="text-sm text-slate-600">
+              Sau khi hoàn thành tất cả câu hỏi, nhấn nút nộp để lưu toàn bộ bài kiểm tra.
+            </div>
+            <button
+              onClick={handleSubmitAll}
+              className="inline-flex items-center justify-center bg-blue-600 text-white px-5 py-3 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
+            >
+              Nộp bài
+            </button>
           </div>
         </div>
       </div>
