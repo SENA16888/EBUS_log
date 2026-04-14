@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState, useRef } from 'react';
-import { Award, BookOpenCheck, CheckCircle2, GraduationCap, PlayCircle, ShieldCheck, Sparkles, Target, Trophy, Users, XCircle, FileText, Video, CheckSquare } from 'lucide-react';
+import { Award, BookOpenCheck, CheckCircle2, GraduationCap, PlayCircle, Search, ShieldCheck, Sparkles, Target, Trophy, Users, XCircle, FileText, Video, CheckSquare } from 'lucide-react';
 import { CareerRank, Employee, Event, LearningAttempt, LearningLesson, LearningProfile, LearningQuestion, LearningTrack } from '../types';
 
 interface ElearningProps {
@@ -48,6 +48,7 @@ export const Elearning: React.FC<ElearningProps> = ({
   const [newSkillText, setNewSkillText] = useState<string>('');
   const [isSaving, setIsSaving] = useState(false);
   const [localTracks, setLocalTracks] = useState<LearningTrack[]>(tracks);
+  const [searchQuery, setSearchQuery] = useState<string>('');
   const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastSavedTracksRef = useRef<LearningTrack[]>(tracks);
 
@@ -91,6 +92,20 @@ export const Elearning: React.FC<ElearningProps> = ({
   }, [profiles, isAdminView, currentEmployeeId]);
 
   const activeProfile = useMemo(() => profileOptions[0] || null, [profileOptions]);
+
+  const filteredTracks = useMemo(() => {
+    if (!searchQuery.trim()) return localTracks;
+    const query = searchQuery.toLowerCase();
+    return localTracks.filter(track =>
+      track.title.toLowerCase().includes(query) ||
+      track.description.toLowerCase().includes(query) ||
+      track.lessons.some(lesson =>
+        lesson.title.toLowerCase().includes(query) ||
+        lesson.summary.toLowerCase().includes(query) ||
+        lesson.skills.some(skill => skill.toLowerCase().includes(query))
+      )
+    );
+  }, [localTracks, searchQuery]);
 
   useEffect(() => {
     if (!isAdminView && currentEmployeeId && !activeProfile) {
@@ -397,6 +412,27 @@ export const Elearning: React.FC<ElearningProps> = ({
         </div>
       </div>
 
+      <div className="mb-6">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" size={16} />
+          <input
+            type="text"
+            placeholder="Tìm kiếm bài học..."
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            className="w-full rounded-lg border border-slate-200 bg-white pl-10 pr-10 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-400 hover:text-slate-600"
+            >
+              <XCircle size={16} />
+            </button>
+          )}
+        </div>
+      </div>
+
       {isAdminView && canEdit && (
         <div className="flex justify-end">
           <button
@@ -409,7 +445,7 @@ export const Elearning: React.FC<ElearningProps> = ({
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {localTracks.map(track => (
+        {filteredTracks.map(track => (
           <div key={track.id} className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 hover:shadow-md transition-shadow">
             <div className="flex items-start justify-between mb-4">
               <div className="flex-1">
