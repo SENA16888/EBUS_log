@@ -472,7 +472,8 @@ export interface LearningQuestion {
 export interface LearningLesson {
   id: string;
   title: string;
-  videoUrl: string;
+  mediaType: 'video' | 'pdf';
+  mediaUrl: string;
   duration?: string;
   summary: string;
   skills: string[];

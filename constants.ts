@@ -43,7 +43,8 @@ export const MOCK_LEARNING_TRACKS: LearningTrack[] = [
       {
         id: 'ops-01',
         title: 'Checklist xuất / nhập kho & bàn giao',
-        videoUrl: 'https://www.youtube.com/embed/2LhoCfjm8R4',
+        mediaType: 'video',
+        mediaUrl: 'https://www.youtube.com/embed/2LhoCfjm8R4',
         duration: '12:45',
         summary: 'Chuẩn hóa điểm danh thiết bị, ký biên bản và log thiếu đủ trước giờ chạy.',
         skills: ['Checklist', 'Giao nhận', 'An toàn'],
@@ -87,7 +88,8 @@ export const MOCK_LEARNING_TRACKS: LearningTrack[] = [
       {
         id: 'ops-02',
         title: 'Xử lý sự cố điện & âm thanh',
-        videoUrl: 'https://www.youtube.com/embed/jmTRyZ2K2O0',
+        mediaType: 'video',
+        mediaUrl: 'https://www.youtube.com/embed/jmTRyZ2K2O0',
         duration: '09:12',
         summary: 'Nhận diện rủi ro điện, bố trí nguồn, chống hú micro và phương án dự phòng.',
         skills: ['An toàn điện', 'Âm thanh', 'Ứng phó sự cố'],
@@ -129,7 +131,8 @@ export const MOCK_LEARNING_TRACKS: LearningTrack[] = [
       {
         id: 'ct-01',
         title: 'Viết kịch bản chạy chương trình',
-        videoUrl: 'https://www.youtube.com/embed/SfX6pHYU-44',
+        mediaType: 'video',
+        mediaUrl: 'https://www.youtube.com/embed/SfX6pHYU-44',
         duration: '08:30',
         summary: 'Kết cấu timeline, MC cue, điểm check âm thanh/ánh sáng.',
         skills: ['Timeline', 'MC cue', 'Phối hợp sân khấu'],
@@ -160,7 +163,8 @@ export const MOCK_LEARNING_TRACKS: LearningTrack[] = [
       {
         id: 'ct-02',
         title: 'Quản lý tài sản nội dung',
-        videoUrl: 'https://www.youtube.com/embed/9oKl5OlpGWY',
+        mediaType: 'video',
+        mediaUrl: 'https://www.youtube.com/embed/9oKl5OlpGWY',
         duration: '07:05',
         summary: 'Logo, file trình chiếu, video và guideline thương hiệu.',
         skills: ['Brand guideline', 'File control', 'Checklist nội dung'],
@@ -194,7 +198,8 @@ export const MOCK_LEARNING_TRACKS: LearningTrack[] = [
       {
         id: 'sales-01',
         title: 'Tư vấn gói thiết bị & upsell',
-        videoUrl: 'https://www.youtube.com/embed/wbp4w5Q1nqU',
+        mediaType: 'video',
+        mediaUrl: 'https://www.youtube.com/embed/wbp4w5Q1nqU',
         duration: '10:15',
         summary: 'Khung hỏi nhu cầu, đề xuất gói chuẩn và upsell hợp lý.',
         skills: ['Sales script', 'Upsell', 'Chốt đơn'],
@@ -225,7 +230,8 @@ export const MOCK_LEARNING_TRACKS: LearningTrack[] = [
       {
         id: 'sales-02',
         title: 'Ghi nhận đơn & chăm sóc sau bán',
-        videoUrl: 'https://www.youtube.com/embed/7T7r_oSp0SE',
+        mediaType: 'video',
+        mediaUrl: 'https://www.youtube.com/embed/7T7r_oSp0SE',
         duration: '06:40',
         summary: 'Checklist hợp đồng, thu cọc, cập nhật trạng thái và chăm sóc sau sự kiện.',
         skills: ['Hợp đồng', 'Thu tiền', 'CSKH'],
@@ -259,7 +265,8 @@ export const MOCK_LEARNING_TRACKS: LearningTrack[] = [
       {
         id: 'log-01',
         title: 'Đóng gói & lộ trình giao nhận',
-        videoUrl: 'https://www.youtube.com/embed/8QJ3I7gYV7c',
+        mediaType: 'video',
+        mediaUrl: 'https://www.youtube.com/embed/8QJ3I7gYV7c',
         duration: '11:02',
         summary: 'Phân loại thùng, chằng buộc, chọn lộ trình và buffer thời gian.',
         skills: ['Đóng gói', 'Điều phối', 'An toàn vận chuyển'],
@@ -297,7 +304,8 @@ export const MOCK_LEARNING_TRACKS: LearningTrack[] = [
       {
         id: 'lead-01',
         title: 'Huấn luyện và kèm cặp tại chỗ',
-        videoUrl: 'https://www.youtube.com/embed/eN8nDVGfdZM',
+        mediaType: 'video',
+        mediaUrl: 'https://www.youtube.com/embed/eN8nDVGfdZM',
         duration: '09:55',
         summary: 'Checklist kèm cặp, chia ca và đánh giá sau sự kiện.',
         skills: ['Coaching', 'Phân ca', 'Đánh giá'],
