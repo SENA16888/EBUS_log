@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { Award, BookOpenCheck, CheckCircle2, GraduationCap, PlayCircle, ShieldCheck, Sparkles, Target, Trophy, Users, XCircle, FileText, Video, CheckSquare } from 'lucide-react';
 import { CareerRank, Employee, Event, LearningAttempt, LearningLesson, LearningProfile, LearningQuestion, LearningTrack } from '../types';
 
@@ -46,6 +46,28 @@ export const Elearning: React.FC<ElearningProps> = ({
   const [answers, setAnswers] = useState<Record<string, AnswerDraft>>({});
   const [revealed, setRevealed] = useState<Record<string, boolean>>({});
   const [newSkillText, setNewSkillText] = useState<string>('');
+  const [isSaving, setIsSaving] = useState(false);
+  const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    if (!isAdminView || !canEdit) return;
+    
+    if (autoSaveTimeoutRef.current) {
+      clearTimeout(autoSaveTimeoutRef.current);
+    }
+
+    setIsSaving(true);
+    autoSaveTimeoutRef.current = setTimeout(() => {
+      onUpdateTracks(tracks);
+      setIsSaving(false);
+    }, 1500);
+
+    return () => {
+      if (autoSaveTimeoutRef.current) {
+        clearTimeout(autoSaveTimeoutRef.current);
+      }
+    };
+  }, [tracks, isAdminView, canEdit, onUpdateTracks]);
 
   const profileOptions = useMemo(() => {
     if (isAdminView) return profiles;
@@ -423,6 +445,21 @@ export const Elearning: React.FC<ElearningProps> = ({
 
             {isAdminView && canEdit && (
               <div className="mb-6 rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="text-xs font-semibold text-slate-700">Chỉnh sửa chi tiết</div>
+                  <div className="flex items-center gap-2">
+                    {isSaving && (
+                      <div className="inline-flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></div>
+                        <span className="text-xs text-blue-600 font-medium">Đang lưu...</span>
+                      </div>
+                    )}
+                    {!isSaving && (
+                      <span className="text-xs text-green-600 font-medium">✓ Đã lưu</span>
+                    )}
+                  </div>
+                </div>
+
                 <div className="grid gap-4 sm:grid-cols-2">
                   <label className="block">
                     <div className="text-xs font-semibold text-slate-600 mb-2">Tiêu đề chủ đề</div>
