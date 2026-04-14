@@ -66,7 +66,7 @@ export const getDefaultPermissionsForRole = (role: AccessRole): AccessPermission
     return ALL_ACCESS_PERMISSIONS.filter(p => !p.endsWith('_DELETE') && p !== 'ACCESS_MANAGE');
   }
   if (role === 'STAFF') {
-    return [];
+    return ['ELEARNING_EDIT'];
   }
   return ALL_ACCESS_PERMISSIONS;
 };

@@ -117,8 +117,8 @@ export const Elearning: React.FC<ElearningProps> = ({
 
   const lessonQuestions = useMemo(() => {
     if (!selectedLesson) return [];
-    return isAdminView ? selectedLesson.questions : selectedLesson.questions.filter(q => q.type === 'MULTIPLE_CHOICE');
-  }, [selectedLesson, isAdminView]);
+    return selectedLesson.questions;
+  }, [selectedLesson]);
 
   const handleSelectLesson = (trackId: string, lessonId: string) => {
     setSelectedTrackId(trackId);
