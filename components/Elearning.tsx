@@ -234,6 +234,40 @@ export const Elearning: React.FC<ElearningProps> = ({
     updateSelectedLesson(lesson => ({ ...lesson, questions: lesson.questions.filter(q => q.id !== questionId) }));
   };
 
+  const handleTrackFieldChange = <K extends keyof LearningTrack>(field: K, value: LearningTrack[K]) => {
+    if (!selectedTrack || !canEdit) return;
+    updateSelectedTrack(track => ({ ...track, [field]: value }));
+  };
+
+  const handleAddTrack = () => {
+    if (!canEdit) return;
+    const newLesson: LearningLesson = {
+      id: `lesson-${Date.now()}`,
+      title: 'Bài học mới',
+      mediaType: 'video',
+      mediaUrl: '',
+      duration: '',
+      summary: '',
+      skills: [],
+      questions: []
+    };
+
+    const newTrack: LearningTrack = {
+      id: `track-${Date.now()}`,
+      title: 'Chủ đề mới',
+      description: 'Mô tả chủ đề',
+      focus: 'OPERATIONS',
+      level: 'BASE',
+      badge: 'New',
+      lessons: [newLesson]
+    };
+
+    onUpdateTracks([...tracks, newTrack]);
+    setSelectedTrackId(newTrack.id);
+    setSelectedLessonId(newLesson.id);
+    setViewMode('lesson');
+  };
+
   const handleQuestionChange = (questionId: string, patch: Partial<LearningQuestion>) => {
     updateSelectedLesson(lesson => ({
       ...lesson,
@@ -291,6 +325,17 @@ export const Elearning: React.FC<ElearningProps> = ({
           </div>
         </div>
       </div>
+
+      {isAdminView && canEdit && (
+        <div className="flex justify-end">
+          <button
+            onClick={handleAddTrack}
+            className="inline-flex items-center justify-center rounded-lg bg-white px-4 py-2 text-sm font-medium text-blue-700 shadow-sm border border-blue-200 hover:bg-blue-50 transition-colors"
+          >
+            + Thêm chủ đề mới
+          </button>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {tracks.map(track => (
@@ -363,6 +408,70 @@ export const Elearning: React.FC<ElearningProps> = ({
 
             {isAdminView && canEdit && (
               <div className="mb-6 rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <label className="block">
+                    <div className="text-xs font-semibold text-slate-600 mb-2">Tiêu đề chủ đề</div>
+                    <input
+                      value={selectedTrack.title}
+                      onChange={e => handleTrackFieldChange('title', e.target.value)}
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </label>
+                  <label className="block">
+                    <div className="text-xs font-semibold text-slate-600 mb-2">Cấp độ</div>
+                    <select
+                      value={selectedTrack.level}
+                      onChange={e => handleTrackFieldChange('level', e.target.value as LearningTrack['level'])}
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="BASE">BASE</option>
+                      <option value="ADVANCED">ADVANCED</option>
+                      <option value="MASTER">MASTER</option>
+                    </select>
+                  </label>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2 mt-4">
+                  <label className="block sm:col-span-2">
+                    <div className="text-xs font-semibold text-slate-600 mb-2">Mô tả chủ đề</div>
+                    <textarea
+                      value={selectedTrack.description}
+                      onChange={e => handleTrackFieldChange('description', e.target.value)}
+                      rows={3}
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </label>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2 mt-4">
+                  <label className="block">
+                    <div className="text-xs font-semibold text-slate-600 mb-2">Phân loại</div>
+                    <select
+                      value={selectedTrack.focus}
+                      onChange={e => handleTrackFieldChange('focus', e.target.value as LearningTrack['focus'])}
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="OPERATIONS">Operations</option>
+                      <option value="CONTENT">Content</option>
+                      <option value="SALES">Sales</option>
+                      <option value="LOGISTICS">Logistics</option>
+                      <option value="LEADERSHIP">Leadership</option>
+                    </select>
+                  </label>
+                  <label className="block">
+                    <div className="text-xs font-semibold text-slate-600 mb-2">Badge</div>
+                    <input
+                      value={selectedTrack.badge}
+                      onChange={e => handleTrackFieldChange('badge', e.target.value)}
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </label>
+                </div>
+
+                <div className="mt-5 border-t border-slate-200 pt-5">
+                  <div className="text-sm font-semibold text-slate-800 mb-3">Nội dung bài học</div>
+                </div>
+
                 <div className="grid gap-4 sm:grid-cols-2">
                   <label className="block">
                     <div className="text-xs font-semibold text-slate-600 mb-2">Tiêu đề bài học</div>
