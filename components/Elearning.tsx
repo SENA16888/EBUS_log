@@ -58,6 +58,21 @@ export const Elearning: React.FC<ElearningProps> = ({
   const selectedTrack = useMemo(() => tracks.find(t => t.id === selectedTrackId) || null, [tracks, selectedTrackId]);
   const selectedLesson = useMemo(() => selectedTrack?.lessons.find(l => l.id === selectedLessonId) || null, [selectedTrack, selectedLessonId]);
 
+  const getVideoEmbedSource = (sourceUrl: string) => {
+    const driveIdMatch = sourceUrl.match(/(?:drive\.google\.com\/file\/d\/|drive\.google\.com\/open\?id=|drive\.google\.com\/uc\?id=)([a-zA-Z0-9_-]+)/);
+    if (driveIdMatch) {
+      return { type: 'iframe' as const, src: `https://drive.google.com/file/d/${driveIdMatch[1]}/preview` };
+    }
+
+    const queryIdMatch = sourceUrl.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+    if (queryIdMatch) {
+      return { type: 'iframe' as const, src: `https://drive.google.com/file/d/${queryIdMatch[1]}/preview` };
+    }
+
+    const isDirectVideo = /\.(mp4|webm|ogg)(?:[?#].*)?$/i.test(sourceUrl);
+    return { type: isDirectVideo ? 'video' as const : 'iframe' as const, src: sourceUrl };
+  };
+
   const profileAttempts = useMemo(() =>
     attempts.filter(a => a.learnerId === activeProfile?.id),
     [attempts, activeProfile?.id]
@@ -672,15 +687,30 @@ export const Elearning: React.FC<ElearningProps> = ({
             {/* Media Section */}
             <div className="mb-6">
               {selectedLesson.mediaType === 'video' ? (
-                <div className="aspect-video bg-black rounded-lg overflow-hidden">
-                  <video
-                    controls
-                    className="w-full h-full"
-                    src={selectedLesson.mediaUrl}
-                  >
-                    Trình duyệt không hỗ trợ video.
-                  </video>
-                </div>
+                (() => {
+                  const videoSource = getVideoEmbedSource(selectedLesson.mediaUrl);
+                  return videoSource.type === 'video' ? (
+                    <div className="aspect-video bg-black rounded-lg overflow-hidden">
+                      <video
+                        controls
+                        className="w-full h-full"
+                        src={videoSource.src}
+                      >
+                        Trình duyệt không hỗ trợ video.
+                      </video>
+                    </div>
+                  ) : (
+                    <div className="aspect-video rounded-lg overflow-hidden bg-slate-950">
+                      <iframe
+                        src={videoSource.src}
+                        className="w-full h-full border-0"
+                        title="Google Drive Video"
+                        allow="autoplay; encrypted-media; fullscreen"
+                        allowFullScreen
+                      />
+                    </div>
+                  );
+                })()
               ) : (
                 <div className="aspect-video bg-slate-100 rounded-lg flex items-center justify-center">
                   <div className="text-center text-slate-500">
