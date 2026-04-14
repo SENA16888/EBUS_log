@@ -47,27 +47,42 @@ export const Elearning: React.FC<ElearningProps> = ({
   const [revealed, setRevealed] = useState<Record<string, boolean>>({});
   const [newSkillText, setNewSkillText] = useState<string>('');
   const [isSaving, setIsSaving] = useState(false);
+  const [localTracks, setLocalTracks] = useState<LearningTrack[]>(tracks);
   const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastSavedTracksRef = useRef<LearningTrack[]>(tracks);
+
+  useEffect(() => {
+    setLocalTracks(tracks);
+    lastSavedTracksRef.current = tracks;
+  }, [tracks]);
 
   useEffect(() => {
     if (!isAdminView || !canEdit) return;
     
+    const tracksJson = JSON.stringify(localTracks);
+    const lastSavedJson = JSON.stringify(lastSavedTracksRef.current);
+    
+    if (tracksJson === lastSavedJson) {
+      return;
+    }
+
     if (autoSaveTimeoutRef.current) {
       clearTimeout(autoSaveTimeoutRef.current);
     }
 
     setIsSaving(true);
     autoSaveTimeoutRef.current = setTimeout(() => {
-      onUpdateTracks(tracks);
+      onUpdateTracks(localTracks);
+      lastSavedTracksRef.current = localTracks;
       setIsSaving(false);
-    }, 1500);
+    }, 3000);
 
     return () => {
       if (autoSaveTimeoutRef.current) {
         clearTimeout(autoSaveTimeoutRef.current);
       }
     };
-  }, [tracks, isAdminView, canEdit, onUpdateTracks]);
+  }, [localTracks, isAdminView, canEdit, onUpdateTracks]);
 
   const profileOptions = useMemo(() => {
     if (isAdminView) return profiles;
@@ -77,7 +92,7 @@ export const Elearning: React.FC<ElearningProps> = ({
 
   const activeProfile = useMemo(() => profileOptions[0] || null, [profileOptions]);
 
-  const selectedTrack = useMemo(() => tracks.find(t => t.id === selectedTrackId) || null, [tracks, selectedTrackId]);
+  const selectedTrack = useMemo(() => localTracks.find(t => t.id === selectedTrackId) || null, [localTracks, selectedTrackId]);
   const selectedLesson = useMemo(() => selectedTrack?.lessons.find(l => l.id === selectedLessonId) || null, [selectedTrack, selectedLessonId]);
 
   const getVideoEmbedSource = (sourceUrl: string) => {
@@ -198,8 +213,8 @@ export const Elearning: React.FC<ElearningProps> = ({
 
   const updateSelectedTrack = (updater: (track: LearningTrack) => LearningTrack) => {
     if (!selectedTrack || !canEdit) return;
-    const updatedTracks = tracks.map(track => track.id === selectedTrack.id ? updater(track) : track);
-    onUpdateTracks(updatedTracks);
+    const updatedTracks = localTracks.map(track => track.id === selectedTrack.id ? updater(track) : track);
+    setLocalTracks(updatedTracks);
   };
 
   const updateSelectedLesson = (updater: (lesson: LearningLesson) => LearningLesson) => {
@@ -222,11 +237,11 @@ export const Elearning: React.FC<ElearningProps> = ({
       skills: [],
       questions: []
     };
-    const updatedTracks = tracks.map(track => track.id === trackId ? {
+    const updatedTracks = localTracks.map(track => track.id === trackId ? {
       ...track,
       lessons: [...track.lessons, newLesson]
     } : track);
-    onUpdateTracks(updatedTracks);
+    setLocalTracks(updatedTracks);
     setSelectedTrackId(trackId);
     setSelectedLessonId(newLesson.id);
     setViewMode('lesson');
@@ -299,7 +314,7 @@ export const Elearning: React.FC<ElearningProps> = ({
       lessons: [newLesson]
     };
 
-    onUpdateTracks([...tracks, newTrack]);
+    setLocalTracks([...localTracks, newTrack]);
     setSelectedTrackId(newTrack.id);
     setSelectedLessonId(newLesson.id);
     setViewMode('lesson');
@@ -375,7 +390,7 @@ export const Elearning: React.FC<ElearningProps> = ({
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {tracks.map(track => (
+        {localTracks.map(track => (
           <div key={track.id} className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 hover:shadow-md transition-shadow">
             <div className="flex items-start justify-between mb-4">
               <div className="flex-1">
