@@ -160,7 +160,7 @@ const App: React.FC = () => {
   const canViewPackages = currentUser?.role !== 'STAFF';
   const canViewQuotations = currentUser?.role !== 'STAFF';
   const canViewSales = currentUser?.role !== 'STAFF';
-  const canViewElearning = currentUser?.role !== 'STAFF';
+  const canViewElearning = !!currentUser;
   const canViewEmployees = currentUser?.role !== 'STAFF';
   const isElearningAdmin = currentUser?.role === 'ADMIN' || currentUser?.role === 'MANAGER';
 

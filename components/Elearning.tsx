@@ -92,6 +92,25 @@ export const Elearning: React.FC<ElearningProps> = ({
 
   const activeProfile = useMemo(() => profileOptions[0] || null, [profileOptions]);
 
+  useEffect(() => {
+    if (!isAdminView && currentEmployeeId && !activeProfile) {
+      const employee = employees.find(e => e.id === currentEmployeeId);
+      if (employee) {
+        const newProfile: LearningProfile = {
+          id: `profile-${currentEmployeeId}`,
+          employeeId: currentEmployeeId,
+          name: employee.name,
+          progress: {},
+          completedLessons: [],
+          certificates: [],
+          totalScore: 0,
+          rankId: null
+        };
+        onUpsertProfile(newProfile);
+      }
+    }
+  }, [isAdminView, currentEmployeeId, activeProfile, employees, onUpsertProfile]);
+
   const selectedTrack = useMemo(() => localTracks.find(t => t.id === selectedTrackId) || null, [localTracks, selectedTrackId]);
   const selectedLesson = useMemo(() => selectedTrack?.lessons.find(l => l.id === selectedLessonId) || null, [selectedTrack, selectedLessonId]);
 
