@@ -474,6 +474,9 @@ export interface LearningLesson {
   title: string;
   mediaType: 'video' | 'pdf';
   mediaUrl: string;
+  videoUrl?: string;
+  documentUrl?: string;
+  guideUrl?: string;
   duration?: string;
   summary: string;
   skills: string[];

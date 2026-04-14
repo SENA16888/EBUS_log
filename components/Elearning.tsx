@@ -599,6 +599,42 @@ export const Elearning: React.FC<ElearningProps> = ({
                   </label>
                 </div>
 
+                <div className="grid gap-4 sm:grid-cols-2 mt-4">
+                  <label className="block sm:col-span-2">
+                    <div className="text-xs font-semibold text-slate-600 mb-2">Link video bổ sung (tùy chọn)</div>
+                    <input
+                      value={selectedLesson.videoUrl || ''}
+                      onChange={e => handleLessonFieldChange('videoUrl', e.target.value)}
+                      placeholder="Link Google Drive hoặc video trực tiếp"
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </label>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2 mt-4">
+                  <label className="block sm:col-span-2">
+                    <div className="text-xs font-semibold text-slate-600 mb-2">Link tài liệu bổ sung (tùy chọn)</div>
+                    <input
+                      value={selectedLesson.documentUrl || ''}
+                      onChange={e => handleLessonFieldChange('documentUrl', e.target.value)}
+                      placeholder="Link PDF hoặc tài liệu khác"
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </label>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2 mt-4">
+                  <label className="block sm:col-span-2">
+                    <div className="text-xs font-semibold text-slate-600 mb-2">Link hướng dẫn (tùy chọn)</div>
+                    <input
+                      value={selectedLesson.guideUrl || ''}
+                      onChange={e => handleLessonFieldChange('guideUrl', e.target.value)}
+                      placeholder="Link hướng dẫn bổ sung"
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </label>
+                </div>
+
                 <label className="block mt-4">
                   <div className="text-xs font-semibold text-slate-600 mb-2">Mô tả ngắn</div>
                   <textarea
@@ -756,43 +792,101 @@ export const Elearning: React.FC<ElearningProps> = ({
             )}
 
             {/* Media Section */}
-            <div className="mb-6">
-              {selectedLesson.mediaType === 'video' ? (
-                (() => {
-                  const videoSource = getVideoEmbedSource(selectedLesson.mediaUrl);
-                  return videoSource.type === 'video' ? (
-                    <div className="aspect-video bg-black rounded-lg overflow-hidden">
-                      <video
-                        controls
-                        className="w-full h-full"
-                        src={videoSource.src}
-                      >
-                        Trình duyệt không hỗ trợ video.
-                      </video>
-                    </div>
-                  ) : (
-                    <div className="aspect-video rounded-lg overflow-hidden bg-slate-950">
-                      <iframe
-                        src={videoSource.src}
-                        className="w-full h-full border-0"
-                        title="Google Drive Video"
-                        allow="autoplay; encrypted-media; fullscreen"
-                        allowFullScreen
-                      />
-                    </div>
-                  );
-                })()
-              ) : (
-                <div className="aspect-video bg-slate-100 rounded-lg flex items-center justify-center">
-                  <div className="text-center text-slate-500">
-                    <FileText size={48} className="mx-auto mb-2" />
-                    <p>Đang tải tài liệu PDF...</p>
+            <div className="mb-6 space-y-4">
+              {selectedLesson.videoUrl && (
+                <div>
+                  <h4 className="text-sm font-semibold mb-2">Video</h4>
+                  {(() => {
+                    const videoSource = getVideoEmbedSource(selectedLesson.videoUrl);
+                    return videoSource.type === 'video' ? (
+                      <div className="aspect-video bg-black rounded-lg overflow-hidden">
+                        <video
+                          controls
+                          className="w-full h-full"
+                          src={videoSource.src}
+                        >
+                          Trình duyệt không hỗ trợ video.
+                        </video>
+                      </div>
+                    ) : (
+                      <div className="aspect-video rounded-lg overflow-hidden bg-slate-950">
+                        <iframe
+                          src={videoSource.src}
+                          className="w-full h-full border-0"
+                          title="Video"
+                          allow="autoplay; encrypted-media; fullscreen"
+                          allowFullScreen
+                        />
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+
+              {selectedLesson.documentUrl && (
+                <div>
+                  <h4 className="text-sm font-semibold mb-2">Tài liệu</h4>
+                  <div className="aspect-video bg-slate-100 rounded-lg flex items-center justify-center">
                     <iframe
-                      src={selectedLesson.mediaUrl}
+                      src={selectedLesson.documentUrl}
                       className="w-full h-full border-0"
-                      title="PDF Document"
+                      title="Document"
                     />
                   </div>
+                </div>
+              )}
+
+              {selectedLesson.guideUrl && (
+                <div>
+                  <h4 className="text-sm font-semibold mb-2">Hướng dẫn</h4>
+                  <a
+                    href={selectedLesson.guideUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:underline"
+                  >
+                    Xem hướng dẫn
+                  </a>
+                </div>
+              )}
+
+              {/* Backward compatibility with old mediaUrl */}
+              {!selectedLesson.videoUrl && !selectedLesson.documentUrl && selectedLesson.mediaUrl && (
+                <div>
+                  {selectedLesson.mediaType === 'video' ? (
+                    (() => {
+                      const videoSource = getVideoEmbedSource(selectedLesson.mediaUrl);
+                      return videoSource.type === 'video' ? (
+                        <div className="aspect-video bg-black rounded-lg overflow-hidden">
+                          <video
+                            controls
+                            className="w-full h-full"
+                            src={videoSource.src}
+                          >
+                            Trình duyệt không hỗ trợ video.
+                          </video>
+                        </div>
+                      ) : (
+                        <div className="aspect-video rounded-lg overflow-hidden bg-slate-950">
+                          <iframe
+                            src={videoSource.src}
+                            className="w-full h-full border-0"
+                            title="Video"
+                            allow="autoplay; encrypted-media; fullscreen"
+                            allowFullScreen
+                          />
+                        </div>
+                      );
+                    })()
+                  ) : (
+                    <div className="aspect-video bg-slate-100 rounded-lg flex items-center justify-center">
+                      <iframe
+                        src={selectedLesson.mediaUrl}
+                        className="w-full h-full border-0"
+                        title="Document"
+                      />
+                    </div>
+                  )}
                 </div>
               )}
             </div>
