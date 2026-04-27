@@ -52,6 +52,15 @@ type LessonProgressSummary = {
   completed: boolean;
 };
 
+type TrackProgressSummary = {
+  trackId: string;
+  completedLessons: number;
+  totalLessons: number;
+  totalScore: number;
+  maxScore: number;
+  completed: boolean;
+};
+
 const QUICK_IMPORT_OPTION_LABELS = ['A', 'B', 'C', 'D'] as const;
 
 const parseQuickQuizImport = (rawText: string): { questions: LearningQuestion[]; error?: string } => {
@@ -340,6 +349,31 @@ export const Elearning: React.FC<ElearningProps> = ({
       totalScore,
       maxScore
     };
+  }, [localTracks, lessonProgressMap]);
+
+  const trackProgressMap = useMemo(() => {
+    const progressMap = new Map<string, TrackProgressSummary>();
+
+    localTracks.forEach(track => {
+      const lessonSummaries = track.lessons
+        .map(lesson => lessonProgressMap.get(lesson.id))
+        .filter(Boolean) as LessonProgressSummary[];
+      const completedLessons = lessonSummaries.filter(summary => summary.completed).length;
+      const totalLessons = track.lessons.length;
+      const totalScore = lessonSummaries.reduce((sum, summary) => sum + summary.totalScore, 0);
+      const maxScore = lessonSummaries.reduce((sum, summary) => sum + summary.maxScore, 0);
+
+      progressMap.set(track.id, {
+        trackId: track.id,
+        completedLessons,
+        totalLessons,
+        totalScore,
+        maxScore,
+        completed: totalLessons > 0 && completedLessons === totalLessons
+      });
+    });
+
+    return progressMap;
   }, [localTracks, lessonProgressMap]);
 
   const handleSelectLesson = (trackId: string, lessonId: string) => {
@@ -683,29 +717,83 @@ export const Elearning: React.FC<ElearningProps> = ({
       </div>
 
       {!isAdminView && activeProfile && (
-        <div className="grid gap-4 md:grid-cols-3">
-          <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-5">
-            <div className="text-sm font-semibold text-emerald-900">Tiến độ học tập</div>
-            <div className="mt-2 text-3xl font-bold text-emerald-700">
-              {overallLearningProgress.completedLessons}/{overallLearningProgress.totalLessons}
+        <>
+          <div className="grid gap-4 md:grid-cols-3">
+            <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-5">
+              <div className="text-sm font-semibold text-emerald-900">Tiến độ học tập</div>
+              <div className="mt-2 text-3xl font-bold text-emerald-700">
+                {overallLearningProgress.completedLessons}/{overallLearningProgress.totalLessons}
+              </div>
+              <div className="mt-1 text-sm text-emerald-800">Bài học đã hoàn thành</div>
             </div>
-            <div className="mt-1 text-sm text-emerald-800">Bài học đã hoàn thành</div>
-          </div>
-          <div className="rounded-2xl border border-blue-100 bg-blue-50 p-5">
-            <div className="text-sm font-semibold text-blue-900">Tổng điểm tích lũy</div>
-            <div className="mt-2 text-3xl font-bold text-blue-700">
-              {overallLearningProgress.totalScore}/{overallLearningProgress.maxScore}
+            <div className="rounded-2xl border border-blue-100 bg-blue-50 p-5">
+              <div className="text-sm font-semibold text-blue-900">Tổng điểm tích lũy</div>
+              <div className="mt-2 text-3xl font-bold text-blue-700">
+                {overallLearningProgress.totalScore}/{overallLearningProgress.maxScore}
+              </div>
+              <div className="mt-1 text-sm text-blue-800">Từ các bài đã làm</div>
             </div>
-            <div className="mt-1 text-sm text-blue-800">Từ các bài đã làm</div>
-          </div>
-          <div className="rounded-2xl border border-amber-100 bg-amber-50 p-5">
-            <div className="text-sm font-semibold text-amber-900">Chứng nhận hoàn thành</div>
-            <div className="mt-2 flex items-center gap-2 text-amber-800">
-              <CheckCircle2 size={20} />
-              <span className="text-sm">Bài nào làm đủ câu sẽ được tick xanh</span>
+            <div className="rounded-2xl border border-amber-100 bg-amber-50 p-5">
+              <div className="text-sm font-semibold text-amber-900">Chứng nhận hoàn thành</div>
+              <div className="mt-2 flex items-center gap-2 text-amber-800">
+                <CheckCircle2 size={20} />
+                <span className="text-sm">Bài nào làm đủ câu sẽ được tick xanh</span>
+              </div>
             </div>
           </div>
-        </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+            <div className="border-b border-slate-100 px-5 py-4">
+              <h2 className="text-lg font-semibold text-slate-800">Thống kê theo chủ đề</h2>
+              <p className="mt-1 text-sm text-slate-500">Xem điểm hiện tại và trạng thái hoàn thành của từng chủ đề học.</p>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead className="bg-slate-50 text-slate-600">
+                  <tr>
+                    <th className="px-5 py-3 text-left font-semibold">Chủ đề</th>
+                    <th className="px-5 py-3 text-left font-semibold">Điểm hiện tại</th>
+                    <th className="px-5 py-3 text-left font-semibold">Bài hoàn thành</th>
+                    <th className="px-5 py-3 text-left font-semibold">Trạng thái</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {localTracks.map(track => {
+                    const trackProgress = trackProgressMap.get(track.id);
+
+                    return (
+                      <tr key={track.id} className="border-t border-slate-100">
+                        <td className="px-5 py-4">
+                          <div className="font-medium text-slate-800">{track.title}</div>
+                          <div className="mt-1 text-xs text-slate-500">{track.level} • {track.lessons.length} bài học</div>
+                        </td>
+                        <td className="px-5 py-4 text-slate-700">
+                          {trackProgress?.totalScore || 0}/{trackProgress?.maxScore || 0}
+                        </td>
+                        <td className="px-5 py-4 text-slate-700">
+                          {trackProgress?.completedLessons || 0}/{trackProgress?.totalLessons || track.lessons.length}
+                        </td>
+                        <td className="px-5 py-4">
+                          {trackProgress?.completed ? (
+                            <span className="inline-flex items-center gap-2 rounded-full bg-emerald-100 px-3 py-1 text-xs font-medium text-emerald-700">
+                              <CheckCircle2 size={14} />
+                              Đã hoàn thành
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
+                              <XCircle size={14} />
+                              Chưa hoàn thành
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
       )}
 
       <div className="mb-6">
