@@ -25,6 +25,87 @@ type AnswerDraft = {
   answerText?: string;
 };
 
+const QUICK_IMPORT_OPTION_LABELS = ['A', 'B', 'C', 'D'] as const;
+
+const parseQuickQuizImport = (rawText: string): { questions: LearningQuestion[]; error?: string } => {
+  const normalizedText = rawText.replace(/\r\n/g, '\n').trim();
+  if (!normalizedText) {
+    return { questions: [], error: 'Vui lòng dán nội dung câu hỏi trước khi thêm.' };
+  }
+
+  const blocks = normalizedText
+    .split(/\n\s*\n+/)
+    .map(block => block.trim())
+    .filter(Boolean);
+
+  const questions: LearningQuestion[] = [];
+
+  for (const block of blocks) {
+    const lines = block
+      .split('\n')
+      .map(line => line.trim())
+      .filter(Boolean);
+
+    if (lines.length < 6) {
+      return {
+        questions: [],
+        error: 'Mỗi câu cần có 1 dòng câu hỏi, 4 phương án A/B/C/D và 1 dòng Đáp án.'
+      };
+    }
+
+    const promptLine = lines[0];
+    const prompt = promptLine
+      .replace(/^(?:câu hỏi|question|q)\s*[:.-]\s*/i, '')
+      .replace(/^\d+\s*[.)-]\s*/, '')
+      .trim();
+
+    if (!prompt) {
+      return { questions: [], error: 'Có câu hỏi đang bị trống nội dung.' };
+    }
+
+    const optionValues = QUICK_IMPORT_OPTION_LABELS.map(label => {
+      const optionLine = lines.find(line => new RegExp(`^${label}\\s*[.)\\-:]\\s*`, 'i').test(line));
+      return optionLine?.replace(new RegExp(`^${label}\\s*[.)\\-:]\\s*`, 'i'), '').trim() || '';
+    });
+
+    if (optionValues.some(option => !option)) {
+      return {
+        questions: [],
+        error: 'Mỗi câu phải có đủ 4 phương án bắt đầu bằng A., B., C., D.'
+      };
+    }
+
+    const answerLine = lines.find(line => /^(?:đáp án|dap an|answer|correct)\s*[:.-]\s*/i.test(line));
+    if (!answerLine) {
+      return { questions: [], error: 'Thiếu dòng Đáp án: A/B/C/D ở một trong các câu.' };
+    }
+
+    const answerValue = answerLine
+      .replace(/^(?:đáp án|dap an|answer|correct)\s*[:.-]\s*/i, '')
+      .trim()
+      .toUpperCase()
+      .charAt(0);
+
+    const correctOption = QUICK_IMPORT_OPTION_LABELS.indexOf(answerValue as typeof QUICK_IMPORT_OPTION_LABELS[number]);
+    if (correctOption === -1) {
+      return { questions: [], error: 'Đáp án chỉ hỗ trợ A, B, C hoặc D.' };
+    }
+
+    questions.push({
+      id: `question-${Date.now()}-${questions.length}`,
+      prompt,
+      type: 'MULTIPLE_CHOICE',
+      options: optionValues,
+      correctOption,
+      answerGuide: optionValues[correctOption],
+      answerKeywords: [],
+      maxScore: 10
+    });
+  }
+
+  return { questions };
+};
+
 export const Elearning: React.FC<ElearningProps> = ({
   tracks,
   profiles,
@@ -49,6 +130,9 @@ export const Elearning: React.FC<ElearningProps> = ({
   const [isSaving, setIsSaving] = useState(false);
   const [localTracks, setLocalTracks] = useState<LearningTrack[]>(tracks);
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [quickQuizInput, setQuickQuizInput] = useState<string>('');
+  const [quickQuizError, setQuickQuizError] = useState<string>('');
+  const [quickQuizSuccess, setQuickQuizSuccess] = useState<string>('');
   const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastSavedTracksRef = useRef<LearningTrack[]>(tracks);
 
@@ -128,6 +212,12 @@ export const Elearning: React.FC<ElearningProps> = ({
 
   const selectedTrack = useMemo(() => localTracks.find(t => t.id === selectedTrackId) || null, [localTracks, selectedTrackId]);
   const selectedLesson = useMemo(() => selectedTrack?.lessons.find(l => l.id === selectedLessonId) || null, [selectedTrack, selectedLessonId]);
+
+  useEffect(() => {
+    setQuickQuizInput('');
+    setQuickQuizError('');
+    setQuickQuizSuccess('');
+  }, [selectedLessonId]);
 
   const getVideoEmbedSource = (sourceUrl: string) => {
     const driveIdMatch = sourceUrl.match(/(?:drive\.google\.com\/file\/d\/|drive\.google\.com\/open\?id=|drive\.google\.com\/uc\?id=)([a-zA-Z0-9_-]+)/);
@@ -318,6 +408,31 @@ export const Elearning: React.FC<ElearningProps> = ({
 
   const handleDeleteQuestion = (questionId: string) => {
     updateSelectedLesson(lesson => ({ ...lesson, questions: lesson.questions.filter(q => q.id !== questionId) }));
+  };
+
+  const handleQuickQuizImport = () => {
+    const result = parseQuickQuizImport(quickQuizInput);
+
+    if (result.error) {
+      setQuickQuizError(result.error);
+      setQuickQuizSuccess('');
+      return;
+    }
+
+    if (result.questions.length === 0) {
+      setQuickQuizError('Không tìm thấy câu hỏi hợp lệ để thêm.');
+      setQuickQuizSuccess('');
+      return;
+    }
+
+    updateSelectedLesson(lesson => ({
+      ...lesson,
+      questions: [...lesson.questions, ...result.questions]
+    }));
+
+    setQuickQuizSuccess(`Đã thêm ${result.questions.length} câu trắc nghiệm.`);
+    setQuickQuizError('');
+    setQuickQuizInput('');
   };
 
   const handleTrackFieldChange = <K extends keyof LearningTrack>(field: K, value: LearningTrack[K]) => {
@@ -730,6 +845,61 @@ export const Elearning: React.FC<ElearningProps> = ({
                     >
                       Thêm câu hỏi
                     </button>
+                  </div>
+                  <div className="mt-4 rounded-2xl border border-blue-200 bg-blue-50 p-4">
+                    <div className="text-sm font-semibold text-slate-800">Nhập nhanh từ AI</div>
+                    <div className="mt-1 text-xs text-slate-600">
+                      Mỗi câu cách nhau 1 dòng trống. Format ngắn gọn:
+                    </div>
+                    <pre className="mt-3 overflow-x-auto rounded-xl bg-white p-3 text-xs leading-6 text-slate-700 border border-blue-100">{`Câu hỏi: Nội dung câu hỏi
+A. Phương án 1
+B. Phương án 2
+C. Phương án 3
+D. Phương án 4
+Đáp án: B
+
+Câu hỏi: Nội dung câu hỏi tiếp theo
+A. ...
+B. ...
+C. ...
+D. ...
+Đáp án: D`}</pre>
+                    <textarea
+                      value={quickQuizInput}
+                      onChange={e => {
+                        setQuickQuizInput(e.target.value);
+                        if (quickQuizError) setQuickQuizError('');
+                        if (quickQuizSuccess) setQuickQuizSuccess('');
+                      }}
+                      rows={12}
+                      placeholder="Dán nhiều câu hỏi trắc nghiệm từ AI vào đây..."
+                      className="mt-3 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    {(quickQuizError || quickQuizSuccess) && (
+                      <div className={`mt-3 text-sm ${quickQuizError ? 'text-red-600' : 'text-green-600'}`}>
+                        {quickQuizError || quickQuizSuccess}
+                      </div>
+                    )}
+                    <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                      <button
+                        type="button"
+                        onClick={handleQuickQuizImport}
+                        className="inline-flex items-center justify-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
+                      >
+                        Thêm từ ô nhập nhanh
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setQuickQuizInput('');
+                          setQuickQuizError('');
+                          setQuickQuizSuccess('');
+                        }}
+                        className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+                      >
+                        Xóa nội dung
+                      </button>
+                    </div>
                   </div>
                   <div className="mt-4 space-y-4">
                     {selectedLesson.questions.map((question, index) => (
