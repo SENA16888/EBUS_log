@@ -18,11 +18,38 @@ interface ElearningProps {
   currentEmployeeId?: string;
 }
 
-type ViewMode = 'topics' | 'lesson' | 'quiz';
+type ViewMode = 'topics' | 'lesson' | 'quiz' | 'result';
 
 type AnswerDraft = {
   selectedOption?: number;
   answerText?: string;
+};
+
+type QuizResultItem = {
+  question: LearningQuestion;
+  attempt: LearningAttempt;
+  isCorrect: boolean;
+  userAnswerText: string;
+  correctAnswerText: string;
+};
+
+type QuizResultSummary = {
+  lessonTitle: string;
+  totalScore: number;
+  maxScore: number;
+  correctCount: number;
+  totalQuestions: number;
+  items: QuizResultItem[];
+};
+
+type LessonProgressSummary = {
+  lessonId: string;
+  answeredCount: number;
+  totalQuestions: number;
+  totalScore: number;
+  maxScore: number;
+  correctCount: number;
+  completed: boolean;
 };
 
 const QUICK_IMPORT_OPTION_LABELS = ['A', 'B', 'C', 'D'] as const;
@@ -133,6 +160,7 @@ export const Elearning: React.FC<ElearningProps> = ({
   const [quickQuizInput, setQuickQuizInput] = useState<string>('');
   const [quickQuizError, setQuickQuizError] = useState<string>('');
   const [quickQuizSuccess, setQuickQuizSuccess] = useState<string>('');
+  const [latestQuizResult, setLatestQuizResult] = useState<QuizResultSummary | null>(null);
   const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastSavedTracksRef = useRef<LearningTrack[]>(tracks);
 
@@ -217,6 +245,7 @@ export const Elearning: React.FC<ElearningProps> = ({
     setQuickQuizInput('');
     setQuickQuizError('');
     setQuickQuizSuccess('');
+    setLatestQuizResult(null);
   }, [selectedLessonId]);
 
   const getVideoEmbedSource = (sourceUrl: string) => {
@@ -239,10 +268,79 @@ export const Elearning: React.FC<ElearningProps> = ({
     [attempts, activeProfile?.id]
   );
 
+  const latestAttemptsByQuestionId = useMemo(() => {
+    const sortedAttempts = [...profileAttempts].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    const attemptMap = new Map<string, LearningAttempt>();
+
+    sortedAttempts.forEach(attempt => {
+      if (!attemptMap.has(attempt.questionId)) {
+        attemptMap.set(attempt.questionId, attempt);
+      }
+    });
+
+    return attemptMap;
+  }, [profileAttempts]);
+
   const lessonQuestions = useMemo(() => {
     if (!selectedLesson) return [];
     return selectedLesson.questions;
   }, [selectedLesson]);
+
+  const lessonProgressMap = useMemo(() => {
+    const progressMap = new Map<string, LessonProgressSummary>();
+
+    localTracks.forEach(track => {
+      track.lessons.forEach(lesson => {
+        const questionAttempts = lesson.questions
+          .map(question => {
+            const attempt = latestAttemptsByQuestionId.get(question.id);
+            if (!attempt) return null;
+            const maxScore = question.maxScore || 10;
+            const isCorrect = question.type === 'MULTIPLE_CHOICE'
+              ? attempt.selectedOption === question.correctOption
+              : attempt.score >= maxScore;
+
+            return { question, attempt, isCorrect, maxScore };
+          })
+          .filter(Boolean) as Array<{ question: LearningQuestion; attempt: LearningAttempt; isCorrect: boolean; maxScore: number }>;
+
+        const answeredCount = questionAttempts.length;
+        const totalQuestions = lesson.questions.length;
+        const totalScore = questionAttempts.reduce((sum, item) => sum + item.attempt.score, 0);
+        const maxScore = lesson.questions.reduce((sum, question) => sum + (question.maxScore || 10), 0);
+        const correctCount = questionAttempts.filter(item => item.isCorrect).length;
+        const completed = totalQuestions > 0 && answeredCount === totalQuestions;
+
+        progressMap.set(lesson.id, {
+          lessonId: lesson.id,
+          answeredCount,
+          totalQuestions,
+          totalScore,
+          maxScore,
+          correctCount,
+          completed
+        });
+      });
+    });
+
+    return progressMap;
+  }, [localTracks, latestAttemptsByQuestionId]);
+
+  const overallLearningProgress = useMemo(() => {
+    const lessons = localTracks.flatMap(track => track.lessons);
+    const summaries = lessons.map(lesson => lessonProgressMap.get(lesson.id)).filter(Boolean) as LessonProgressSummary[];
+    const completedLessons = summaries.filter(summary => summary.completed).length;
+    const totalLessons = lessons.length;
+    const totalScore = summaries.reduce((sum, summary) => sum + summary.totalScore, 0);
+    const maxScore = summaries.reduce((sum, summary) => sum + summary.maxScore, 0);
+
+    return {
+      completedLessons,
+      totalLessons,
+      totalScore,
+      maxScore
+    };
+  }, [localTracks, lessonProgressMap]);
 
   const handleSelectLesson = (trackId: string, lessonId: string) => {
     setSelectedTrackId(trackId);
@@ -253,6 +351,20 @@ export const Elearning: React.FC<ElearningProps> = ({
   };
 
   const handleStartQuiz = () => {
+    const hydratedAnswers: Record<string, AnswerDraft> = {};
+
+    lessonQuestions.forEach(question => {
+      const latestAttempt = latestAttemptsByQuestionId.get(question.id);
+      if (!latestAttempt) return;
+
+      hydratedAnswers[question.id] = {
+        selectedOption: latestAttempt.selectedOption,
+        answerText: latestAttempt.answerText
+      };
+    });
+
+    setAnswers(hydratedAnswers);
+    setLatestQuizResult(null);
     setViewMode('quiz');
   };
 
@@ -313,12 +425,7 @@ export const Elearning: React.FC<ElearningProps> = ({
     if (!canEdit) return;
     if (!activeProfile || !selectedTrack || !selectedLesson) return;
 
-    const unanswered = lessonQuestions.filter(q => {
-      const latest = profileAttempts.filter(a => a.questionId === q.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
-      return !latest;
-    });
-
-    for (const question of unanswered) {
+    for (const question of lessonQuestions) {
       const draft = answers[question.id];
       if (!draft || (question.type === 'MULTIPLE_CHOICE' && draft.selectedOption === undefined) || (question.type === 'OPEN' && !draft.answerText?.trim())) {
         alert('Vui lòng hoàn tất tất cả câu hỏi trước khi nộp bài.');
@@ -326,13 +433,61 @@ export const Elearning: React.FC<ElearningProps> = ({
       }
     }
 
-    unanswered.forEach(question => {
-      const attempt = createAttemptFromDraft(question);
-      if (attempt) {
-        onSubmitAttempt(attempt);
-        setRevealed(prev => ({ ...prev, [question.id]: true }));
-      }
+    const attemptsToSubmit = lessonQuestions
+      .map(question => createAttemptFromDraft(question))
+      .filter(Boolean) as LearningAttempt[];
+
+    if (attemptsToSubmit.length !== lessonQuestions.length) {
+      alert('Có lỗi khi chấm bài. Vui lòng thử lại.');
+      return;
+    }
+
+    attemptsToSubmit.forEach(attempt => onSubmitAttempt(attempt));
+
+    const resultItems: QuizResultItem[] = lessonQuestions.map(question => {
+      const attempt = attemptsToSubmit.find(item => item.questionId === question.id)!;
+      const correctAnswerText = question.type === 'MULTIPLE_CHOICE'
+        ? question.options?.[question.correctOption ?? 0] || ''
+        : question.answerGuide || '';
+      const userAnswerText = question.type === 'MULTIPLE_CHOICE'
+        ? question.options?.[attempt.selectedOption ?? 0] || ''
+        : attempt.answerText || '';
+      const maxScore = question.maxScore || 10;
+      const isCorrect = question.type === 'MULTIPLE_CHOICE'
+        ? attempt.selectedOption === question.correctOption
+        : attempt.score >= maxScore;
+
+      return {
+        question,
+        attempt,
+        isCorrect,
+        userAnswerText,
+        correctAnswerText
+      };
     });
+
+    const totalScore = resultItems.reduce((sum, item) => sum + item.attempt.score, 0);
+    const maxScore = lessonQuestions.reduce((sum, question) => sum + (question.maxScore || 10), 0);
+    const correctCount = resultItems.filter(item => item.isCorrect).length;
+
+    setRevealed(Object.fromEntries(lessonQuestions.map(question => [question.id, true])));
+    setLatestQuizResult({
+      lessonTitle: selectedLesson.title,
+      totalScore,
+      maxScore,
+      correctCount,
+      totalQuestions: lessonQuestions.length,
+      items: resultItems
+    });
+
+    const existingCompletedLessons = new Set(activeProfile.completedLessons || []);
+    existingCompletedLessons.add(selectedLesson.id);
+    onUpsertProfile({
+      ...activeProfile,
+      completedLessons: Array.from(existingCompletedLessons)
+    });
+
+    setViewMode('result');
   };
 
   const updateSelectedTrack = (updater: (track: LearningTrack) => LearningTrack) => {
@@ -527,6 +682,32 @@ export const Elearning: React.FC<ElearningProps> = ({
         </div>
       </div>
 
+      {!isAdminView && activeProfile && (
+        <div className="grid gap-4 md:grid-cols-3">
+          <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-5">
+            <div className="text-sm font-semibold text-emerald-900">Tiến độ học tập</div>
+            <div className="mt-2 text-3xl font-bold text-emerald-700">
+              {overallLearningProgress.completedLessons}/{overallLearningProgress.totalLessons}
+            </div>
+            <div className="mt-1 text-sm text-emerald-800">Bài học đã hoàn thành</div>
+          </div>
+          <div className="rounded-2xl border border-blue-100 bg-blue-50 p-5">
+            <div className="text-sm font-semibold text-blue-900">Tổng điểm tích lũy</div>
+            <div className="mt-2 text-3xl font-bold text-blue-700">
+              {overallLearningProgress.totalScore}/{overallLearningProgress.maxScore}
+            </div>
+            <div className="mt-1 text-sm text-blue-800">Từ các bài đã làm</div>
+          </div>
+          <div className="rounded-2xl border border-amber-100 bg-amber-50 p-5">
+            <div className="text-sm font-semibold text-amber-900">Chứng nhận hoàn thành</div>
+            <div className="mt-2 flex items-center gap-2 text-amber-800">
+              <CheckCircle2 size={20} />
+              <span className="text-sm">Bài nào làm đủ câu sẽ được tick xanh</span>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="mb-6">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" size={16} />
@@ -581,13 +762,31 @@ export const Elearning: React.FC<ElearningProps> = ({
                   onClick={() => handleSelectLesson(track.id, lesson.id)}
                   className="w-full text-left p-3 rounded-lg border border-slate-100 hover:border-blue-200 hover:bg-blue-50 transition-colors"
                 >
+                  {(() => {
+                    const lessonProgress = lessonProgressMap.get(lesson.id);
+                    return (
                   <div className="flex items-center gap-3">
                     <PlayCircle className="text-blue-600" size={16} />
                     <div className="flex-1">
-                      <p className="text-sm font-medium text-slate-800">{lesson.title}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-medium text-slate-800">{lesson.title}</p>
+                        {!isAdminView && lessonProgress?.completed && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-1 text-[11px] font-medium text-emerald-700">
+                            <CheckCircle2 size={12} />
+                            Hoàn thành
+                          </span>
+                        )}
+                      </div>
                       <p className="text-xs text-slate-500">{lesson.duration || 'N/A'}</p>
+                      {!isAdminView && lessonProgress && lessonProgress.totalQuestions > 0 && (
+                        <p className="mt-1 text-xs text-slate-500">
+                          Điểm: {lessonProgress.totalScore}/{lessonProgress.maxScore} • Đúng {lessonProgress.correctCount}/{lessonProgress.totalQuestions}
+                        </p>
+                      )}
                     </div>
                   </div>
+                    );
+                  })()}
                 </button>
               ))}
             </div>
@@ -609,6 +808,7 @@ export const Elearning: React.FC<ElearningProps> = ({
 
   const renderLessonView = () => {
     if (!selectedLesson || !selectedTrack) return null;
+    const lessonProgress = lessonProgressMap.get(selectedLesson.id);
 
     return (
       <div className="space-y-6">
@@ -627,6 +827,32 @@ export const Elearning: React.FC<ElearningProps> = ({
         <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
           <div className="p-6">
             <h2 className="text-2xl font-bold text-slate-800 mb-4">{selectedLesson.title}</h2>
+
+            {!isAdminView && lessonProgress && (
+              <div className="mb-6 grid gap-4 md:grid-cols-3">
+                <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4">
+                  <div className="text-xs font-semibold text-blue-900">Tiến độ bài học</div>
+                  <div className="mt-2 text-2xl font-bold text-blue-700">
+                    {lessonProgress.answeredCount}/{lessonProgress.totalQuestions}
+                  </div>
+                  <div className="text-sm text-blue-800">Câu đã làm</div>
+                </div>
+                <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
+                  <div className="text-xs font-semibold text-emerald-900">Điểm hiện tại</div>
+                  <div className="mt-2 text-2xl font-bold text-emerald-700">
+                    {lessonProgress.totalScore}/{lessonProgress.maxScore}
+                  </div>
+                  <div className="text-sm text-emerald-800">Tổng điểm bài học</div>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="text-xs font-semibold text-slate-700">Trạng thái</div>
+                  <div className="mt-2 flex items-center gap-2 text-sm font-medium text-slate-800">
+                    {lessonProgress.completed ? <CheckCircle2 className="text-emerald-600" size={18} /> : <XCircle className="text-slate-400" size={18} />}
+                    {lessonProgress.completed ? 'Đã hoàn thành và được chứng nhận' : 'Chưa hoàn thành'}
+                  </div>
+                </div>
+              </div>
+            )}
 
             {isAdminView && canEdit && (
               <div className="mb-6 rounded-2xl border border-slate-200 bg-slate-50 p-5">
@@ -1155,8 +1381,6 @@ D. ...
 
           <div className="space-y-6">
             {lessonQuestions.map((q, idx) => {
-              const latest = profileAttempts.filter(a => a.questionId === q.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
-              const questionAnswered = revealed[q.id] || !!latest;
               return (
                 <div key={q.id} className="border border-slate-100 rounded-lg p-4">
                   <div className="flex items-center justify-between gap-2 mb-4">
@@ -1166,47 +1390,37 @@ D. ...
                       </div>
                       <p className="font-medium text-slate-800">{q.prompt}</p>
                     </div>
-                    {questionAnswered && (
-                      <span className="text-xs px-2 py-1 rounded-full bg-green-100 text-green-800">
-                        Đã trả lời
+                    {answers[q.id] && (
+                      <span className="text-xs px-2 py-1 rounded-full bg-blue-100 text-blue-800">
+                        Đang làm
                       </span>
                     )}
                   </div>
 
-                  {questionAnswered ? (
-                    <div className="space-y-2">
-                      <p className="text-sm text-slate-600">
-                        Đáp án của bạn: {q.type === 'MULTIPLE_CHOICE' ? q.options?.[latest?.selectedOption || 0] : latest?.answerText}
-                      </p>
-                      <p className="text-sm text-slate-600">Phản hồi: {latest?.feedback}</p>
-                      <p className="text-sm font-medium text-blue-600">Điểm: {latest?.score}/{q.maxScore || 10}</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      {q.type === 'MULTIPLE_CHOICE' && q.options?.map((opt, i) => (
-                        <label key={opt} className={`flex items-center gap-3 border rounded-lg px-4 py-3 cursor-pointer transition ${
-                          answers[q.id]?.selectedOption === i ? 'border-blue-400 bg-blue-50' : 'border-slate-200 hover:border-blue-200'
-                        }`}>
-                          <input
-                            type="radio"
-                            checked={answers[q.id]?.selectedOption === i}
-                            onChange={() => setAnswers(prev => ({ ...prev, [q.id]: { ...prev[q.id], selectedOption: i } }))}
-                          />
-                          <span className="text-sm">{opt}</span>
-                        </label>
-                      ))}
-
-                      {q.type === 'OPEN' && (
-                        <textarea
-                          value={answers[q.id]?.answerText || ''}
-                          onChange={(e) => setAnswers(prev => ({ ...prev, [q.id]: { ...prev[q.id], answerText: e.target.value } }))}
-                          placeholder="Nhập câu trả lời của bạn..."
-                          className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          rows={3}
+                  <div className="space-y-3">
+                    {q.type === 'MULTIPLE_CHOICE' && q.options?.map((opt, i) => (
+                      <label key={opt} className={`flex items-center gap-3 border rounded-lg px-4 py-3 cursor-pointer transition ${
+                        answers[q.id]?.selectedOption === i ? 'border-blue-400 bg-blue-50' : 'border-slate-200 hover:border-blue-200'
+                      }`}>
+                        <input
+                          type="radio"
+                          checked={answers[q.id]?.selectedOption === i}
+                          onChange={() => setAnswers(prev => ({ ...prev, [q.id]: { ...prev[q.id], selectedOption: i } }))}
                         />
-                      )}
-                    </div>
-                  )}
+                        <span className="text-sm">{opt}</span>
+                      </label>
+                    ))}
+
+                    {q.type === 'OPEN' && (
+                      <textarea
+                        value={answers[q.id]?.answerText || ''}
+                        onChange={(e) => setAnswers(prev => ({ ...prev, [q.id]: { ...prev[q.id], answerText: e.target.value } }))}
+                        placeholder="Nhập câu trả lời của bạn..."
+                        className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        rows={3}
+                      />
+                    )}
+                  </div>
                 </div>
               );
             })}
@@ -1228,12 +1442,101 @@ D. ...
     );
   };
 
+  const renderResultView = () => {
+    if (!selectedLesson || !latestQuizResult) return null;
+
+    const wrongItems = latestQuizResult.items.filter(item => !item.isCorrect);
+
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center gap-4">
+          <button
+            onClick={handleBackToLesson}
+            className="text-blue-600 hover:text-blue-800 font-medium"
+          >
+            ← Quay lại bài học
+          </button>
+          <div className="text-sm text-slate-500">
+            Kết quả: {selectedLesson.title}
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6">
+          <h2 className="text-xl font-bold text-slate-800">Kết quả bài kiểm tra</h2>
+
+          <div className="mt-6 grid gap-4 md:grid-cols-3">
+            <div className="rounded-2xl border border-blue-100 bg-blue-50 p-5">
+              <div className="text-sm font-semibold text-blue-900">Tổng điểm</div>
+              <div className="mt-2 text-3xl font-bold text-blue-700">
+                {latestQuizResult.totalScore}/{latestQuizResult.maxScore}
+              </div>
+            </div>
+            <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-5">
+              <div className="text-sm font-semibold text-emerald-900">Số câu đúng</div>
+              <div className="mt-2 text-3xl font-bold text-emerald-700">
+                {latestQuizResult.correctCount}/{latestQuizResult.totalQuestions}
+              </div>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+              <div className="text-sm font-semibold text-slate-700">Trạng thái</div>
+              <div className="mt-2 flex items-center gap-2 text-sm font-medium text-slate-800">
+                <CheckCircle2 className="text-emerald-600" size={18} />
+                Đã lưu kết quả bài làm
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-8">
+            <h3 className="text-lg font-semibold text-slate-800">Các câu trả lời sai</h3>
+            {wrongItems.length === 0 ? (
+              <div className="mt-3 rounded-2xl border border-emerald-100 bg-emerald-50 p-4 text-sm text-emerald-800">
+                Bạn đã trả lời đúng tất cả câu hỏi trong bài này.
+              </div>
+            ) : (
+              <div className="mt-4 space-y-4">
+                {wrongItems.map((item, index) => (
+                  <div key={item.question.id} className="rounded-2xl border border-rose-100 bg-rose-50 p-4">
+                    <div className="flex items-center gap-2 text-rose-700">
+                      <XCircle size={18} />
+                      <span className="text-sm font-semibold">Câu sai {index + 1}</span>
+                    </div>
+                    <div className="mt-3 text-sm font-medium text-slate-800">{item.question.prompt}</div>
+                    <div className="mt-2 text-sm text-slate-600">Bạn trả lời: {item.userAnswerText || 'Chưa có câu trả lời'}</div>
+                    <div className="mt-1 text-sm text-slate-600">Đáp án đúng: {item.correctAnswerText || 'Không có'}</div>
+                    <div className="mt-1 text-sm text-slate-600">Phản hồi: {item.attempt.feedback}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+            <button
+              onClick={handleStartQuiz}
+              className="inline-flex items-center justify-center rounded-lg bg-blue-600 px-5 py-3 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
+            >
+              Làm lại bài kiểm tra
+            </button>
+            <button
+              onClick={handleBackToLesson}
+              className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-5 py-3 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+            >
+              Xem lại bài học
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   if (viewMode === 'topics') {
     return renderTopicsView();
   } else if (viewMode === 'lesson') {
     return renderLessonView();
   } else if (viewMode === 'quiz') {
     return renderQuizView();
+  } else if (viewMode === 'result') {
+    return renderResultView();
   }
 
   return null;
