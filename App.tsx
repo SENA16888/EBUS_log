@@ -12,9 +12,9 @@ import { AIChat } from './components/AIChat';
 import { Elearning } from './components/Elearning';
 import { AdminLogPage } from './components/AdminLogPage';
 import { AppState, InventoryItem, Event, EventStatus, Transaction, TransactionType, ComboPackage, Employee, Quotation, EventStaffAllocation, EventExpense, EventAdvanceRequest, LogEntry, ChecklistDirection, ChecklistStatus, ChecklistSignature, EventChecklist, LearningAttempt, LearningProfile, AccessPermission, UserAccount, LearningTrack, InventoryReceipt, InventoryReceiptItem, ActiveSession, PayrollAdjustment } from './types';
-import { MOCK_INVENTORY, MOCK_EVENTS, MOCK_TRANSACTIONS, MOCK_PACKAGES, MOCK_EMPLOYEES, MOCK_LEARNING_TRACKS, MOCK_LEARNING_PROFILES, MOCK_CAREER_RANKS, DEFAULT_USER_ACCOUNTS, MOCK_INVENTORY_RECEIPTS } from './constants';
+import { MOCK_INVENTORY, MOCK_EVENTS, MOCK_TRANSACTIONS, MOCK_PACKAGES, MOCK_EMPLOYEES, MOCK_LEARNING_TRACKS, MOCK_CAREER_RANKS, DEFAULT_USER_ACCOUNTS, MOCK_INVENTORY_RECEIPTS } from './constants';
 import { MessageSquare } from 'lucide-react';
-import { saveAppState, loadAppState, initializeAuth, subscribeToAppState, subscribeToSessions, setSessionOnline, setSessionOffline } from './services/firebaseService';
+import { saveAppState, loadAppState, initializeAuth, subscribeToAppState, subscribeToSessions, setSessionOnline, setSessionOffline, saveLearningUserState, subscribeToLearningUserState, deleteLearningUserState } from './services/firebaseService';
 import { ensureInventoryBarcodes, ensureItemBarcode, findDuplicateBarcodeItem, findItemByBarcode, generateBarcode, normalizeBarcode } from './services/barcodeService';
 import { normalizeChecklist } from './services/checklistService';
 import { getDefaultPermissionsForRole, hasPermission, normalizePhone } from './services/accessControl';
@@ -62,6 +62,44 @@ const normalizeInventoryLifecycle = (item: InventoryItem): InventoryItem => {
   return { ...item, lifecycle, maxUsage, consumableUnit };
 };
 
+const stripLearningUserData = (state: AppState): AppState => ({
+  ...state,
+  learningProfiles: [],
+  learningAttempts: []
+});
+
+const buildLearningProfileForUser = (
+  account: UserAccount,
+  employees: Employee[],
+  existing?: Partial<LearningProfile> | null
+): LearningProfile => {
+  const linkedEmployee = account.linkedEmployeeId
+    ? employees.find(employee => employee.id === account.linkedEmployeeId)
+    : undefined;
+
+  return {
+    id: existing?.id || `learning-user-${account.id}`,
+    name: existing?.name || linkedEmployee?.name || account.name,
+    employeeId: existing?.employeeId || linkedEmployee?.id || account.linkedEmployeeId,
+    userAccountId: account.id,
+    userName: account.name,
+    tenureMonths: existing?.tenureMonths ?? 0,
+    eventsAttended: existing?.eventsAttended ?? 0,
+    scenarioScore: existing?.scenarioScore ?? 0,
+    roleHistory: existing?.roleHistory && existing.roleHistory.length > 0
+      ? existing.roleHistory
+      : [linkedEmployee?.role || account.role],
+    badges: existing?.badges || [],
+    currentRank: existing?.currentRank,
+    completedLessons: existing?.completedLessons || [],
+    preferredTracks: existing?.preferredTracks || [],
+    progress: existing?.progress || {},
+    certificates: existing?.certificates || [],
+    totalScore: existing?.totalScore ?? 0,
+    rankId: existing?.rankId ?? null
+  };
+};
+
 const App: React.FC = () => {
   console.log('App is rendering');
   console.log('localStorage available:', typeof localStorage !== 'undefined');
@@ -87,13 +125,15 @@ const App: React.FC = () => {
       logs: [],
       inventoryReceipts: MOCK_INVENTORY_RECEIPTS,
       learningTracks: MOCK_LEARNING_TRACKS,
-      learningProfiles: MOCK_LEARNING_PROFILES,
+      learningProfiles: [],
       learningAttempts: [],
       careerRanks: MOCK_CAREER_RANKS,
       userAccounts: DEFAULT_USER_ACCOUNTS,
       payrollAdjustments: []
     };
   });
+  const [learningProfilesState, setLearningProfilesState] = useState<LearningProfile[]>([]);
+  const [learningAttemptsState, setLearningAttemptsState] = useState<LearningAttempt[]>([]);
   const [activeSessions, setActiveSessions] = useState<ActiveSession[]>([]);
   const initialLastUpdate = typeof localStorage !== 'undefined' ? localStorage.getItem('ebus_last_update') : null;
   const lastSyncedAtRef = useRef<number>(initialLastUpdate ? new Date(initialLastUpdate).getTime() : 0);
@@ -141,8 +181,8 @@ const App: React.FC = () => {
         timeline: ev.timeline || []
       })),
       learningTracks: state.learningTracks || MOCK_LEARNING_TRACKS,
-      learningProfiles: state.learningProfiles || MOCK_LEARNING_PROFILES,
-      learningAttempts: state.learningAttempts || [],
+      learningProfiles: [],
+      learningAttempts: [],
       careerRanks: state.careerRanks || MOCK_CAREER_RANKS,
       inventoryReceipts: state.inventoryReceipts || [],
       logs: normalizedLogs,
@@ -163,6 +203,39 @@ const App: React.FC = () => {
   const canViewElearning = !!currentUser;
   const canViewEmployees = currentUser?.role !== 'STAFF';
   const isElearningAdmin = currentUser?.role === 'ADMIN' || currentUser?.role === 'MANAGER';
+
+  useEffect(() => {
+    let unsubscribe: (() => void) | undefined;
+
+    if (!currentUser) {
+      setLearningProfilesState([]);
+      setLearningAttemptsState([]);
+      return;
+    }
+
+    const startLearningSync = async () => {
+      try {
+        await initializeAuth();
+        unsubscribe = subscribeToLearningUserState(currentUser.id, (data) => {
+          const nextProfile = buildLearningProfileForUser(currentUser, appState.employees, data?.profile || null);
+          const nextAttempts = Array.isArray(data?.attempts) ? data.attempts : [];
+
+          setLearningProfilesState([nextProfile]);
+          setLearningAttemptsState(nextAttempts);
+        });
+      } catch (error) {
+        console.error('Failed to subscribe learning user state:', error);
+        setLearningProfilesState([buildLearningProfileForUser(currentUser, appState.employees)]);
+        setLearningAttemptsState([]);
+      }
+    };
+
+    void startLearningSync();
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, [currentUser?.id, currentUser?.name, currentUser?.linkedEmployeeId, appState.employees]);
 
   useEffect(() => {
     if (activeTab === 'logs' && !canViewLogs) {
@@ -218,7 +291,7 @@ const App: React.FC = () => {
           lastSyncedAtRef.current = new Date(now).getTime();
           pendingRemoteTimestampRef.current = now;
           isApplyingRemoteRef.current = true;
-          await saveAppState(withDefaults(appState), now);
+          await saveAppState(stripLearningUserData(withDefaults(appState)), now);
         }
       } catch (error) {
         console.error('Failed to load data from Firebase:', error);
@@ -317,9 +390,10 @@ const App: React.FC = () => {
 
     const saveData = async () => {
       const timestamp = pendingRemoteTimestampRef.current || new Date().toISOString();
+      const persistentAppState = stripLearningUserData(appState);
       try {
-        // Lưu vào localStorage (backup)
-        localStorage.setItem('ebus_app_state', JSON.stringify(appState));
+        // Lưu vào localStorage (backup) nhưng loại bỏ dữ liệu học tập cá nhân
+        localStorage.setItem('ebus_app_state', JSON.stringify(persistentAppState));
         localStorage.setItem('ebus_last_update', timestamp);
         lastSyncedAtRef.current = new Date(timestamp).getTime();
 
@@ -330,7 +404,7 @@ const App: React.FC = () => {
         }
         
         // Lưu vào Firebase ngay để tránh mất dữ liệu khi reload
-        await saveAppState(appState, timestamp);
+        await saveAppState(persistentAppState, timestamp);
       } catch (err) {
         console.warn('Failed to persist app state:', err);
       } finally {
@@ -487,25 +561,40 @@ const App: React.FC = () => {
     }) as T;
   };
 
+  const persistLearningUserData = async (profile: LearningProfile, attempts: LearningAttempt[]) => {
+    if (!currentUser) return;
+    const normalizedProfile = buildLearningProfileForUser(currentUser, appState.employees, {
+      ...profile,
+      totalScore: attempts.reduce((sum, item) => sum + item.score, 0)
+    });
+
+    await saveLearningUserState(currentUser.id, {
+      userName: currentUser.name,
+      profile: normalizedProfile,
+      attempts
+    });
+  };
+
   const handleSubmitLearningAttempt = (attempt: LearningAttempt) => {
-    setAppState(prev => {
-      const prevAttempts = prev.learningAttempts || [];
-      const filtered = prevAttempts.filter(a => !(a.learnerId === attempt.learnerId && a.lessonId === attempt.lessonId && a.questionId === attempt.questionId));
+    setLearningAttemptsState(prev => {
+      const filtered = prev.filter(a => !(a.learnerId === attempt.learnerId && a.lessonId === attempt.lessonId && a.questionId === attempt.questionId));
       const updatedAttempts = [attempt, ...filtered].slice(0, 200);
-      return { ...prev, learningAttempts: updatedAttempts };
+      const currentProfile = learningProfilesState[0] || (currentUser ? buildLearningProfileForUser(currentUser, appState.employees) : null);
+
+      if (currentProfile) {
+        void persistLearningUserData(currentProfile, updatedAttempts);
+      }
+
+      return updatedAttempts;
     });
     addLog(`Học viên ${attempt.learnerId} nộp câu hỏi ${attempt.questionId} (điểm ${attempt.score}/10)`, 'INFO');
   };
 
   const handleUpsertLearningProfile = (profile: LearningProfile) => {
-    setAppState(prev => {
-      const currentProfiles = prev.learningProfiles || [];
-      const exists = currentProfiles.some(p => p.id === profile.id);
-      const updatedProfiles = exists
-        ? currentProfiles.map(p => p.id === profile.id ? profile : p)
-        : [...currentProfiles, profile];
-      return { ...prev, learningProfiles: updatedProfiles };
-    });
+    if (!currentUser) return;
+    const normalizedProfile = buildLearningProfileForUser(currentUser, appState.employees, profile);
+    setLearningProfilesState([normalizedProfile]);
+    void persistLearningUserData(normalizedProfile, learningAttemptsState);
     addLog(`Cập nhật hồ sơ Elearning cho ${profile.name}`, 'SUCCESS');
   };
 
@@ -515,11 +604,11 @@ const App: React.FC = () => {
   };
 
   const handleDeleteLearningProfile = (profileId: string) => {
-    setAppState(prev => {
-      const filteredProfiles = (prev.learningProfiles || []).filter(p => p.id !== profileId);
-      const filteredAttempts = (prev.learningAttempts || []).filter(a => a.learnerId !== profileId);
-      return { ...prev, learningProfiles: filteredProfiles, learningAttempts: filteredAttempts };
-    });
+    if (!currentUser) return;
+    if (learningProfilesState[0]?.id !== profileId) return;
+    setLearningProfilesState([]);
+    setLearningAttemptsState([]);
+    void deleteLearningUserState(currentUser.id);
     addLog(`Đã xóa hồ sơ Elearning ${profileId}`, 'WARNING');
   };
 
@@ -1737,8 +1826,8 @@ const App: React.FC = () => {
       {activeTab === 'elearning' && (
         <Elearning
           tracks={appState.learningTracks || []}
-          profiles={appState.learningProfiles || []}
-          attempts={appState.learningAttempts || []}
+          profiles={learningProfilesState}
+          attempts={learningAttemptsState}
           ranks={appState.careerRanks || []}
           employees={appState.employees}
           events={appState.events}
@@ -1748,6 +1837,8 @@ const App: React.FC = () => {
           onDeleteProfile={guard('ELEARNING_EDIT', handleDeleteLearningProfile)}
           canEdit={can('ELEARNING_EDIT')}
           isAdminView={isElearningAdmin}
+          currentUserId={currentUser?.id}
+          currentUserName={currentUser?.name}
           currentEmployeeId={currentUser?.linkedEmployeeId}
         />
       )}

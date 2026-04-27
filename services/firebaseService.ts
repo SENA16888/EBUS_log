@@ -191,3 +191,68 @@ export const subscribeToSessions = (onChange: (sessions: any[]) => void): Unsubs
     console.error('Presence listener error:', err);
   });
 };
+
+// -------- Learning user state ----------
+const getLearningUserDocRef = (userId: string) => doc(db, 'learningUsers', userId);
+
+export const loadLearningUserState = async (userId: string): Promise<any | null> => {
+  try {
+    await initializeAuth();
+    const docSnap = await getDoc(getLearningUserDocRef(userId));
+    return docSnap.exists() ? docSnap.data() : null;
+  } catch (error) {
+    console.error('Error loading learning user state from Firebase:', error);
+    return null;
+  }
+};
+
+export const saveLearningUserState = async (
+  userId: string,
+  payload: {
+    userName?: string;
+    profile: any;
+    attempts: any[];
+  }
+): Promise<string> => {
+  try {
+    await initializeAuth();
+    const timestamp = new Date().toISOString();
+    const safePayload = serializeForFirestore(payload);
+
+    await setDoc(getLearningUserDocRef(userId), {
+      ...safePayload,
+      userId,
+      updatedAt: timestamp
+    }, { merge: true });
+
+    return timestamp;
+  } catch (error) {
+    console.error('Error saving learning user state to Firebase:', error);
+    throw error;
+  }
+};
+
+export const subscribeToLearningUserState = (
+  userId: string,
+  onChange: (data: any | null) => void
+): Unsubscribe => {
+  return onSnapshot(getLearningUserDocRef(userId), (snap) => {
+    if (snap.exists()) {
+      onChange(snap.data());
+    } else {
+      onChange(null);
+    }
+  }, (err) => {
+    console.error('Learning user listener error:', err);
+  });
+};
+
+export const deleteLearningUserState = async (userId: string): Promise<void> => {
+  try {
+    await initializeAuth();
+    await deleteDoc(getLearningUserDocRef(userId));
+  } catch (error) {
+    console.error('Error deleting learning user state from Firebase:', error);
+    throw error;
+  }
+};

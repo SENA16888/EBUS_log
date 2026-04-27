@@ -519,6 +519,8 @@ export interface LearningProfile {
   id: string;
   name: string;
   employeeId?: string;
+  userAccountId?: string;
+  userName?: string;
   tenureMonths: number;
   eventsAttended: number;
   scenarioScore: number;
@@ -527,6 +529,10 @@ export interface LearningProfile {
   currentRank?: string;
   completedLessons?: string[];
   preferredTracks?: string[];
+  progress?: Record<string, unknown>;
+  certificates?: string[];
+  totalScore?: number;
+  rankId?: string | null;
 }
 
 export interface CareerRank {

@@ -74,6 +74,5 @@ export const getDefaultPermissionsForRole = (role: AccessRole): AccessPermission
 export const hasPermission = (account: UserAccount | null | undefined, permission: AccessPermission): boolean => {
   if (!account) return false;
   if (account.role === 'ADMIN') return true;
-  if (account.role === 'STAFF') return false;
   return (account.permissions || []).includes(permission);
 };

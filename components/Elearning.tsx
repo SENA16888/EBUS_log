@@ -15,6 +15,8 @@ interface ElearningProps {
   onDeleteProfile: (profileId: string) => void;
   canEdit?: boolean;
   isAdminView?: boolean;
+  currentUserId?: string;
+  currentUserName?: string;
   currentEmployeeId?: string;
 }
 
@@ -155,6 +157,8 @@ export const Elearning: React.FC<ElearningProps> = ({
   onDeleteProfile,
   canEdit = true,
   isAdminView = true,
+  currentUserId,
+  currentUserName,
   currentEmployeeId
 }) => {
   const [viewMode, setViewMode] = useState<ViewMode>('topics');
@@ -207,10 +211,14 @@ export const Elearning: React.FC<ElearningProps> = ({
   }, [localTracks, isAdminView, canEdit, onUpdateTracks]);
 
   const profileOptions = useMemo(() => {
-    if (isAdminView) return profiles;
-    if (!currentEmployeeId) return [];
-    return profiles.filter(p => p.employeeId === currentEmployeeId);
-  }, [profiles, isAdminView, currentEmployeeId]);
+    if (!currentUserId && !currentUserName && !currentEmployeeId) return profiles;
+
+    return profiles.filter(profile =>
+      (currentUserId && (profile.userAccountId === currentUserId || profile.id === `learning-user-${currentUserId}`)) ||
+      (currentUserName && (profile.userName === currentUserName || profile.name === currentUserName)) ||
+      (currentEmployeeId && profile.employeeId === currentEmployeeId)
+    );
+  }, [profiles, currentUserId, currentUserName, currentEmployeeId]);
 
   const activeProfile = useMemo(() => profileOptions[0] || null, [profileOptions]);
 
@@ -229,23 +237,27 @@ export const Elearning: React.FC<ElearningProps> = ({
   }, [localTracks, searchQuery]);
 
   useEffect(() => {
-    if (!isAdminView && currentEmployeeId && !activeProfile) {
-      const employee = employees.find(e => e.id === currentEmployeeId);
-      if (employee) {
-        const newProfile: LearningProfile = {
-          id: `profile-${currentEmployeeId}`,
-          employeeId: currentEmployeeId,
-          name: employee.name,
-          progress: {},
-          completedLessons: [],
-          certificates: [],
-          totalScore: 0,
-          rankId: null
-        };
-        onUpsertProfile(newProfile);
-      }
-    }
-  }, [isAdminView, currentEmployeeId, activeProfile, employees, onUpsertProfile]);
+    if (!currentUserId || activeProfile) return;
+
+    const employee = currentEmployeeId ? employees.find(e => e.id === currentEmployeeId) : null;
+    const newProfile: LearningProfile = {
+      id: `learning-user-${currentUserId}`,
+      employeeId: employee?.id,
+      userAccountId: currentUserId,
+      userName: currentUserName || employee?.name || 'Người dùng',
+      name: currentUserName || employee?.name || 'Người dùng',
+      tenureMonths: 0,
+      eventsAttended: 0,
+      scenarioScore: 0,
+      roleHistory: employee?.role ? [employee.role] : [],
+      progress: {},
+      completedLessons: [],
+      certificates: [],
+      totalScore: 0,
+      rankId: null
+    };
+    onUpsertProfile(newProfile);
+  }, [currentUserId, currentUserName, currentEmployeeId, activeProfile, employees, onUpsertProfile]);
 
   const selectedTrack = useMemo(() => localTracks.find(t => t.id === selectedTrackId) || null, [localTracks, selectedTrackId]);
   const selectedLesson = useMemo(() => selectedTrack?.lessons.find(l => l.id === selectedLessonId) || null, [selectedTrack, selectedLessonId]);
@@ -457,7 +469,10 @@ export const Elearning: React.FC<ElearningProps> = ({
   const handleSubmitAll = () => {
     if (isAdminView) return;
     if (!canEdit) return;
-    if (!activeProfile || !selectedTrack || !selectedLesson) return;
+    if (!activeProfile || !selectedTrack || !selectedLesson) {
+      alert('Không tìm thấy hồ sơ học tập của tài khoản hiện tại.');
+      return;
+    }
 
     for (const question of lessonQuestions) {
       const draft = answers[question.id];
@@ -716,7 +731,7 @@ export const Elearning: React.FC<ElearningProps> = ({
         </div>
       </div>
 
-      {!isAdminView && activeProfile && (
+      {activeProfile && (
         <>
           <div className="grid gap-4 md:grid-cols-3">
             <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-5">
@@ -858,7 +873,7 @@ export const Elearning: React.FC<ElearningProps> = ({
                     <div className="flex-1">
                       <div className="flex items-center gap-2">
                         <p className="text-sm font-medium text-slate-800">{lesson.title}</p>
-                        {!isAdminView && lessonProgress?.completed && (
+                        {activeProfile && lessonProgress?.completed && (
                           <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-1 text-[11px] font-medium text-emerald-700">
                             <CheckCircle2 size={12} />
                             Hoàn thành
@@ -866,7 +881,7 @@ export const Elearning: React.FC<ElearningProps> = ({
                         )}
                       </div>
                       <p className="text-xs text-slate-500">{lesson.duration || 'N/A'}</p>
-                      {!isAdminView && lessonProgress && lessonProgress.totalQuestions > 0 && (
+                      {activeProfile && lessonProgress && lessonProgress.totalQuestions > 0 && (
                         <p className="mt-1 text-xs text-slate-500">
                           Điểm: {lessonProgress.totalScore}/{lessonProgress.maxScore} • Đúng {lessonProgress.correctCount}/{lessonProgress.totalQuestions}
                         </p>
@@ -916,7 +931,7 @@ export const Elearning: React.FC<ElearningProps> = ({
           <div className="p-6">
             <h2 className="text-2xl font-bold text-slate-800 mb-4">{selectedLesson.title}</h2>
 
-            {!isAdminView && lessonProgress && (
+            {activeProfile && lessonProgress && (
               <div className="mb-6 grid gap-4 md:grid-cols-3">
                 <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4">
                   <div className="text-xs font-semibold text-blue-900">Tiến độ bài học</div>
