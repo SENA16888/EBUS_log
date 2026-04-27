@@ -14,7 +14,7 @@ import { AdminLogPage } from './components/AdminLogPage';
 import { AppState, InventoryItem, Event, EventStatus, Transaction, TransactionType, ComboPackage, Employee, Quotation, EventStaffAllocation, EventExpense, EventAdvanceRequest, LogEntry, ChecklistDirection, ChecklistStatus, ChecklistSignature, EventChecklist, LearningAttempt, LearningProfile, AccessPermission, UserAccount, LearningTrack, InventoryReceipt, InventoryReceiptItem, ActiveSession, PayrollAdjustment } from './types';
 import { MOCK_INVENTORY, MOCK_EVENTS, MOCK_TRANSACTIONS, MOCK_PACKAGES, MOCK_EMPLOYEES, MOCK_LEARNING_TRACKS, MOCK_CAREER_RANKS, DEFAULT_USER_ACCOUNTS, MOCK_INVENTORY_RECEIPTS } from './constants';
 import { MessageSquare } from 'lucide-react';
-import { saveAppState, loadAppState, initializeAuth, subscribeToAppState, subscribeToSessions, setSessionOnline, setSessionOffline, saveLearningUserState, subscribeToLearningUserState, deleteLearningUserState } from './services/firebaseService';
+import { saveAppState, loadAppState, initializeAuth, subscribeToAppState, subscribeToSessions, setSessionOnline, setSessionOffline, saveLearningUserState, subscribeToLearningUserState, deleteLearningUserState, subscribeToLearningUsers } from './services/firebaseService';
 import { ensureInventoryBarcodes, ensureItemBarcode, findDuplicateBarcodeItem, findItemByBarcode, generateBarcode, normalizeBarcode } from './services/barcodeService';
 import { normalizeChecklist } from './services/checklistService';
 import { getDefaultPermissionsForRole, hasPermission, normalizePhone } from './services/accessControl';
@@ -134,6 +134,7 @@ const App: React.FC = () => {
   });
   const [learningProfilesState, setLearningProfilesState] = useState<LearningProfile[]>([]);
   const [learningAttemptsState, setLearningAttemptsState] = useState<LearningAttempt[]>([]);
+  const [learningLeaderboardProfiles, setLearningLeaderboardProfiles] = useState<LearningProfile[]>([]);
   const [activeSessions, setActiveSessions] = useState<ActiveSession[]>([]);
   const initialLastUpdate = typeof localStorage !== 'undefined' ? localStorage.getItem('ebus_last_update') : null;
   const lastSyncedAtRef = useRef<number>(initialLastUpdate ? new Date(initialLastUpdate).getTime() : 0);
@@ -236,6 +237,47 @@ const App: React.FC = () => {
       if (unsubscribe) unsubscribe();
     };
   }, [currentUser?.id, currentUser?.name, currentUser?.linkedEmployeeId, appState.employees]);
+
+  useEffect(() => {
+    let unsubscribe: (() => void) | undefined;
+
+    const startLearningUsersSync = async () => {
+      try {
+        await initializeAuth();
+        unsubscribe = subscribeToLearningUsers((users) => {
+          const nextProfiles = (users || [])
+            .map((entry: any) => {
+              const attempts = Array.isArray(entry?.attempts) ? entry.attempts : [];
+              const profile = entry?.profile || {};
+              const totalScore = typeof profile.totalScore === 'number'
+                ? profile.totalScore
+                : attempts.reduce((sum: number, item: LearningAttempt) => sum + (item.score || 0), 0);
+
+              return {
+                ...profile,
+                id: profile.id || `learning-user-${entry.userId || entry.id}`,
+                userAccountId: profile.userAccountId || entry.userId || entry.id,
+                userName: profile.userName || entry.userName || profile.name || 'Người dùng',
+                name: profile.name || entry.userName || 'Người dùng',
+                totalScore
+              } as LearningProfile;
+            })
+            .filter(profile => profile.name || profile.userName);
+
+          setLearningLeaderboardProfiles(nextProfiles);
+        });
+      } catch (error) {
+        console.error('Failed to subscribe learning users:', error);
+        setLearningLeaderboardProfiles([]);
+      }
+    };
+
+    void startLearningUsersSync();
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, []);
 
   useEffect(() => {
     if (activeTab === 'logs' && !canViewLogs) {
@@ -1828,6 +1870,7 @@ const App: React.FC = () => {
           tracks={appState.learningTracks || []}
           profiles={learningProfilesState}
           attempts={learningAttemptsState}
+          leaderboardProfiles={learningLeaderboardProfiles}
           ranks={appState.careerRanks || []}
           employees={appState.employees}
           events={appState.events}

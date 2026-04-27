@@ -256,3 +256,15 @@ export const deleteLearningUserState = async (userId: string): Promise<void> => 
     throw error;
   }
 };
+
+export const subscribeToLearningUsers = (
+  onChange: (users: any[]) => void
+): Unsubscribe => {
+  const colRef = collection(db, 'learningUsers');
+  return onSnapshot(colRef, (snap) => {
+    const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    onChange(data);
+  }, (err) => {
+    console.error('Learning users listener error:', err);
+  });
+};
