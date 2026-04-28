@@ -64,7 +64,30 @@ type TrackProgressSummary = {
   completed: boolean;
 };
 
+type LearningLevel = LearningTrack['level'];
+
 const QUICK_IMPORT_OPTION_LABELS = ['A', 'B', 'C', 'D'] as const;
+const LEARNING_LEVEL_ORDER: LearningLevel[] = ['BASE', 'ADVANCED', 'MASTER'];
+const LEARNING_LEVEL_META: Record<LearningLevel, { label: string; description: string; badgeClassName: string; sectionClassName: string }> = {
+  BASE: {
+    label: 'Cơ bản',
+    description: 'Dành cho người mới bắt đầu hoặc cần củng cố nền tảng.',
+    badgeClassName: 'bg-emerald-100 text-emerald-700',
+    sectionClassName: 'border-emerald-100 bg-emerald-50/40'
+  },
+  ADVANCED: {
+    label: 'Nâng cao',
+    description: 'Các chủ đề cần kinh nghiệm thực tế và khả năng xử lý tốt hơn.',
+    badgeClassName: 'bg-blue-100 text-blue-700',
+    sectionClassName: 'border-blue-100 bg-blue-50/40'
+  },
+  MASTER: {
+    label: 'Chuyên gia',
+    description: 'Nhóm nội dung dành cho vai trò dẫn dắt, huấn luyện và quản lý.',
+    badgeClassName: 'bg-amber-100 text-amber-700',
+    sectionClassName: 'border-amber-100 bg-amber-50/40'
+  }
+};
 
 const parseQuickQuizImport = (rawText: string): { questions: LearningQuestion[]; error?: string } => {
   const normalizedText = rawText.replace(/\r\n/g, '\n').trim();
@@ -238,6 +261,20 @@ export const Elearning: React.FC<ElearningProps> = ({
       )
     );
   }, [localTracks, searchQuery]);
+
+  const groupedTrainingTracks = useMemo(() => {
+    const sortedTracks = [...filteredTracks].sort((a, b) => {
+      const levelDelta = LEARNING_LEVEL_ORDER.indexOf(a.level) - LEARNING_LEVEL_ORDER.indexOf(b.level);
+      if (levelDelta !== 0) return levelDelta;
+      return a.title.localeCompare(b.title, 'vi');
+    });
+
+    return LEARNING_LEVEL_ORDER.map(level => ({
+      level,
+      ...LEARNING_LEVEL_META[level],
+      tracks: sortedTracks.filter(track => track.level === level)
+    })).filter(group => group.tracks.length > 0);
+  }, [filteredTracks]);
 
   useEffect(() => {
     if (!currentUserId || activeProfile) return;
@@ -841,69 +878,98 @@ export const Elearning: React.FC<ElearningProps> = ({
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filteredTracks.map(track => (
-          <div key={track.id} className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 hover:shadow-md transition-shadow">
-            <div className="flex items-start justify-between mb-4">
-              <div className="flex-1">
-                <h3 className="text-lg font-semibold text-slate-800 mb-2">{track.title}</h3>
-                <p className="text-sm text-slate-600 mb-3">{track.description}</p>
-                <div className="flex items-center gap-2 text-xs text-slate-500">
-                  <span className="px-2 py-1 bg-slate-100 rounded-full">{track.level}</span>
-                  <span>{track.lessons.length} bài học</span>
+      {groupedTrainingTracks.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">
+          Không tìm thấy chủ đề phù hợp với từ khóa đang nhập.
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {groupedTrainingTracks.map(group => (
+            <section
+              key={group.level}
+              className={`rounded-2xl border p-5 ${group.sectionClassName}`}
+            >
+              <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-lg font-semibold text-slate-800">{group.label}</h2>
+                    <span className="rounded-full bg-white/90 px-3 py-1 text-xs font-medium text-slate-600">
+                      {group.tracks.length} chủ đề
+                    </span>
+                  </div>
+                  <p className="mt-1 text-sm text-slate-600">{group.description}</p>
                 </div>
               </div>
-              <div className="text-2xl">{track.badge}</div>
-            </div>
 
-            <div className="space-y-2">
-              {track.lessons.map(lesson => (
-                <button
-                  key={lesson.id}
-                  onClick={() => handleSelectLesson(track.id, lesson.id)}
-                  className="w-full text-left p-3 rounded-lg border border-slate-100 hover:border-blue-200 hover:bg-blue-50 transition-colors"
-                >
-                  {(() => {
-                    const lessonProgress = lessonProgressMap.get(lesson.id);
-                    return (
-                      <div className="flex items-center gap-3">
-                        <PlayCircle className="text-blue-600" size={16} />
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2">
-                            <p className="text-sm font-medium text-slate-800">{lesson.title}</p>
-                            {activeProfile && lessonProgress?.completed && (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-1 text-[11px] font-medium text-emerald-700">
-                                <CheckCircle2 size={12} />
-                                Hoàn thành
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-xs text-slate-500">{lesson.duration || 'N/A'}</p>
-                          {activeProfile && lessonProgress && lessonProgress.totalQuestions > 0 && (
-                            <p className="mt-1 text-xs text-slate-500">
-                              Điểm: {lessonProgress.totalScore}/{lessonProgress.maxScore} • Đúng {lessonProgress.correctCount}/{lessonProgress.totalQuestions}
-                            </p>
-                          )}
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                {group.tracks.map(track => (
+                  <div key={track.id} className="rounded-xl border border-slate-100 bg-white p-6 shadow-sm transition-shadow hover:shadow-md">
+                    <div className="mb-4 flex items-start justify-between">
+                      <div className="flex-1">
+                        <h3 className="mb-2 text-lg font-semibold text-slate-800">{track.title}</h3>
+                        <p className="mb-3 text-sm text-slate-600">{track.description}</p>
+                        <div className="flex items-center gap-2 text-xs text-slate-500">
+                          <span className={`rounded-full px-2 py-1 font-medium ${group.badgeClassName}`}>
+                            {group.label}
+                          </span>
+                          <span>{track.lessons.length} bài học</span>
                         </div>
                       </div>
-                    );
-                  })()}
-                </button>
-              ))}
-            </div>
-            {isAdminView && canEdit && (
-              <div className="mt-4">
-                <button
-                  onClick={() => handleAddLesson(track.id)}
-                  className="w-full inline-flex items-center justify-center gap-2 rounded-lg border border-blue-200 bg-blue-50 text-blue-700 px-4 py-3 text-sm font-medium hover:bg-blue-100 transition-colors"
-                >
-                  + Thêm bài học mới
-                </button>
+                      <div className="text-2xl">{track.badge}</div>
+                    </div>
+
+                    <div className="space-y-2">
+                      {track.lessons.map(lesson => (
+                        <button
+                          key={lesson.id}
+                          onClick={() => handleSelectLesson(track.id, lesson.id)}
+                          className="w-full rounded-lg border border-slate-100 p-3 text-left transition-colors hover:border-blue-200 hover:bg-blue-50"
+                        >
+                          {(() => {
+                            const lessonProgress = lessonProgressMap.get(lesson.id);
+                            return (
+                              <div className="flex items-center gap-3">
+                                <PlayCircle className="text-blue-600" size={16} />
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-2">
+                                    <p className="text-sm font-medium text-slate-800">{lesson.title}</p>
+                                    {activeProfile && lessonProgress?.completed && (
+                                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-1 text-[11px] font-medium text-emerald-700">
+                                        <CheckCircle2 size={12} />
+                                        Hoàn thành
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-xs text-slate-500">{lesson.duration || 'N/A'}</p>
+                                  {activeProfile && lessonProgress && lessonProgress.totalQuestions > 0 && (
+                                    <p className="mt-1 text-xs text-slate-500">
+                                      Điểm: {lessonProgress.totalScore}/{lessonProgress.maxScore} • Đúng {lessonProgress.correctCount}/{lessonProgress.totalQuestions}
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })()}
+                        </button>
+                      ))}
+                    </div>
+                    {isAdminView && canEdit && (
+                      <div className="mt-4">
+                        <button
+                          onClick={() => handleAddLesson(track.id)}
+                          className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-700 transition-colors hover:bg-blue-100"
+                        >
+                          + Thêm bài học mới
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
               </div>
-            )}
-          </div>
-        ))}
-      </div>
+            </section>
+          ))}
+        </div>
+      )}
     </div>
   );
 
