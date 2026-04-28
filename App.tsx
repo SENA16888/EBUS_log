@@ -1880,6 +1880,7 @@ const App: React.FC = () => {
           onDeleteProfile={guard('ELEARNING_EDIT', handleDeleteLearningProfile)}
           canEdit={can('ELEARNING_EDIT')}
           isAdminView={isElearningAdmin}
+          canViewTeamProgress={isAdmin}
           currentUserId={currentUser?.id}
           currentUserName={currentUser?.name}
           currentEmployeeId={currentUser?.linkedEmployeeId}

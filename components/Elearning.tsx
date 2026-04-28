@@ -16,12 +16,13 @@ interface ElearningProps {
   onDeleteProfile: (profileId: string) => void;
   canEdit?: boolean;
   isAdminView?: boolean;
+  canViewTeamProgress?: boolean;
   currentUserId?: string;
   currentUserName?: string;
   currentEmployeeId?: string;
 }
 
-type ViewMode = 'home' | 'training' | 'progress' | 'leaderboard' | 'lesson' | 'quiz' | 'result';
+type ViewMode = 'home' | 'training' | 'progress' | 'leaderboard' | 'teamProgress' | 'lesson' | 'quiz' | 'result';
 
 type AnswerDraft = {
   selectedOption?: number;
@@ -65,6 +66,25 @@ type TrackProgressSummary = {
 };
 
 type LearningLevel = LearningTrack['level'];
+type TeamProgressRow = {
+  id: string;
+  name: string;
+  roleLabel: string;
+  completedLessons: number;
+  totalLessons: number;
+  completionRate: number;
+  completedTracks: number;
+  totalTracks: number;
+  totalScore: number;
+  maxScore: number;
+  attemptCount: number;
+  pendingLessons: number;
+  status: 'NOT_STARTED' | 'AT_RISK' | 'IN_PROGRESS' | 'ON_TRACK' | 'COMPLETED';
+  statusLabel: string;
+  statusClassName: string;
+  latestActivityText: string;
+  latestActivityAt?: string;
+};
 
 const QUICK_IMPORT_OPTION_LABELS = ['A', 'B', 'C', 'D'] as const;
 const LEARNING_LEVEL_ORDER: LearningLevel[] = ['BASE', 'ADVANCED', 'MASTER'];
@@ -87,6 +107,22 @@ const LEARNING_LEVEL_META: Record<LearningLevel, { label: string; description: s
     badgeClassName: 'bg-amber-100 text-amber-700',
     sectionClassName: 'border-amber-100 bg-amber-50/40'
   }
+};
+
+const formatDateTime = (iso?: string) => {
+  if (!iso) return 'Chưa có hoạt động';
+  return new Date(iso).toLocaleString('vi-VN');
+};
+
+const getRelativeActivityLabel = (iso?: string) => {
+  if (!iso) return 'Chưa bắt đầu học';
+
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const diffDays = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
+
+  if (diffDays === 0) return 'Hôm nay';
+  if (diffDays === 1) return '1 ngày trước';
+  return `${diffDays} ngày trước`;
 };
 
 const parseQuickQuizImport = (rawText: string): { questions: LearningQuestion[]; error?: string } => {
@@ -182,6 +218,7 @@ export const Elearning: React.FC<ElearningProps> = ({
   onDeleteProfile,
   canEdit = true,
   isAdminView = true,
+  canViewTeamProgress = false,
   currentUserId,
   currentUserName,
   currentEmployeeId
@@ -428,6 +465,149 @@ export const Elearning: React.FC<ElearningProps> = ({
     return progressMap;
   }, [localTracks, lessonProgressMap]);
 
+  const profileAttemptsByLearnerId = useMemo(() => {
+    const groupedAttempts = new Map<string, LearningAttempt[]>();
+
+    attempts.forEach(attempt => {
+      const currentAttempts = groupedAttempts.get(attempt.learnerId) || [];
+      currentAttempts.push(attempt);
+      groupedAttempts.set(attempt.learnerId, currentAttempts);
+    });
+
+    return groupedAttempts;
+  }, [attempts]);
+
+  const teamProgressRows = useMemo(() => {
+    if (!canViewTeamProgress) return [];
+
+    const totalLessons = localTracks.reduce((sum, track) => sum + track.lessons.length, 0);
+    const totalTracks = localTracks.length;
+    const maxScorePerLearner = localTracks.reduce(
+      (sum, track) => sum + track.lessons.reduce((lessonSum, lesson) => lessonSum + lesson.questions.reduce((questionSum, question) => questionSum + (question.maxScore || 10), 0), 0),
+      0
+    );
+
+    const rows = profiles.map(profile => {
+      const learnerAttempts = profileAttemptsByLearnerId.get(profile.id) || [];
+      const latestAttempts = new Map<string, LearningAttempt>();
+
+      [...learnerAttempts]
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+        .forEach(attempt => {
+          if (!latestAttempts.has(attempt.questionId)) {
+            latestAttempts.set(attempt.questionId, attempt);
+          }
+        });
+
+      let completedLessons = 0;
+      let completedTracks = 0;
+      let totalScore = 0;
+
+      localTracks.forEach(track => {
+        let completedInTrack = 0;
+
+        track.lessons.forEach(lesson => {
+          const answeredCount = lesson.questions.filter(question => latestAttempts.has(question.id)).length;
+          const lessonScore = lesson.questions.reduce((sum, question) => sum + (latestAttempts.get(question.id)?.score || 0), 0);
+
+          totalScore += lessonScore;
+
+          if (lesson.questions.length > 0 && answeredCount === lesson.questions.length) {
+            completedLessons += 1;
+            completedInTrack += 1;
+          }
+        });
+
+        if (track.lessons.length > 0 && completedInTrack === track.lessons.length) {
+          completedTracks += 1;
+        }
+      });
+
+      const completionRate = totalLessons === 0 ? 0 : Math.round((completedLessons / totalLessons) * 100);
+      const pendingLessons = Math.max(0, totalLessons - completedLessons);
+      const latestActivityAt = learnerAttempts
+        .map(attempt => attempt.createdAt)
+        .sort((a, b) => b.localeCompare(a))[0];
+      const latestActivityText = getRelativeActivityLabel(latestActivityAt);
+      const inactiveDays = latestActivityAt
+        ? Math.floor((Date.now() - new Date(latestActivityAt).getTime()) / (1000 * 60 * 60 * 24))
+        : Number.POSITIVE_INFINITY;
+
+      let status: TeamProgressRow['status'] = 'IN_PROGRESS';
+      let statusLabel = 'Đang học';
+      let statusClassName = 'bg-blue-100 text-blue-700';
+
+      if (completedLessons === 0 && learnerAttempts.length === 0) {
+        status = 'NOT_STARTED';
+        statusLabel = 'Chưa bắt đầu';
+        statusClassName = 'bg-slate-100 text-slate-700';
+      } else if (completionRate === 100) {
+        status = 'COMPLETED';
+        statusLabel = 'Hoàn thành';
+        statusClassName = 'bg-emerald-100 text-emerald-700';
+      } else if (inactiveDays >= 7 || completionRate < 30) {
+        status = 'AT_RISK';
+        statusLabel = 'Cần đốc thúc';
+        statusClassName = 'bg-rose-100 text-rose-700';
+      } else if (completionRate >= 70) {
+        status = 'ON_TRACK';
+        statusLabel = 'Đúng tiến độ';
+        statusClassName = 'bg-amber-100 text-amber-700';
+      }
+
+      const employee = profile.employeeId ? employees.find(item => item.id === profile.employeeId) : null;
+      const roleLabel = employee?.role || profile.roleHistory?.[profile.roleHistory.length - 1] || 'Chưa cập nhật';
+
+      return {
+        id: profile.id,
+        name: profile.userName || profile.name,
+        roleLabel,
+        completedLessons,
+        totalLessons,
+        completionRate,
+        completedTracks,
+        totalTracks,
+        totalScore,
+        maxScore: maxScorePerLearner,
+        attemptCount: learnerAttempts.length,
+        pendingLessons,
+        status,
+        statusLabel,
+        statusClassName,
+        latestActivityText,
+        latestActivityAt
+      };
+    });
+
+    return rows.sort((a, b) => {
+      const statusPriority = ['AT_RISK', 'NOT_STARTED', 'IN_PROGRESS', 'ON_TRACK', 'COMPLETED'];
+      const statusDelta = statusPriority.indexOf(a.status) - statusPriority.indexOf(b.status);
+      if (statusDelta !== 0) return statusDelta;
+      if ((a.latestActivityAt || '') !== (b.latestActivityAt || '')) {
+        return (a.latestActivityAt || '').localeCompare(b.latestActivityAt || '');
+      }
+      return a.name.localeCompare(b.name, 'vi');
+    });
+  }, [canViewTeamProgress, localTracks, profiles, profileAttemptsByLearnerId, employees]);
+
+  const teamProgressSummary = useMemo(() => {
+    const totalMembers = teamProgressRows.length;
+    const completedMembers = teamProgressRows.filter(row => row.status === 'COMPLETED').length;
+    const atRiskMembers = teamProgressRows.filter(row => row.status === 'AT_RISK' || row.status === 'NOT_STARTED').length;
+    const activeMembers = teamProgressRows.filter(row => row.attemptCount > 0).length;
+    const avgCompletionRate = totalMembers === 0
+      ? 0
+      : Math.round(teamProgressRows.reduce((sum, row) => sum + row.completionRate, 0) / totalMembers);
+
+    return {
+      totalMembers,
+      completedMembers,
+      atRiskMembers,
+      activeMembers,
+      avgCompletionRate
+    };
+  }, [teamProgressRows]);
+
   const sortedLeaderboardProfiles = useMemo(() =>
     [...leaderboardProfiles]
       .filter(profile => (profile.userName || profile.name) && typeof (profile.totalScore ?? 0) === 'number')
@@ -453,6 +633,10 @@ export const Elearning: React.FC<ElearningProps> = ({
 
   const handleOpenLeaderboardView = () => {
     setViewMode('leaderboard');
+  };
+
+  const handleOpenTeamProgressView = () => {
+    setViewMode('teamProgress');
   };
 
   const handleStartQuiz = () => {
@@ -739,6 +923,26 @@ export const Elearning: React.FC<ElearningProps> = ({
     setViewMode('lesson');
   };
 
+  const handleDeleteTrack = (trackId: string) => {
+    if (!canEdit || !canViewTeamProgress) return;
+
+    const trackToDelete = localTracks.find(track => track.id === trackId);
+    if (!trackToDelete) return;
+
+    const shouldDelete = window.confirm(`Xóa chủ đề "${trackToDelete.title}" và toàn bộ bài học bên trong?`);
+    if (!shouldDelete) return;
+
+    const updatedTracks = localTracks.filter(track => track.id !== trackId);
+    setLocalTracks(updatedTracks);
+
+    if (selectedTrackId === trackId) {
+      setSelectedTrackId('');
+      setSelectedLessonId('');
+      setLatestQuizResult(null);
+      setViewMode('training');
+    }
+  };
+
   const handleQuestionChange = (questionId: string, patch: Partial<LearningQuestion>) => {
     updateSelectedLesson(lesson => ({
       ...lesson,
@@ -797,7 +1001,7 @@ export const Elearning: React.FC<ElearningProps> = ({
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className={`grid gap-4 ${canViewTeamProgress ? 'md:grid-cols-2 xl:grid-cols-4' : 'md:grid-cols-3'}`}>
         <button
           onClick={handleOpenTrainingView}
           className="rounded-2xl border border-blue-100 bg-white p-6 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md"
@@ -830,6 +1034,19 @@ export const Elearning: React.FC<ElearningProps> = ({
           <div className="mt-4 text-lg font-semibold text-slate-800">3. Bảng xếp hạng</div>
           <p className="mt-2 text-sm text-slate-600">Xem top người học có điểm cao nhất và mở rộng danh sách khi cần.</p>
         </button>
+
+        {canViewTeamProgress && (
+          <button
+            onClick={handleOpenTeamProgressView}
+            className="rounded-2xl border border-rose-100 bg-white p-6 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-rose-300 hover:shadow-md"
+          >
+            <div className="inline-flex rounded-2xl bg-rose-100 p-3 text-rose-700">
+              <Users size={22} />
+            </div>
+            <div className="mt-4 text-lg font-semibold text-slate-800">4. Theo dõi tiến độ nhân viên</div>
+            <p className="mt-2 text-sm text-slate-600">Theo dõi toàn bộ nhân sự, phát hiện người học chậm và đốc thúc kiểm tra kịp thời.</p>
+          </button>
+        )}
       </div>
     </div>
   );
@@ -915,7 +1132,18 @@ export const Elearning: React.FC<ElearningProps> = ({
                           <span>{track.lessons.length} bài học</span>
                         </div>
                       </div>
-                      <div className="text-2xl">{track.badge}</div>
+                      <div className="ml-3 flex flex-col items-end gap-2">
+                        <div className="text-2xl">{track.badge}</div>
+                        {canViewTeamProgress && canEdit && (
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteTrack(track.id)}
+                            className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-medium text-rose-700 transition-colors hover:bg-rose-100"
+                          >
+                            Xóa chủ đề
+                          </button>
+                        )}
+                      </div>
                     </div>
 
                     <div className="space-y-2">
@@ -1126,6 +1354,163 @@ export const Elearning: React.FC<ElearningProps> = ({
               >
                 {showFullLeaderboard ? 'Thu gọn danh sách' : 'Xổ thêm danh sách'}
               </button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderTeamProgressView = () => {
+    const priorityRows = teamProgressRows.filter(row => row.status === 'AT_RISK' || row.status === 'NOT_STARTED');
+
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center gap-4">
+          <button
+            onClick={handleBackToHome}
+            className="text-blue-600 hover:text-blue-800 font-medium"
+          >
+            ← Quay lại trang chủ
+          </button>
+          <div className="text-sm text-slate-500">Theo dõi tiến độ học tập nhân viên</div>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <h2 className="text-xl font-bold text-slate-800">Bảng theo dõi toàn đội</h2>
+              <p className="mt-1 text-sm text-slate-500">
+                Tổng hợp tiến độ, kết quả và mức độ cần đốc thúc của tất cả nhân viên trong Elearning.
+              </p>
+            </div>
+            <div className="rounded-2xl border border-rose-100 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+              Ưu tiên theo dõi: {teamProgressSummary.atRiskMembers} nhân viên đang chậm tiến độ hoặc chưa bắt đầu.
+            </div>
+          </div>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+          <div className="rounded-2xl border border-blue-100 bg-blue-50 p-5">
+            <div className="text-sm font-semibold text-blue-900">Tổng nhân viên</div>
+            <div className="mt-2 text-3xl font-bold text-blue-700">{teamProgressSummary.totalMembers}</div>
+            <div className="mt-1 text-sm text-blue-800">Đang có hồ sơ học tập</div>
+          </div>
+          <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-5">
+            <div className="text-sm font-semibold text-emerald-900">Hoàn thành đủ</div>
+            <div className="mt-2 text-3xl font-bold text-emerald-700">{teamProgressSummary.completedMembers}</div>
+            <div className="mt-1 text-sm text-emerald-800">Đã hoàn tất toàn bộ bài học</div>
+          </div>
+          <div className="rounded-2xl border border-amber-100 bg-amber-50 p-5">
+            <div className="text-sm font-semibold text-amber-900">Đang hoạt động</div>
+            <div className="mt-2 text-3xl font-bold text-amber-700">{teamProgressSummary.activeMembers}</div>
+            <div className="mt-1 text-sm text-amber-800">Đã có bài làm trên hệ thống</div>
+          </div>
+          <div className="rounded-2xl border border-rose-100 bg-rose-50 p-5">
+            <div className="text-sm font-semibold text-rose-900">Cần đốc thúc</div>
+            <div className="mt-2 text-3xl font-bold text-rose-700">{teamProgressSummary.atRiskMembers}</div>
+            <div className="mt-1 text-sm text-rose-800">Chậm hoặc chưa bắt đầu học</div>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+            <div className="text-sm font-semibold text-slate-700">TB hoàn thành</div>
+            <div className="mt-2 text-3xl font-bold text-slate-800">{teamProgressSummary.avgCompletionRate}%</div>
+            <div className="mt-1 text-sm text-slate-600">Mức hoàn thành bình quân</div>
+          </div>
+        </div>
+
+        {priorityRows.length > 0 && (
+          <div className="rounded-2xl border border-rose-100 bg-white shadow-sm overflow-hidden">
+            <div className="border-b border-rose-100 bg-rose-50 px-5 py-4">
+              <h3 className="text-lg font-semibold text-rose-800">Danh sách cần ưu tiên nhắc học</h3>
+              <p className="mt-1 text-sm text-rose-600">Các nhân sự dưới đây đang chậm tiến độ, ít hoạt động hoặc chưa bắt đầu học.</p>
+            </div>
+            <div className="grid gap-3 p-5 md:grid-cols-2 xl:grid-cols-3">
+              {priorityRows.map(row => (
+                <div key={row.id} className="rounded-xl border border-rose-100 bg-rose-50/60 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold text-slate-800">{row.name}</div>
+                      <div className="mt-1 text-xs text-slate-500">{row.roleLabel}</div>
+                    </div>
+                    <span className={`rounded-full px-3 py-1 text-xs font-medium ${row.statusClassName}`}>
+                      {row.statusLabel}
+                    </span>
+                  </div>
+                  <div className="mt-3 text-sm text-slate-600">
+                    Hoàn thành {row.completedLessons}/{row.totalLessons} bài học • Còn thiếu {row.pendingLessons} bài
+                  </div>
+                  <div className="mt-1 text-sm text-slate-600">
+                    Hoạt động gần nhất: {row.latestActivityText}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+          <div className="border-b border-slate-100 px-5 py-4">
+            <h3 className="text-lg font-semibold text-slate-800">Chi tiết theo nhân viên</h3>
+            <p className="mt-1 text-sm text-slate-500">Dùng bảng này để kiểm tra tiến độ, điểm số và xác định người cần follow-up.</p>
+          </div>
+
+          {teamProgressRows.length === 0 ? (
+            <div className="px-5 py-6 text-sm text-slate-600">Chưa có hồ sơ học tập để theo dõi.</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead className="bg-slate-50 text-slate-600">
+                  <tr>
+                    <th className="px-5 py-3 text-left font-semibold">Nhân viên</th>
+                    <th className="px-5 py-3 text-left font-semibold">Tiến độ</th>
+                    <th className="px-5 py-3 text-left font-semibold">Chủ đề</th>
+                    <th className="px-5 py-3 text-left font-semibold">Điểm</th>
+                    <th className="px-5 py-3 text-left font-semibold">Lần học gần nhất</th>
+                    <th className="px-5 py-3 text-left font-semibold">Trạng thái</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {teamProgressRows.map(row => (
+                    <tr key={row.id} className="border-t border-slate-100 align-top">
+                      <td className="px-5 py-4">
+                        <div className="font-medium text-slate-800">{row.name}</div>
+                        <div className="mt-1 text-xs text-slate-500">{row.roleLabel}</div>
+                        <div className="mt-1 text-xs text-slate-500">{row.attemptCount} lượt làm bài</div>
+                      </td>
+                      <td className="px-5 py-4 text-slate-700">
+                        <div className="font-medium">{row.completedLessons}/{row.totalLessons} bài học</div>
+                        <div className="mt-2 h-2 w-40 rounded-full bg-slate-100">
+                          <div
+                            className="h-2 rounded-full bg-blue-500"
+                            style={{ width: `${row.completionRate}%` }}
+                          />
+                        </div>
+                        <div className="mt-2 text-xs text-slate-500">
+                          {row.completionRate}% hoàn thành • Còn {row.pendingLessons} bài
+                        </div>
+                      </td>
+                      <td className="px-5 py-4 text-slate-700">
+                        {row.completedTracks}/{row.totalTracks} chủ đề hoàn tất
+                      </td>
+                      <td className="px-5 py-4 text-slate-700">
+                        <div>{row.totalScore}/{row.maxScore}</div>
+                        <div className="mt-1 text-xs text-slate-500">
+                          Tích lũy hiện tại
+                        </div>
+                      </td>
+                      <td className="px-5 py-4 text-slate-700">
+                        <div>{row.latestActivityText}</div>
+                        <div className="mt-1 text-xs text-slate-500">{formatDateTime(row.latestActivityAt)}</div>
+                      </td>
+                      <td className="px-5 py-4">
+                        <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium ${row.statusClassName}`}>
+                          {row.statusLabel}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
         </div>
@@ -1864,6 +2249,8 @@ D. ...
     return renderProgressView();
   } else if (viewMode === 'leaderboard') {
     return renderLeaderboardView();
+  } else if (viewMode === 'teamProgress') {
+    return renderTeamProgressView();
   } else if (viewMode === 'lesson') {
     return renderLessonView();
   } else if (viewMode === 'quiz') {
