@@ -20,6 +20,7 @@ interface LayoutProps {
   canViewPackages?: boolean;
   canViewQuotations?: boolean;
   canViewSales?: boolean;
+  canViewEvents?: boolean;
   canViewElearning?: boolean;
   canViewEmployees?: boolean;
   onOpenAccess?: () => void;
@@ -39,6 +40,7 @@ export const Layout: React.FC<LayoutProps> = ({
   canViewPackages = true,
   canViewQuotations = true,
   canViewSales = true,
+  canViewEvents = true,
   canViewElearning = true,
   canViewEmployees = true, 
   onOpenAccess, 
@@ -59,6 +61,7 @@ export const Layout: React.FC<LayoutProps> = ({
     (tab.key !== 'packages' || canViewPackages) &&
     (tab.key !== 'quotations' || canViewQuotations) &&
     (tab.key !== 'sales' || canViewSales) &&
+    (tab.key !== 'events' || canViewEvents) &&
     (tab.key !== 'elearning' || canViewElearning) &&
     (tab.key !== 'employees' || canViewEmployees)
   );

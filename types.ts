@@ -428,19 +428,28 @@ export interface LogEntry {
 export type AccessRole = 'ADMIN' | 'MANAGER' | 'STAFF';
 
 export type AccessPermission =
+  | 'DASHBOARD_VIEW'
+  | 'INVENTORY_VIEW'
   | 'INVENTORY_EDIT'
   | 'INVENTORY_DELETE'
+  | 'PACKAGES_VIEW'
   | 'PACKAGES_EDIT'
   | 'PACKAGES_DELETE'
+  | 'EVENTS_VIEW'
   | 'EVENTS_EDIT'
   | 'EVENTS_DELETE'
+  | 'EMPLOYEES_VIEW'
   | 'EMPLOYEES_EDIT'
   | 'EMPLOYEES_DELETE'
+  | 'QUOTATIONS_VIEW'
   | 'QUOTATIONS_EDIT'
   | 'QUOTATIONS_DELETE'
+  | 'SALES_VIEW'
   | 'SALES_EDIT'
   | 'SALES_DELETE'
+  | 'ELEARNING_VIEW'
   | 'ELEARNING_EDIT'
+  | 'LOGS_VIEW'
   | 'ACCESS_MANAGE';
 
 export interface UserAccount {
@@ -449,6 +458,7 @@ export interface UserAccount {
   phone: string;
   role: AccessRole;
   permissions: AccessPermission[];
+  permissionsVersion?: number;
   linkedEmployeeId?: string;
   isActive?: boolean;
   createdAt?: string;

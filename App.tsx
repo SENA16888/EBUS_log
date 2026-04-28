@@ -17,11 +17,13 @@ import { MessageSquare } from 'lucide-react';
 import { saveAppState, loadAppState, initializeAuth, subscribeToAppState, subscribeToSessions, setSessionOnline, setSessionOffline, saveLearningUserState, subscribeToLearningUserState, deleteLearningUserState, subscribeToLearningUsers } from './services/firebaseService';
 import { ensureInventoryBarcodes, ensureItemBarcode, findDuplicateBarcodeItem, findItemByBarcode, generateBarcode, normalizeBarcode } from './services/barcodeService';
 import { normalizeChecklist } from './services/checklistService';
-import { getDefaultPermissionsForRole, hasPermission, normalizePhone } from './services/accessControl';
+import { ACCESS_PERMISSION_VERSION, getDefaultPermissionsForRole, hasPermission, normalizePermissionsForRole, normalizePhone } from './services/accessControl';
 import { AccessManager } from './components/AccessManager';
 import { LoginModal } from './components/LoginModal';
 
 const generateId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+type AppTab = 'dashboard' | 'inventory' | 'events' | 'packages' | 'employees' | 'quotations' | 'sales' | 'elearning' | 'logs';
 
 const getSessionId = () => {
   try {
@@ -104,7 +106,7 @@ const App: React.FC = () => {
   console.log('App is rendering');
   console.log('localStorage available:', typeof localStorage !== 'undefined');
   console.log('sessionStorage available:', typeof sessionStorage !== 'undefined');
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'inventory' | 'events' | 'packages' | 'employees' | 'quotations' | 'sales' | 'elearning' | 'logs'>('dashboard');
+  const [activeTab, setActiveTab] = useState<AppTab>('dashboard');
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isAccessOpen, setIsAccessOpen] = useState(false);
@@ -151,7 +153,11 @@ const App: React.FC = () => {
       return {
         ...acc,
         role,
-        permissions: acc.permissions && acc.permissions.length > 0 ? acc.permissions : getDefaultPermissionsForRole(role),
+        permissions:
+          acc.permissions && acc.permissions.length > 0
+            ? normalizePermissionsForRole(role, acc.permissions, acc.permissionsVersion)
+            : getDefaultPermissionsForRole(role),
+        permissionsVersion: ACCESS_PERMISSION_VERSION,
         isActive: acc.isActive !== false
       };
     });
@@ -195,15 +201,27 @@ const App: React.FC = () => {
   const currentUser = appState.userAccounts?.find(user => user.id === currentUserId) || null;
   const can = (permission: AccessPermission) => hasPermission(currentUser, permission);
   const isAdmin = currentUser?.role === 'ADMIN';
-  const canViewLogs = currentUser?.role === 'ADMIN';
-  const canViewDashboard = currentUser?.role !== 'STAFF';
-  const canViewInventory = currentUser?.role !== 'STAFF';
-  const canViewPackages = currentUser?.role !== 'STAFF';
-  const canViewQuotations = currentUser?.role !== 'STAFF';
-  const canViewSales = currentUser?.role !== 'STAFF';
-  const canViewElearning = !!currentUser;
-  const canViewEmployees = currentUser?.role !== 'STAFF';
+  const canViewLogs = can('LOGS_VIEW');
+  const canViewDashboard = can('DASHBOARD_VIEW');
+  const canViewInventory = can('INVENTORY_VIEW');
+  const canViewPackages = can('PACKAGES_VIEW');
+  const canViewQuotations = can('QUOTATIONS_VIEW');
+  const canViewSales = can('SALES_VIEW');
+  const canViewEvents = can('EVENTS_VIEW');
+  const canViewElearning = can('ELEARNING_VIEW');
+  const canViewEmployees = can('EMPLOYEES_VIEW');
   const isElearningAdmin = currentUser?.role === 'ADMIN' || currentUser?.role === 'MANAGER';
+  const firstAccessibleTab: AppTab =
+    (canViewDashboard && 'dashboard') ||
+    (canViewEvents && 'events') ||
+    (canViewInventory && 'inventory') ||
+    (canViewPackages && 'packages') ||
+    (canViewQuotations && 'quotations') ||
+    (canViewSales && 'sales') ||
+    (canViewEmployees && 'employees') ||
+    (canViewElearning && 'elearning') ||
+    (canViewLogs && 'logs') ||
+    'dashboard';
 
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
@@ -280,22 +298,34 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (activeTab === 'logs' && !canViewLogs) {
-      setActiveTab('events');
-    }
-  }, [activeTab, canViewLogs]);
+    const tabAccessMap: Record<AppTab, boolean> = {
+      dashboard: canViewDashboard,
+      inventory: canViewInventory,
+      events: canViewEvents,
+      packages: canViewPackages,
+      employees: canViewEmployees,
+      quotations: canViewQuotations,
+      sales: canViewSales,
+      elearning: canViewElearning,
+      logs: canViewLogs
+    };
 
-  useEffect(() => {
-    if ((activeTab === 'employees' && !canViewEmployees) ||
-        (activeTab === 'dashboard' && !canViewDashboard) ||
-        (activeTab === 'quotations' && !canViewQuotations) ||
-        (activeTab === 'inventory' && !canViewInventory) ||
-        (activeTab === 'packages' && !canViewPackages) ||
-        (activeTab === 'sales' && !canViewSales) ||
-        (activeTab === 'elearning' && !canViewElearning)) {
-      setActiveTab('events');
+    if (!tabAccessMap[activeTab] && activeTab !== firstAccessibleTab) {
+      setActiveTab(firstAccessibleTab);
     }
-  }, [activeTab, canViewDashboard, canViewEmployees, canViewInventory, canViewPackages, canViewQuotations, canViewSales, canViewElearning]);
+  }, [
+    activeTab,
+    canViewDashboard,
+    canViewEmployees,
+    canViewInventory,
+    canViewEvents,
+    canViewPackages,
+    canViewQuotations,
+    canViewSales,
+    canViewElearning,
+    canViewLogs,
+    firstAccessibleTab
+  ]);
 
   useEffect(() => {
     if (currentUserId) {
@@ -1792,13 +1822,14 @@ const App: React.FC = () => {
       canViewPackages={canViewPackages}
       canViewQuotations={canViewQuotations}
       canViewSales={canViewSales}
+      canViewEvents={canViewEvents}
       canViewElearning={canViewElearning}
       canViewEmployees={canViewEmployees}
       onOpenAccess={() => setIsAccessOpen(true)}
       onLogout={handleLogout}
     >
-      {activeTab === 'dashboard' && <Dashboard appState={appState} />}
-      {activeTab === 'inventory' && (
+      {activeTab === 'dashboard' && canViewDashboard && <Dashboard appState={appState} />}
+      {activeTab === 'inventory' && canViewInventory && (
         <InventoryManager 
           inventory={appState.inventory} 
           onUpdateInventory={guard('INVENTORY_EDIT', handleUpdateInventory)} 
@@ -1813,7 +1844,7 @@ const App: React.FC = () => {
           isAdmin={isAdmin}
         />
       )}
-      {activeTab === 'packages' && (
+      {activeTab === 'packages' && canViewPackages && (
         <PackageManager 
           packages={appState.packages} 
           inventory={appState.inventory} 
@@ -1824,7 +1855,7 @@ const App: React.FC = () => {
           canDelete={can('PACKAGES_DELETE')}
         />
       )}
-      {activeTab === 'employees' && (
+      {activeTab === 'employees' && canViewEmployees && (
         <EmployeeManager 
           employees={appState.employees} 
           events={appState.events}
@@ -1838,7 +1869,7 @@ const App: React.FC = () => {
           canDelete={can('EMPLOYEES_DELETE')}
         />
       )}
-      {activeTab === 'quotations' && (
+      {activeTab === 'quotations' && canViewQuotations && (
         <QuotationManager 
           quotations={appState.quotations} 
           packages={appState.packages} 
@@ -1850,7 +1881,7 @@ const App: React.FC = () => {
           canDelete={can('QUOTATIONS_DELETE')}
         />
       )}
-      {activeTab === 'sales' && (
+      {activeTab === 'sales' && canViewSales && (
         <SalesManager
           saleItems={appState.saleItems || []}
           events={appState.events}
@@ -1865,7 +1896,7 @@ const App: React.FC = () => {
           canDelete={can('SALES_DELETE')}
         />
       )}
-      {activeTab === 'elearning' && (
+      {activeTab === 'elearning' && canViewElearning && (
         <Elearning
           tracks={appState.learningTracks || []}
           profiles={learningProfilesState}
@@ -1880,7 +1911,7 @@ const App: React.FC = () => {
           onDeleteProfile={guard('ELEARNING_EDIT', handleDeleteLearningProfile)}
           canEdit={can('ELEARNING_EDIT')}
           isAdminView={isElearningAdmin}
-          canViewTeamProgress={isAdmin}
+          canViewTeamProgress={isElearningAdmin}
           currentUserId={currentUser?.id}
           currentUserName={currentUser?.name}
           currentEmployeeId={currentUser?.linkedEmployeeId}
@@ -1889,7 +1920,7 @@ const App: React.FC = () => {
       {activeTab === 'logs' && canViewLogs && (
         <AdminLogPage logs={appState.logs} accounts={appState.userAccounts || []} activeSessions={activeSessions} />
       )}
-      {activeTab === 'events' && (
+      {activeTab === 'events' && canViewEvents && (
         <EventManager 
           events={appState.events} 
           inventory={appState.inventory} 

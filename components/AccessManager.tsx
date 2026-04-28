@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Employee, UserAccount, AccessRole, AccessPermission } from '../types';
-import { ACCESS_PERMISSION_GROUPS, getDefaultPermissionsForRole, normalizePhone } from '../services/accessControl';
+import { ACCESS_PERMISSION_GROUPS, ACCESS_PERMISSION_VERSION, getDefaultPermissionsForRole, normalizePhone } from '../services/accessControl';
 import { X, ShieldCheck, UserPlus, Trash2, RefreshCw } from 'lucide-react';
 
 interface AccessManagerProps {
@@ -58,6 +58,7 @@ export const AccessManager: React.FC<AccessManagerProps> = ({
       phone: newAccount.phone.trim(),
       role: newAccount.role,
       permissions: getDefaultPermissionsForRole(newAccount.role),
+      permissionsVersion: ACCESS_PERMISSION_VERSION,
       linkedEmployeeId: newAccount.linkedEmployeeId || undefined,
       isActive: true,
       createdAt: new Date().toISOString()
@@ -156,7 +157,7 @@ export const AccessManager: React.FC<AccessManagerProps> = ({
             </div>
 
             <div className="text-xs text-slate-500">
-              Ghi chu: ADMIN co toan quyen. MANAGER mac dinh duoc phep sua, khong duoc xoa.
+              Ghi chu: Tick quyen gom ca xem module va thao tac. ADMIN luon co toan quyen, MANAGER mac dinh duoc sua nhung khong duoc xoa.
             </div>
           </div>
 
@@ -209,7 +210,7 @@ export const AccessManager: React.FC<AccessManagerProps> = ({
 
                 {account.role === 'ADMIN' ? (
                   <div className="mt-3 text-xs text-green-700 bg-green-50 border border-green-100 rounded-lg p-3">
-                    ADMIN duoc phep thao tac tat ca chuc nang.
+                    ADMIN duoc phep xem va thao tac tat ca module, khong phu thuoc tick thu cong.
                   </div>
                 ) : (
                   <div className="mt-3 space-y-3">
