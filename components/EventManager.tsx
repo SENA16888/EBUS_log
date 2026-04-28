@@ -276,6 +276,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
   onSaveChecklistSignature
 }) => {
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  const [eventScreenMode, setEventScreenMode] = useState<'HOME' | 'DETAIL'>('HOME');
   const [detailTab, setDetailTab] = useState<'EQUIPMENT' | 'STAFF' | 'PROFILE' | 'COSTS' | 'LAYOUT' | 'CHECKLIST' | 'TIMELINE'>('EQUIPMENT');
   const [selectedLayoutBlockId, setSelectedLayoutBlockId] = useState<string | null>(null);
   
@@ -336,10 +337,6 @@ export const EventManager: React.FC<EventManagerProps> = ({
     }
   }, [showExportModal]);
 
-  // Calendar view state
-  const [showCalendarModal, setShowCalendarModal] = useState(false);
-  const [calendarSelectedEventId, setCalendarSelectedEventId] = useState<string | null>(null);
-
   const allowedDetailTabs = useMemo(
     () => canEdit
       ? ['EQUIPMENT', 'CHECKLIST', 'TIMELINE', 'STAFF', 'PROFILE', 'LAYOUT', 'COSTS'] as const
@@ -352,7 +349,6 @@ export const EventManager: React.FC<EventManagerProps> = ({
       setDetailTab(allowedDetailTabs[0]);
     }
   }, [allowedDetailTabs, detailTab]);
-  const [showEventDetailModal, setShowEventDetailModal] = useState(false);
   const [calendarView, setCalendarView] = useState(() => {
     const now = new Date();
     return { year: now.getFullYear(), month: now.getMonth() };
@@ -384,8 +380,6 @@ export const EventManager: React.FC<EventManagerProps> = ({
   const [resizingBlock, setResizingBlock] = useState<{ id: string; direction: ResizeDirection; rect: DOMRect } | null>(null);
   const [showLayoutFullscreen, setShowLayoutFullscreen] = useState(false);
   const [editingBlockId, setEditingBlockId] = useState<string | null>(null);
-  const [isMobileListCollapsed, setIsMobileListCollapsed] = useState(false);
-
   // Expense State
   const [expenseCat, setExpenseCat] = useState<EventExpense['category']>('TRANSPORT_GOODS');
   const [expenseSub, setExpenseSub] = useState('');
@@ -433,14 +427,14 @@ export const EventManager: React.FC<EventManagerProps> = ({
       buckets[key].push(ev);
     });
     const groups = Object.keys(buckets)
-      .sort((a, b) => a.localeCompare(b))
+      .sort((a, b) => b.localeCompare(a))
       .map(key => ({
         key,
         label: formatMonthLabel(key),
         events: buckets[key].sort((a, b) => {
           const da = getEventPrimaryDate(a) || '';
           const db = getEventPrimaryDate(b) || '';
-          return da.localeCompare(db);
+          return db.localeCompare(da);
         })
       }));
     if (others.length) {
@@ -468,6 +462,11 @@ export const EventManager: React.FC<EventManagerProps> = ({
     setAdvanceNote('');
     setAdvanceAmount('');
   }, [selectedEvent]);
+  useEffect(() => {
+    if (eventScreenMode === 'DETAIL' && !selectedEvent) {
+      setEventScreenMode('HOME');
+    }
+  }, [eventScreenMode, selectedEvent]);
   useEffect(() => {
     if (!selectedEvent) {
       setTimelineDatetime('');
@@ -565,6 +564,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
     setNewEventSchedule([]);
     setNewScheduleDate('');
     setSelectedEventId(newEvent.id);
+    setEventScreenMode('DETAIL');
   };
 
   const handleConfirmDeleteEvent = () => {
@@ -578,6 +578,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
     setShowDeleteConfirm(false);
     setSelectedEventId(fallbackId);
     setSelectedItemIds([]);
+    setEventScreenMode('HOME');
   };
 
   const handleAddScheduleDate = () => {
@@ -611,6 +612,11 @@ export const EventManager: React.FC<EventManagerProps> = ({
   const resetCalendarToCurrentMonth = () => {
     const now = new Date();
     setCalendarView({ year: now.getFullYear(), month: now.getMonth() });
+  };
+
+  const openEventDetail = (eventId: string) => {
+    setSelectedEventId(eventId);
+    setEventScreenMode('DETAIL');
   };
 
   const formatTimelineDatetime = (value: string) => {
@@ -675,32 +681,6 @@ export const EventManager: React.FC<EventManagerProps> = ({
       onFinalizeOrder(selectedEventId);
       setShowPrintModal(true);
     }
-  };
-
-  const getEventSummary = (eventId: string) => {
-    const ev = events.find(e => e.id === eventId);
-    if (!ev) return null;
-    const linkedQ = ev.quotationId ? quotations.find(q => q.id === ev.quotationId) : null;
-    const staffCostsLocal = ev.staff?.reduce((a, b) => a + b.salary, 0) || 0;
-    const otherCostsLocal = ev.expenses?.reduce((a, b) => a + b.amount, 0) || 0;
-    const totalCostsLocal = staffCostsLocal + otherCostsLocal;
-    const revenueLocal = linkedQ?.totalAmount || 0;
-    const grossProfitLocal = revenueLocal - totalCostsLocal;
-    const profitMarginLocal = revenueLocal > 0 ? (grossProfitLocal / revenueLocal) * 100 : 0;
-    const staffCount = ev.staff?.length || 0;
-    const itemsCount = ev.items?.reduce((a, b) => a + b.quantity, 0) || 0;
-    return {
-      event: ev,
-      linkedQuotation: linkedQ,
-      staffCosts: staffCostsLocal,
-      otherCosts: otherCostsLocal,
-      totalCosts: totalCostsLocal,
-      revenue: revenueLocal,
-      grossProfit: grossProfitLocal,
-      profitMargin: profitMarginLocal,
-      staffCount,
-      itemsCount
-    };
   };
 
   const handleStaffAssignSubmit = () => {
@@ -1396,96 +1376,161 @@ export const EventManager: React.FC<EventManagerProps> = ({
 
   return (
     <div className="flex flex-col lg:flex-row gap-6 lg:h-[calc(100vh-100px)]">
-      {/* Sidebar */}
-      <div className={`w-full lg:w-1/3 bg-white rounded-xl shadow-sm border border-slate-100 flex flex-col h-auto lg:h-full overflow-hidden ${isMobileListCollapsed ? 'hidden' : 'flex'} lg:flex`}>
-        <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-          <h3 className="font-bold text-gray-800 text-lg">Sự Kiện</h3>
-          <div className="flex items-center gap-2">
+      {eventScreenMode === 'HOME' && (
+        <div className="w-full lg:w-[360px] bg-white rounded-xl shadow-sm border border-slate-100 flex flex-col h-auto lg:h-full overflow-hidden">
+          <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+            <div>
+              <h3 className="font-bold text-gray-800 text-lg">Sự Kiện</h3>
+              <p className="text-xs text-slate-500">Danh sách mới nhất được ưu tiên hiển thị trước</p>
+            </div>
             {canEdit && (
               <button onClick={() => setShowCreateEventModal(true)} className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">
                 <Plus size={20} />
               </button>
             )}
-            <button onClick={() => setShowCalendarModal(true)} title="Xem lịch" className="p-2 bg-slate-100 rounded-lg hover:bg-slate-200 transition">
-              <Calendar size={18} />
-            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            {events.length === 0 && <div className="text-center py-10 text-gray-400 italic text-sm">Chưa có sự kiện nào.</div>}
+            {groupedEventsByMonth.map(group => (
+              <div key={group.key} className="space-y-2">
+                <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest">{group.label}</p>
+                {group.events.map(event => (
+                  <button
+                    key={event.id}
+                    type="button"
+                    onClick={() => openEventDetail(event.id)}
+                    className={`w-full p-4 rounded-xl border-2 text-left transition ${selectedEventId === event.id ? 'border-blue-500 bg-blue-50 shadow-sm' : 'border-transparent bg-white border-slate-100 hover:border-slate-200'}`}
+                  >
+                    {(() => {
+                      const schedule = getEventSchedule(event);
+                      const uniqueSessions = Array.from(new Set(schedule.flatMap(item => item.sessions)));
+                      const start = schedule[0]?.date || event.startDate;
+                      const end = schedule[schedule.length - 1]?.date || event.endDate;
+                      return (
+                        <>
+                          <h4 className="font-bold text-gray-800">{event.name}</h4>
+                          <p className="text-xs text-gray-500 flex items-center gap-1 mt-1">
+                            <Calendar size={12}/> {start}{end && end !== start ? ` → ${end}` : ''}
+                          </p>
+                          <div className="mt-2 flex items-center gap-2 flex-wrap">
+                            {uniqueSessions.map(session => (
+                              <div key={session} className="inline-flex items-center gap-1 text-[10px] font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full">
+                                {SESSION_LABELS[session]}
+                              </div>
+                            ))}
+                            {event.quotationId && <div className="inline-flex items-center gap-1 text-[10px] font-bold bg-green-100 text-green-700 px-2 py-0.5 rounded-full"><LinkIcon size={10}/> Đã gắn báo giá</div>}
+                            {event.advancePaidConfirmed && !event.advanceSkipped && (
+                              <div className="inline-flex items-center gap-1 text-[10px] font-bold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">
+                                <CheckCircle size={10}/> Đã tạm ứng
+                              </div>
+                            )}
+                            {event.advanceRefundedConfirmed && (
+                              <div className="inline-flex items-center gap-1 text-[10px] font-bold bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
+                                <RefreshCw size={10}/> Đã hoàn ứng
+                              </div>
+                            )}
+                            {event.paymentCompleted && (
+                              <div className="inline-flex items-center gap-1 text-[10px] font-bold bg-slate-900 text-white px-2 py-0.5 rounded-full">
+                                <DollarSign size={10}/> Đã thanh toán
+                              </div>
+                            )}
+                          </div>
+                        </>
+                      );
+                    })()}
+                  </button>
+                ))}
+              </div>
+            ))}
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto p-4 space-y-3">
-          {events.length === 0 && <div className="text-center py-10 text-gray-400 italic text-sm">Chưa có sự kiện nào.</div>}
-          {groupedEventsByMonth.map(group => (
-            <div key={group.key} className="space-y-2">
-              <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest">{group.label}</p>
-              {group.events.map(event => (
-                <div 
-                  key={event.id}
-                  onClick={() => {
-                    setSelectedEventId(event.id);
-                    if (typeof window !== 'undefined' && window.innerWidth < 1024) {
-                      setIsMobileListCollapsed(true);
-                    }
-                  }}
-                  className={`p-4 rounded-xl border-2 cursor-pointer transition ${selectedEventId === event.id ? 'border-blue-500 bg-blue-50 shadow-sm' : 'border-transparent bg-white border-slate-100'}`}
-                >
-                  {(() => {
-                    const schedule = getEventSchedule(event);
-                    const uniqueSessions = Array.from(new Set(schedule.flatMap(item => item.sessions)));
-                    const start = schedule[0]?.date || event.startDate;
-                    const end = schedule[schedule.length - 1]?.date || event.endDate;
-                    return (
-                      <>
-                        <h4 className="font-bold text-gray-800">{event.name}</h4>
-                        <p className="text-xs text-gray-500 flex items-center gap-1 mt-1">
-                          <Calendar size={12}/> {start}{end && end !== start ? ` → ${end}` : ''}
-                        </p>
-                        <div className="mt-2 flex items-center gap-2 flex-wrap">
-                          {uniqueSessions.map(session => (
-                            <div key={session} className="inline-flex items-center gap-1 text-[10px] font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full">
-                              {SESSION_LABELS[session]}
-                            </div>
-                          ))}
-                          {event.quotationId && <div className="inline-flex items-center gap-1 text-[10px] font-bold bg-green-100 text-green-700 px-2 py-0.5 rounded-full"><LinkIcon size={10}/> Đã gắn báo giá</div>}
-                          {event.advancePaidConfirmed && !event.advanceSkipped && (
-                            <div className="inline-flex items-center gap-1 text-[10px] font-bold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">
-                              <CheckCircle size={10}/> Đã tạm ứng
-                            </div>
-                          )}
-                          {event.advanceRefundedConfirmed && (
-                            <div className="inline-flex items-center gap-1 text-[10px] font-bold bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
-                              <RefreshCw size={10}/> Đã hoàn ứng
-                            </div>
-                          )}
-                          {event.paymentCompleted && (
-                            <div className="inline-flex items-center gap-1 text-[10px] font-bold bg-slate-900 text-white px-2 py-0.5 rounded-full">
-                              <DollarSign size={10}/> Đã thanh toán
-                            </div>
-                          )}
-                        </div>
-                      </>
-                    );
-                  })()}
-                </div>
-              ))}
-            </div>
-          ))}
-        </div>
-      </div>
+      )}
 
-      {/* Main Detail Panel */}
       <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-100 flex flex-col lg:h-full overflow-visible lg:overflow-hidden">
-        {selectedEvent ? (
+        {eventScreenMode === 'HOME' ? (
           <>
-            <div className="p-4 md:p-6 border-b border-slate-100 space-y-3">
-              {isMobileListCollapsed && (
-                <div className="lg:hidden">
-                  <button
-                    onClick={() => setIsMobileListCollapsed(false)}
-                    className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-full bg-slate-100 text-slate-700 border border-slate-200"
-                  >
-                    <ArrowLeft size={14} /> Danh sách sự kiện
+            <div className="p-4 md:p-6 border-b border-slate-100 bg-slate-50/40">
+              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <h2 className="text-2xl font-black text-slate-800">Trang chủ Sự kiện</h2>
+                  <p className="text-sm text-slate-500">Bên phải là lịch tổng quan, chọn một sự kiện để mở hẳn trang chi tiết.</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => handleCalendarMonthChange(-1)} className="px-3 py-2 bg-slate-100 rounded-lg hover:bg-slate-200 transition">
+                    <ChevronLeft size={16} />
+                  </button>
+                  <button onClick={resetCalendarToCurrentMonth} className="px-3 py-2 bg-blue-50 text-blue-700 rounded-lg border border-blue-100 hover:bg-blue-100 transition text-sm font-semibold">
+                    Hôm nay
+                  </button>
+                  <button onClick={() => handleCalendarMonthChange(1)} className="px-3 py-2 bg-slate-100 rounded-lg hover:bg-slate-200 transition">
+                    <ChevronRight size={16} />
                   </button>
                 </div>
-              )}
+              </div>
+            </div>
+            <div className="flex-1 overflow-visible lg:overflow-y-auto p-4 md:p-6 bg-slate-50/30">
+              <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+                <div className="border-b border-slate-100 px-5 py-4">
+                  <h3 className="text-lg font-bold text-slate-800">Lịch sự kiện</h3>
+                  <p className="text-sm text-slate-500">{calendarMonthLabel}</p>
+                </div>
+                <div className="p-4 md:p-5">
+                  <div className="grid grid-cols-7 gap-2 text-sm">
+                    {['CN','T2','T3','T4','T5','T6','T7'].map(d => (
+                      <div key={d} className="text-center font-black text-xs text-slate-500 uppercase">{d}</div>
+                    ))}
+
+                    {(() => {
+                      const year = calendarView.year;
+                      const month = calendarView.month;
+                      const first = new Date(year, month, 1);
+                      const startDay = first.getDay();
+                      const daysInMonth = new Date(year, month + 1, 0).getDate();
+                      const cells = [] as (Date | null)[];
+                      for (let i = 0; i < startDay; i++) cells.push(null);
+                      for (let d = 1; d <= daysInMonth; d++) cells.push(new Date(year, month, d));
+                      return cells.map((dt, idx) => {
+                        if (!dt) return <div key={idx} className="min-h-[110px] p-2 border rounded-lg bg-slate-50" />;
+                        const key = dt.toISOString().slice(0, 10);
+                        const dayEvents = events.filter(ev => getEventSchedule(ev).some(item => item.date === key));
+                        return (
+                          <div key={idx} className="min-h-[110px] p-2 border rounded-lg bg-white flex flex-col">
+                            <div className="text-xs text-slate-400 font-black">{dt.getDate()}</div>
+                            <div className="mt-2 space-y-1 overflow-auto text-[12px]">
+                              {dayEvents.map(ev => (
+                                <button
+                                  key={ev.id}
+                                  type="button"
+                                  onClick={() => openEventDetail(ev.id)}
+                                  className="w-full text-left rounded-md border border-blue-100 bg-blue-50/60 px-2 py-1 hover:bg-blue-100 transition"
+                                >
+                                  <span className="block truncate font-semibold text-blue-700">{ev.name}</span>
+                                  <span className="block text-[10px] text-slate-500">
+                                    {(getSessionsForDate(ev, key) || []).map(s => SESSION_LABELS[s]).join(' • ')}
+                                  </span>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      });
+                    })()}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </>
+        ) : selectedEvent ? (
+          <>
+            <div className="p-4 md:p-6 border-b border-slate-100 space-y-3">
+              <div>
+                <button
+                  onClick={() => setEventScreenMode('HOME')}
+                  className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-full bg-slate-100 text-slate-700 border border-slate-200 hover:bg-slate-200 transition"
+                >
+                  <ArrowLeft size={14} /> Quay lại trang chủ Sự kiện
+                </button>
+              </div>
               <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-4">
                 <div>
                   <h2 className="text-2xl font-black text-gray-800">{selectedEvent.name}</h2>
@@ -3043,156 +3088,6 @@ export const EventManager: React.FC<EventManagerProps> = ({
           </div>
         </div>
       )}
-
-      {/* MODAL: Calendar View */}
-      {showCalendarModal && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-4xl p-6 shadow-2xl max-h-[90vh] overflow-auto">
-            <div className="flex justify-between items-center mb-4">
-              <div>
-                <h3 className="text-xl font-bold">Lịch Sự Kiện</h3>
-                <p className="text-sm text-slate-500">{calendarMonthLabel}</p>
-              </div>
-              <div className="flex items-center gap-2">
-                <button onClick={() => handleCalendarMonthChange(-1)} className="px-3 py-2 bg-slate-100 rounded-lg hover:bg-slate-200 transition">
-                  <ChevronLeft size={16} />
-                </button>
-                <button onClick={resetCalendarToCurrentMonth} className="px-3 py-2 bg-blue-50 text-blue-700 rounded-lg border border-blue-100 hover:bg-blue-100 transition text-sm font-semibold">
-                  Hôm nay
-                </button>
-                <button onClick={() => handleCalendarMonthChange(1)} className="px-3 py-2 bg-slate-100 rounded-lg hover:bg-slate-200 transition">
-                  <ChevronRight size={16} />
-                </button>
-                <button onClick={() => setShowCalendarModal(false)} className="px-3 py-2 bg-slate-100 rounded-lg"><X size={18} /></button>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-7 gap-2 text-sm">
-              {['CN','T2','T3','T4','T5','T6','T7'].map(d => (
-                <div key={d} className="text-center font-black text-xs text-slate-500 uppercase">{d}</div>
-              ))}
-
-              {/* Month grid with navigation */}
-              {(() => {
-                const year = calendarView.year;
-                const month = calendarView.month;
-                const first = new Date(year, month, 1);
-                const startDay = first.getDay();
-                const daysInMonth = new Date(year, month+1, 0).getDate();
-                const cells = [] as any[];
-                for (let i = 0; i < startDay; i++) cells.push(null);
-                for (let d = 1; d <= daysInMonth; d++) cells.push(new Date(year, month, d));
-                return cells.map((dt, idx) => {
-                  if (!dt) return <div key={idx} className="h-24 p-2 border rounded-lg bg-slate-50" />;
-                  const key = dt.toISOString().slice(0,10);
-                  const dayEvents = events.filter(ev => getEventSchedule(ev).some(item => item.date === key));
-                  return (
-                    <div key={idx} className="h-24 p-2 border rounded-lg bg-white flex flex-col">
-                      <div className="text-xs text-slate-400 font-black">{dt.getDate()}</div>
-                      <div className="mt-1 overflow-auto text-[12px]">
-                        {dayEvents.map(ev => (
-                          <button key={ev.id} onClick={() => { setCalendarSelectedEventId(ev.id); setShowEventDetailModal(true); }} className="w-full text-left truncate py-0.5 px-1 rounded hover:bg-blue-50 text-blue-600 font-medium">
-                            <span className="font-medium">{ev.name}</span>
-                            {(() => {
-                              const sessions = getSessionsForDate(ev, key);
-                              return sessions ? sessions.map(s => (
-                                <span key={s} className="ml-2 inline-flex items-center text-[10px] font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full">
-                                  {SESSION_LABELS[s]}
-                                </span>
-                              )) : null;
-                            })()}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                });
-              })()}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL: Event Detail from Calendar */}
-      {showEventDetailModal && calendarSelectedEventId && (() => {
-        const summary = getEventSummary(calendarSelectedEventId!);
-        if (!summary) return null;
-        const ev = summary.event;
-        return (
-          <div key={ev.id} className="fixed inset-0 bg-black/70 z-[70] flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl w-full max-w-2xl p-6 shadow-2xl max-h-[90vh] overflow-auto relative z-[80]">
-              <div className="flex justify-between items-start mb-4">
-                <div>
-                  <h3 className="text-2xl font-black">{ev.name}</h3>
-                  <p className="text-sm text-slate-500">{ev.client} • {ev.location}</p>
-                  <div className="flex items-center gap-3 mt-1">
-                    <p className="text-xs text-slate-400">{ev.startDate} → {ev.endDate}</p>
-                    {(() => {
-                      const schedule = getEventSchedule(ev);
-                      const uniqueSessions = Array.from(new Set(schedule.flatMap(item => item.sessions)));
-                      return uniqueSessions.map(session => (
-                        <div key={session} className="inline-flex items-center text-[11px] font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full">
-                          {SESSION_LABELS[session]}
-                        </div>
-                      ));
-                    })()}
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  <button onClick={() => { setShowEventDetailModal(false); setCalendarSelectedEventId(null); }} className="px-4 py-2 bg-slate-100 rounded-lg">Đóng</button>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                <div className="bg-slate-50 p-4 rounded-lg">
-                  <p className="text-xs font-black text-slate-500 uppercase">Doanh thu</p>
-                  <p className="text-lg font-black text-blue-600">{summary.revenue.toLocaleString()}đ</p>
-                </div>
-                <div className="bg-slate-50 p-4 rounded-lg">
-                  <p className="text-xs font-black text-slate-500 uppercase">Chi phí</p>
-                  <p className="text-lg font-black text-orange-500">{summary.totalCosts.toLocaleString()}đ</p>
-                </div>
-                <div className="bg-slate-50 p-4 rounded-lg">
-                  <p className="text-xs font-black text-slate-500 uppercase">Lợi nhuận gộp</p>
-                  <p className="text-lg font-black text-green-600">{summary.grossProfit.toLocaleString()}đ ({summary.profitMargin.toFixed(1)}%)</p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="bg-white p-4 rounded-lg border">
-                  <p className="text-xs text-slate-400 uppercase font-black">Địa điểm</p>
-                  <p className="font-black">{ev.location}</p>
-                </div>
-                <div className="bg-white p-4 rounded-lg border">
-                  <p className="text-xs text-slate-400 uppercase font-black">Nhân sự</p>
-                  <p className="font-black">{summary.staffCount} người</p>
-                </div>
-                <div className="bg-white p-4 rounded-lg border">
-                  <p className="text-xs text-slate-400 uppercase font-black">Thiết bị</p>
-                  <p className="font-black">{summary.itemsCount} cái</p>
-                </div>
-              </div>
-
-              <div className="mt-6">
-                <h4 className="font-black text-slate-700 mb-2">Danh sách chi tiết</h4>
-                  <div className="bg-white rounded-lg border p-4">
-                  <p className="text-sm"><b>Lịch tổ chức:</b> {getEventSchedule(ev).length ? getEventSchedule(ev).map(item => `${new Date(item.date).toLocaleDateString('vi-VN')} (${item.sessions.map(s => SESSION_LABELS[s]).join(', ')})`).join(', ') : 'Không có'}</p>
-                  <p className="text-sm"><b>Nhân sự:</b> {ev.staff?.length ? ev.staff.map(s => {
-                      const emp = employees.find(en => en.id === s.employeeId);
-                      const name = emp ? emp.name : s.employeeId;
-                      const staffSessions = getStaffSessions(s);
-                      const sess = staffSessions.length ? ` (${staffSessions.map(sess => SESSION_LABELS[sess]).join(', ')})` : '';
-                      const date = s.shiftDate ? ` ${new Date(s.shiftDate).toLocaleDateString('vi-VN')}` : '';
-                      return `${name}${sess}${date}`;
-                    }).join(', ') : 'Không có'}</p>
-                  <p className="text-sm mt-2"><b>Chi phí:</b> {ev.expenses?.length ? ev.expenses.map(ex => `${ex.description} (${ex.amount}đ)`).join('; ') : 'Không có'}</p>
-                  <p className="text-sm mt-2"><b>Thiết bị:</b> {ev.items?.map(it => `${it.itemId} x ${it.quantity}`).join(', ') || 'Không có'}</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
 
       {/* MODAL: Print Slip */}
       {showPrintModal && selectedEvent && (
