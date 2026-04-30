@@ -1,11 +1,14 @@
 import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { Award, BookOpenCheck, CheckCircle2, GraduationCap, PlayCircle, Search, ShieldCheck, Sparkles, Target, Trophy, Users, XCircle, FileText, Video, CheckSquare } from 'lucide-react';
-import { CareerRank, Employee, Event, LearningAttempt, LearningLesson, LearningProfile, LearningQuestion, LearningTrack } from '../types';
+import { CareerRank, Employee, Event, LearningAttempt, LearningLesson, LearningProfile, LearningQuestion, LearningTrack, UserAccount } from '../types';
 
 interface ElearningProps {
   tracks: LearningTrack[];
   profiles: LearningProfile[];
   attempts: LearningAttempt[];
+  accounts?: UserAccount[];
+  teamProfiles?: LearningProfile[];
+  teamAttempts?: LearningAttempt[];
   leaderboardProfiles?: LearningProfile[];
   ranks: CareerRank[];
   employees: Employee[];
@@ -208,6 +211,9 @@ export const Elearning: React.FC<ElearningProps> = ({
   tracks,
   profiles,
   attempts,
+  accounts = [],
+  teamProfiles = [],
+  teamAttempts = [],
   leaderboardProfiles = [],
   ranks,
   employees,
@@ -467,18 +473,89 @@ export const Elearning: React.FC<ElearningProps> = ({
 
   const profileAttemptsByLearnerId = useMemo(() => {
     const groupedAttempts = new Map<string, LearningAttempt[]>();
+    const sourceAttempts = canViewTeamProgress ? teamAttempts : attempts;
 
-    attempts.forEach(attempt => {
+    sourceAttempts.forEach(attempt => {
       const currentAttempts = groupedAttempts.get(attempt.learnerId) || [];
       currentAttempts.push(attempt);
       groupedAttempts.set(attempt.learnerId, currentAttempts);
     });
 
     return groupedAttempts;
-  }, [attempts]);
+  }, [attempts, canViewTeamProgress, teamAttempts]);
+
+  const teamProfileSource = useMemo(() => {
+    if (!canViewTeamProgress) return [];
+
+    const mergedProfiles = new Map<string, LearningProfile>();
+
+    teamProfiles.forEach(profile => {
+      const key = profile.userAccountId || profile.id;
+      if (!key) return;
+      mergedProfiles.set(key, profile);
+    });
+
+    accounts
+      .filter(account => account.isActive !== false)
+      .forEach(account => {
+        const existing = mergedProfiles.get(account.id);
+        const linkedEmployee = account.linkedEmployeeId
+          ? employees.find(employee => employee.id === account.linkedEmployeeId)
+          : undefined;
+
+        mergedProfiles.set(account.id, {
+          id: existing?.id || `learning-user-${account.id}`,
+          name: existing?.name || linkedEmployee?.name || account.name,
+          employeeId: existing?.employeeId || linkedEmployee?.id || account.linkedEmployeeId,
+          userAccountId: account.id,
+          userName: existing?.userName || account.name,
+          tenureMonths: existing?.tenureMonths ?? 0,
+          eventsAttended: existing?.eventsAttended ?? 0,
+          scenarioScore: existing?.scenarioScore ?? 0,
+          roleHistory: existing?.roleHistory && existing.roleHistory.length > 0
+            ? existing.roleHistory
+            : [linkedEmployee?.role || account.role],
+          badges: existing?.badges || [],
+          currentRank: existing?.currentRank,
+          completedLessons: existing?.completedLessons || [],
+          preferredTracks: existing?.preferredTracks || [],
+          progress: existing?.progress || {},
+          certificates: existing?.certificates || [],
+          totalScore: existing?.totalScore ?? 0,
+          rankId: existing?.rankId ?? null
+        });
+      });
+
+    employees.forEach(employee => {
+      const alreadyLinked = Array.from(mergedProfiles.values()).some(profile => profile.employeeId === employee.id);
+      if (alreadyLinked) return;
+
+      const syntheticId = `learning-employee-${employee.id}`;
+      mergedProfiles.set(syntheticId, {
+        id: syntheticId,
+        name: employee.name,
+        employeeId: employee.id,
+        userName: employee.name,
+        tenureMonths: 0,
+        eventsAttended: 0,
+        scenarioScore: 0,
+        roleHistory: employee.role ? [employee.role] : [],
+        badges: [],
+        completedLessons: [],
+        preferredTracks: [],
+        progress: {},
+        certificates: [],
+        totalScore: 0,
+        rankId: null
+      });
+    });
+
+    return Array.from(mergedProfiles.values());
+  }, [accounts, canViewTeamProgress, employees, teamProfiles]);
 
   const teamProgressRows = useMemo(() => {
     if (!canViewTeamProgress) return [];
+    const sourceProfiles = teamProfileSource.length > 0 ? teamProfileSource : teamProfiles.length > 0 ? teamProfiles : profiles;
 
     const totalLessons = localTracks.reduce((sum, track) => sum + track.lessons.length, 0);
     const totalTracks = localTracks.length;
@@ -487,7 +564,7 @@ export const Elearning: React.FC<ElearningProps> = ({
       0
     );
 
-    const rows = profiles.map(profile => {
+    const rows = sourceProfiles.map(profile => {
       const learnerAttempts = profileAttemptsByLearnerId.get(profile.id) || [];
       const latestAttempts = new Map<string, LearningAttempt>();
 
@@ -588,7 +665,7 @@ export const Elearning: React.FC<ElearningProps> = ({
       }
       return a.name.localeCompare(b.name, 'vi');
     });
-  }, [canViewTeamProgress, localTracks, profiles, profileAttemptsByLearnerId, employees]);
+  }, [canViewTeamProgress, localTracks, teamProfileSource, teamProfiles, profiles, profileAttemptsByLearnerId, employees]);
 
   const teamProgressSummary = useMemo(() => {
     const totalMembers = teamProgressRows.length;

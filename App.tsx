@@ -136,6 +136,8 @@ const App: React.FC = () => {
   });
   const [learningProfilesState, setLearningProfilesState] = useState<LearningProfile[]>([]);
   const [learningAttemptsState, setLearningAttemptsState] = useState<LearningAttempt[]>([]);
+  const [learningTeamProfilesState, setLearningTeamProfilesState] = useState<LearningProfile[]>([]);
+  const [learningTeamAttemptsState, setLearningTeamAttemptsState] = useState<LearningAttempt[]>([]);
   const [learningLeaderboardProfiles, setLearningLeaderboardProfiles] = useState<LearningProfile[]>([]);
   const [activeSessions, setActiveSessions] = useState<ActiveSession[]>([]);
   const initialLastUpdate = typeof localStorage !== 'undefined' ? localStorage.getItem('ebus_last_update') : null;
@@ -282,10 +284,18 @@ const App: React.FC = () => {
             })
             .filter(profile => profile.name || profile.userName);
 
+          const nextAttempts = (users || []).flatMap((entry: any) =>
+            Array.isArray(entry?.attempts) ? entry.attempts : []
+          );
+
+          setLearningTeamProfilesState(nextProfiles);
+          setLearningTeamAttemptsState(nextAttempts);
           setLearningLeaderboardProfiles(nextProfiles);
         });
       } catch (error) {
         console.error('Failed to subscribe learning users:', error);
+        setLearningTeamProfilesState([]);
+        setLearningTeamAttemptsState([]);
         setLearningLeaderboardProfiles([]);
       }
     };
@@ -1901,6 +1911,9 @@ const App: React.FC = () => {
           tracks={appState.learningTracks || []}
           profiles={learningProfilesState}
           attempts={learningAttemptsState}
+          accounts={appState.userAccounts || []}
+          teamProfiles={learningTeamProfilesState}
+          teamAttempts={learningTeamAttemptsState}
           leaderboardProfiles={learningLeaderboardProfiles}
           ranks={appState.careerRanks || []}
           employees={appState.employees}
