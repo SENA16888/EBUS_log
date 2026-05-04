@@ -13,13 +13,15 @@ interface ElearningProps {
   ranks: CareerRank[];
   employees: Employee[];
   events: Event[];
-  onSubmitAttempt: (attempt: LearningAttempt) => void;
+  onSubmitAttempts: (attempts: LearningAttempt[], profile: LearningProfile) => void;
   onUpsertProfile: (profile: LearningProfile) => void;
   onUpdateTracks: (tracks: LearningTrack[]) => void;
   onDeleteProfile: (profileId: string) => void;
+  onGrantRetake?: (userAccountId: string, lessonId: string) => void;
   canEdit?: boolean;
   isAdminView?: boolean;
   canViewTeamProgress?: boolean;
+  canManageRetakes?: boolean;
   currentUserId?: string;
   currentUserName?: string;
   currentEmployeeId?: string;
@@ -87,6 +89,14 @@ type TeamProgressRow = {
   statusClassName: string;
   latestActivityText: string;
   latestActivityAt?: string;
+};
+
+type RetakeLessonRow = {
+  lessonId: string;
+  lessonTitle: string;
+  trackTitle: string;
+  attemptedAt?: string;
+  remainingRetakes: number;
 };
 
 const QUICK_IMPORT_OPTION_LABELS = ['A', 'B', 'C', 'D'] as const;
@@ -218,13 +228,15 @@ export const Elearning: React.FC<ElearningProps> = ({
   ranks,
   employees,
   events,
-  onSubmitAttempt,
+  onSubmitAttempts,
   onUpsertProfile,
   onUpdateTracks,
   onDeleteProfile,
+  onGrantRetake,
   canEdit = true,
   isAdminView = true,
   canViewTeamProgress = false,
+  canManageRetakes = false,
   currentUserId,
   currentUserName,
   currentEmployeeId
@@ -243,6 +255,7 @@ export const Elearning: React.FC<ElearningProps> = ({
   const [quickQuizSuccess, setQuickQuizSuccess] = useState<string>('');
   const [latestQuizResult, setLatestQuizResult] = useState<QuizResultSummary | null>(null);
   const [showFullLeaderboard, setShowFullLeaderboard] = useState(false);
+  const [selectedRetakeLearnerId, setSelectedRetakeLearnerId] = useState<string | null>(null);
   const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastSavedTracksRef = useRef<LearningTrack[]>(tracks);
 
@@ -337,7 +350,8 @@ export const Elearning: React.FC<ElearningProps> = ({
       completedLessons: [],
       certificates: [],
       totalScore: 0,
-      rankId: null
+      rankId: null,
+      retakePermissions: {}
     };
     onUpsertProfile(newProfile);
   }, [currentUserId, currentUserName, currentEmployeeId, activeProfile, employees, onUpsertProfile]);
@@ -389,6 +403,29 @@ export const Elearning: React.FC<ElearningProps> = ({
     if (!selectedLesson) return [];
     return selectedLesson.questions;
   }, [selectedLesson]);
+
+  const lessonCatalog = useMemo(() => {
+    const lessonMap = new Map<string, { lessonTitle: string; trackTitle: string }>();
+    localTracks.forEach(track => {
+      track.lessons.forEach(lesson => {
+        lessonMap.set(lesson.id, {
+          lessonTitle: lesson.title,
+          trackTitle: track.title
+        });
+      });
+    });
+    return lessonMap;
+  }, [localTracks]);
+
+  const selectedLessonRetakeAllowance = selectedLesson
+    ? activeProfile?.retakePermissions?.[selectedLesson.id] || 0
+    : 0;
+
+  const hasSubmittedSelectedLesson = selectedLesson
+    ? profileAttempts.some(attempt => attempt.lessonId === selectedLesson.id)
+    : false;
+
+  const canStartSelectedLessonQuiz = isAdminView || !hasSubmittedSelectedLesson || selectedLessonRetakeAllowance > 0;
 
   const lessonProgressMap = useMemo(() => {
     const progressMap = new Map<string, LessonProgressSummary>();
@@ -685,6 +722,50 @@ export const Elearning: React.FC<ElearningProps> = ({
     };
   }, [teamProgressRows]);
 
+  const retakeLessonsByLearnerId = useMemo(() => {
+    const retakeMap = new Map<string, RetakeLessonRow[]>();
+    if (!canViewTeamProgress) return retakeMap;
+
+    teamProfileSource.forEach(profile => {
+      const lessonAttempts = new Map<string, string>();
+      const learnerAttempts = profileAttemptsByLearnerId.get(profile.id) || [];
+
+      learnerAttempts.forEach(attempt => {
+        const existingLatestAt = lessonAttempts.get(attempt.lessonId);
+        if (!existingLatestAt || attempt.createdAt > existingLatestAt) {
+          lessonAttempts.set(attempt.lessonId, attempt.createdAt);
+        }
+      });
+
+      const rows = Array.from(lessonAttempts.entries())
+        .map(([lessonId, attemptedAt]) => {
+          const meta = lessonCatalog.get(lessonId);
+          return {
+            lessonId,
+            lessonTitle: meta?.lessonTitle || lessonId,
+            trackTitle: meta?.trackTitle || 'Chưa rõ chủ đề',
+            attemptedAt,
+            remainingRetakes: profile.retakePermissions?.[lessonId] || 0
+          };
+        })
+        .sort((a, b) => (b.attemptedAt || '').localeCompare(a.attemptedAt || ''));
+
+      retakeMap.set(profile.id, rows);
+    });
+
+    return retakeMap;
+  }, [canViewTeamProgress, teamProfileSource, profileAttemptsByLearnerId, lessonCatalog]);
+
+  const selectedRetakeProfile = useMemo(
+    () => teamProfileSource.find(profile => profile.id === selectedRetakeLearnerId) || null,
+    [teamProfileSource, selectedRetakeLearnerId]
+  );
+
+  const selectedRetakeLessons = useMemo(
+    () => (selectedRetakeLearnerId ? retakeLessonsByLearnerId.get(selectedRetakeLearnerId) || [] : []),
+    [retakeLessonsByLearnerId, selectedRetakeLearnerId]
+  );
+
   const sortedLeaderboardProfiles = useMemo(() =>
     [...leaderboardProfiles]
       .filter(profile => (profile.userName || profile.name) && typeof (profile.totalScore ?? 0) === 'number')
@@ -717,6 +798,11 @@ export const Elearning: React.FC<ElearningProps> = ({
   };
 
   const handleStartQuiz = () => {
+    if (!isAdminView && hasSubmittedSelectedLesson && selectedLessonRetakeAllowance <= 0) {
+      alert('Bạn đã nộp bài kiểm tra này. Chỉ ADMIN mới có thể cấp quyền làm lại.');
+      return;
+    }
+
     const hydratedAnswers: Record<string, AnswerDraft> = {};
 
     lessonQuestions.forEach(question => {
@@ -801,6 +887,11 @@ export const Elearning: React.FC<ElearningProps> = ({
       return;
     }
 
+    if (hasSubmittedSelectedLesson && selectedLessonRetakeAllowance <= 0) {
+      alert('Bài kiểm tra này đã được nộp. Vui lòng liên hệ ADMIN nếu cần mở quyền làm lại.');
+      return;
+    }
+
     for (const question of lessonQuestions) {
       const draft = answers[question.id];
       if (!draft || (question.type === 'MULTIPLE_CHOICE' && draft.selectedOption === undefined) || (question.type === 'OPEN' && !draft.answerText?.trim())) {
@@ -817,8 +908,6 @@ export const Elearning: React.FC<ElearningProps> = ({
       alert('Có lỗi khi chấm bài. Vui lòng thử lại.');
       return;
     }
-
-    attemptsToSubmit.forEach(attempt => onSubmitAttempt(attempt));
 
     const resultItems: QuizResultItem[] = lessonQuestions.map(question => {
       const attempt = attemptsToSubmit.find(item => item.questionId === question.id)!;
@@ -858,9 +947,21 @@ export const Elearning: React.FC<ElearningProps> = ({
 
     const existingCompletedLessons = new Set(activeProfile.completedLessons || []);
     existingCompletedLessons.add(selectedLesson.id);
-    onUpsertProfile({
+    const nextRetakePermissions = { ...(activeProfile.retakePermissions || {}) };
+
+    if (hasSubmittedSelectedLesson && selectedLessonRetakeAllowance > 0) {
+      const nextAllowance = Math.max(0, selectedLessonRetakeAllowance - 1);
+      if (nextAllowance > 0) {
+        nextRetakePermissions[selectedLesson.id] = nextAllowance;
+      } else {
+        delete nextRetakePermissions[selectedLesson.id];
+      }
+    }
+
+    onSubmitAttempts(attemptsToSubmit, {
       ...activeProfile,
-      completedLessons: Array.from(existingCompletedLessons)
+      completedLessons: Array.from(existingCompletedLessons),
+      retakePermissions: nextRetakePermissions
     });
 
     setViewMode('result');
@@ -1465,6 +1566,9 @@ export const Elearning: React.FC<ElearningProps> = ({
               Ưu tiên theo dõi: {teamProgressSummary.atRiskMembers} nhân viên đang chậm tiến độ hoặc chưa bắt đầu.
             </div>
           </div>
+          <div className="mt-4 rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+            Mỗi nhân sự chỉ được nộp bài kiểm tra 1 lần. Sau khi nộp, chỉ ADMIN mới được mở quyền làm lại.
+          </div>
         </div>
 
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
@@ -1525,6 +1629,65 @@ export const Elearning: React.FC<ElearningProps> = ({
           </div>
         )}
 
+        {canManageRetakes && selectedRetakeProfile && (
+          <div className="rounded-2xl border border-amber-100 bg-white shadow-sm overflow-hidden">
+            <div className="border-b border-amber-100 bg-amber-50 px-5 py-4">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold text-amber-900">Quản lý quyền làm lại</h3>
+                  <p className="mt-1 text-sm text-amber-700">
+                    {selectedRetakeProfile.userName || selectedRetakeProfile.name} chỉ có thể làm lại khi ADMIN cấp thêm lượt.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedRetakeLearnerId(null)}
+                  className="inline-flex items-center justify-center rounded-lg border border-amber-200 bg-white px-4 py-2 text-sm font-medium text-amber-800 hover:bg-amber-100 transition-colors"
+                >
+                  Đóng quản lý
+                </button>
+              </div>
+            </div>
+
+            {selectedRetakeLessons.length === 0 ? (
+              <div className="px-5 py-6 text-sm text-slate-600">
+                Nhân sự này chưa có bài kiểm tra nào đã nộp để mở quyền làm lại.
+              </div>
+            ) : (
+              <div className="space-y-3 p-5">
+                {selectedRetakeLessons.map(lesson => (
+                  <div key={lesson.lessonId} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                      <div>
+                        <div className="text-sm font-semibold text-slate-800">{lesson.lessonTitle}</div>
+                        <div className="mt-1 text-xs text-slate-500">{lesson.trackTitle}</div>
+                        <div className="mt-2 text-xs text-slate-500">
+                          Nộp gần nhất: {formatDateTime(lesson.attemptedAt)}
+                        </div>
+                        <div className="mt-1 text-xs text-amber-700">
+                          Lượt làm lại còn hiệu lực: {lesson.remainingRetakes}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={!selectedRetakeProfile.userAccountId}
+                        onClick={() => selectedRetakeProfile.userAccountId && onGrantRetake?.(selectedRetakeProfile.userAccountId, lesson.lessonId)}
+                        className={`inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+                          selectedRetakeProfile.userAccountId
+                            ? 'bg-amber-500 text-white hover:bg-amber-600'
+                            : 'bg-slate-200 text-slate-500 cursor-not-allowed'
+                        }`}
+                      >
+                        Cấp 1 lượt làm lại
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
           <div className="border-b border-slate-100 px-5 py-4">
             <h3 className="text-lg font-semibold text-slate-800">Chi tiết theo nhân viên</h3>
@@ -1544,6 +1707,7 @@ export const Elearning: React.FC<ElearningProps> = ({
                     <th className="px-5 py-3 text-left font-semibold">Điểm</th>
                     <th className="px-5 py-3 text-left font-semibold">Lần học gần nhất</th>
                     <th className="px-5 py-3 text-left font-semibold">Trạng thái</th>
+                    {canManageRetakes && <th className="px-5 py-3 text-left font-semibold">Làm lại</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -1584,6 +1748,22 @@ export const Elearning: React.FC<ElearningProps> = ({
                           {row.statusLabel}
                         </span>
                       </td>
+                      {canManageRetakes && (
+                        <td className="px-5 py-4">
+                          <button
+                            type="button"
+                            disabled={row.attemptCount === 0}
+                            onClick={() => setSelectedRetakeLearnerId(prev => prev === row.id ? null : row.id)}
+                            className={`inline-flex items-center justify-center rounded-lg px-3 py-2 text-xs font-medium transition-colors ${
+                              row.attemptCount > 0
+                                ? 'border border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100'
+                                : 'bg-slate-200 text-slate-500 cursor-not-allowed'
+                            }`}
+                          >
+                            {selectedRetakeLearnerId === row.id ? 'Đang quản lý' : 'Mở quyền'}
+                          </button>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -2133,12 +2313,31 @@ D. ...
             {/* Quiz Button */}
             {lessonQuestions.length > 0 && (
               <div className="text-center">
+                {!isAdminView && hasSubmittedSelectedLesson && selectedLessonRetakeAllowance <= 0 && (
+                  <div className="mb-4 rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                    Bài kiểm tra này đã nộp. Bạn không thể làm lại trừ khi được ADMIN cấp quyền.
+                  </div>
+                )}
+                {!isAdminView && hasSubmittedSelectedLesson && selectedLessonRetakeAllowance > 0 && (
+                  <div className="mb-4 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+                    ADMIN đã mở {selectedLessonRetakeAllowance} lượt làm lại cho bài kiểm tra này.
+                  </div>
+                )}
                 <button
                   onClick={handleStartQuiz}
-                  className="inline-flex items-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors"
+                  disabled={!canStartSelectedLessonQuiz}
+                  className={`inline-flex items-center gap-2 px-6 py-3 rounded-lg font-medium transition-colors ${
+                    canStartSelectedLessonQuiz
+                      ? 'bg-blue-600 text-white hover:bg-blue-700'
+                      : 'bg-slate-200 text-slate-500 cursor-not-allowed'
+                  }`}
                 >
                   <CheckSquare size={20} />
-                  Kiểm tra
+                  {!isAdminView && hasSubmittedSelectedLesson
+                    ? selectedLessonRetakeAllowance > 0
+                      ? 'Làm lại bài kiểm tra'
+                      : 'Đã nộp bài'
+                    : 'Kiểm tra'}
                 </button>
               </div>
             )}
@@ -2167,6 +2366,12 @@ D. ...
 
         <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6">
           <h2 className="text-xl font-bold text-slate-800 mb-6">Bài kiểm tra trắc nghiệm</h2>
+
+          {!isAdminView && hasSubmittedSelectedLesson && selectedLessonRetakeAllowance > 0 && (
+            <div className="mb-6 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+              Bạn đang dùng 1 lượt làm lại do ADMIN cấp. Sau lần nộp này còn lại {Math.max(0, selectedLessonRetakeAllowance - 1)} lượt.
+            </div>
+          )}
 
           <div className="space-y-6">
             {lessonQuestions.map((q, idx) => {
@@ -2300,12 +2505,18 @@ D. ...
           </div>
 
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-            <button
-              onClick={handleStartQuiz}
-              className="inline-flex items-center justify-center rounded-lg bg-blue-600 px-5 py-3 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
-            >
-              Làm lại bài kiểm tra
-            </button>
+            {(!isAdminView && selectedLessonRetakeAllowance > 0) || isAdminView ? (
+              <button
+                onClick={handleStartQuiz}
+                className="inline-flex items-center justify-center rounded-lg bg-blue-600 px-5 py-3 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
+              >
+                {isAdminView ? 'Mở lại bài kiểm tra' : `Làm lại bài kiểm tra (${selectedLessonRetakeAllowance} lượt còn lại)`}
+              </button>
+            ) : (
+              <div className="inline-flex items-center justify-center rounded-lg border border-amber-100 bg-amber-50 px-5 py-3 text-sm font-medium text-amber-800">
+                Đã nộp bài. Chỉ ADMIN mới có thể mở quyền làm lại.
+              </div>
+            )}
             <button
               onClick={handleBackToLesson}
               className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-5 py-3 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"

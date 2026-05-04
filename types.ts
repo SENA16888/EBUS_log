@@ -543,6 +543,7 @@ export interface LearningProfile {
   certificates?: string[];
   totalScore?: number;
   rankId?: string | null;
+  retakePermissions?: Record<string, number>;
 }
 
 export interface CareerRank {

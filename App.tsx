@@ -98,7 +98,8 @@ const buildLearningProfileForUser = (
     progress: existing?.progress || {},
     certificates: existing?.certificates || [],
     totalScore: existing?.totalScore ?? 0,
-    rankId: existing?.rankId ?? null
+    rankId: existing?.rankId ?? null,
+    retakePermissions: existing?.retakePermissions || {}
   };
 };
 
@@ -657,19 +658,25 @@ const App: React.FC = () => {
     });
   };
 
-  const handleSubmitLearningAttempt = (attempt: LearningAttempt) => {
-    setLearningAttemptsState(prev => {
-      const filtered = prev.filter(a => !(a.learnerId === attempt.learnerId && a.lessonId === attempt.lessonId && a.questionId === attempt.questionId));
-      const updatedAttempts = [attempt, ...filtered].slice(0, 200);
-      const currentProfile = learningProfilesState[0] || (currentUser ? buildLearningProfileForUser(currentUser, appState.employees) : null);
+  const handleSubmitLearningAttempts = (submittedAttempts: LearningAttempt[], profile: LearningProfile) => {
+    if (!currentUser || submittedAttempts.length === 0) return;
 
-      if (currentProfile) {
-        void persistLearningUserData(currentProfile, updatedAttempts);
-      }
+    const normalizedProfile = buildLearningProfileForUser(currentUser, appState.employees, profile);
+    setLearningProfilesState([normalizedProfile]);
+    setLearningAttemptsState(prev => {
+      const submittedKeys = new Set(
+        submittedAttempts.map(attempt => `${attempt.learnerId}::${attempt.lessonId}::${attempt.questionId}`)
+      );
+      const filtered = prev.filter(a => !submittedKeys.has(`${a.learnerId}::${a.lessonId}::${a.questionId}`));
+      const updatedAttempts = [...submittedAttempts, ...filtered].slice(0, 200);
+      void persistLearningUserData(normalizedProfile, updatedAttempts);
 
       return updatedAttempts;
     });
-    addLog(`Học viên ${attempt.learnerId} nộp câu hỏi ${attempt.questionId} (điểm ${attempt.score}/10)`, 'INFO');
+    addLog(
+      `Học viên ${submittedAttempts[0].learnerId} nộp bài ${submittedAttempts[0].lessonId} (${submittedAttempts.length} câu hỏi)`,
+      'INFO'
+    );
   };
 
   const handleUpsertLearningProfile = (profile: LearningProfile) => {
@@ -692,6 +699,57 @@ const App: React.FC = () => {
     setLearningAttemptsState([]);
     void deleteLearningUserState(currentUser.id);
     addLog(`Đã xóa hồ sơ Elearning ${profileId}`, 'WARNING');
+  };
+
+  const handleGrantLearningRetake = async (targetUserId: string, lessonId: string) => {
+    if (!currentUser || currentUser.role !== 'ADMIN') return;
+
+    const targetAccount = (appState.userAccounts || []).find(account => account.id === targetUserId);
+    if (!targetAccount) {
+      alert('Không tìm thấy tài khoản nhân sự để cấp quyền làm lại.');
+      return;
+    }
+
+    const existingProfile =
+      learningTeamProfilesState.find(profile => profile.userAccountId === targetUserId || profile.id === `learning-user-${targetUserId}`) ||
+      null;
+    const baseProfile = buildLearningProfileForUser(targetAccount, appState.employees, existingProfile);
+    const targetAttempts = learningTeamAttemptsState.filter(attempt => attempt.learnerId === baseProfile.id);
+    const currentAllowance = baseProfile.retakePermissions?.[lessonId] || 0;
+    const updatedProfile = buildLearningProfileForUser(targetAccount, appState.employees, {
+      ...baseProfile,
+      retakePermissions: {
+        ...(baseProfile.retakePermissions || {}),
+        [lessonId]: currentAllowance + 1
+      }
+    });
+
+    try {
+      await saveLearningUserState(targetUserId, {
+        userName: targetAccount.name,
+        profile: updatedProfile,
+        attempts: targetAttempts
+      });
+
+      setLearningTeamProfilesState(prev => {
+        const exists = prev.some(profile => profile.userAccountId === targetUserId || profile.id === updatedProfile.id);
+        if (!exists) return [...prev, updatedProfile];
+        return prev.map(profile =>
+          profile.userAccountId === targetUserId || profile.id === updatedProfile.id
+            ? updatedProfile
+            : profile
+        );
+      });
+
+      if (currentUser.id === targetUserId) {
+        setLearningProfilesState([updatedProfile]);
+      }
+
+      addLog(`ADMIN cấp quyền làm lại bài kiểm tra ${lessonId} cho ${targetAccount.name}`, 'SUCCESS');
+    } catch (error) {
+      console.error('Failed to grant learning retake permission:', error);
+      alert('Không thể cấp quyền làm lại lúc này. Vui lòng thử lại.');
+    }
   };
 
   const handleChecklistScan = (payload: { eventId: string; barcode: string; direction: ChecklistDirection; status?: ChecklistStatus; quantity?: number; note?: string }) => {
@@ -1918,13 +1976,15 @@ const App: React.FC = () => {
           ranks={appState.careerRanks || []}
           employees={appState.employees}
           events={appState.events}
-          onSubmitAttempt={guard('ELEARNING_EDIT', handleSubmitLearningAttempt)}
+          onSubmitAttempts={guard('ELEARNING_EDIT', handleSubmitLearningAttempts)}
           onUpsertProfile={guard('ELEARNING_EDIT', handleUpsertLearningProfile)}
           onUpdateTracks={guard('ELEARNING_EDIT', handleUpdateLearningTracks)}
           onDeleteProfile={guard('ELEARNING_EDIT', handleDeleteLearningProfile)}
+          onGrantRetake={handleGrantLearningRetake}
           canEdit={can('ELEARNING_EDIT')}
           isAdminView={isElearningAdmin}
           canViewTeamProgress={isElearningAdmin}
+          canManageRetakes={currentUser?.role === 'ADMIN'}
           currentUserId={currentUser?.id}
           currentUserName={currentUser?.name}
           currentEmployeeId={currentUser?.linkedEmployeeId}
