@@ -152,6 +152,10 @@ export const Layout: React.FC<LayoutProps> = ({
         <div className="flex-1 overflow-auto p-3 md:p-4 pb-28 md:pb-6">
           {children}
         </div>
+
+        <footer className="px-4 py-3 border-t border-slate-200 bg-white/80 text-center text-[11px] text-slate-400">
+          © Trần Nhân • Thiết kế và lập trình
+        </footer>
       </main>
 
       {/* Mobile bottom nav */}
