@@ -668,7 +668,7 @@ const App: React.FC = () => {
         submittedAttempts.map(attempt => `${attempt.learnerId}::${attempt.lessonId}::${attempt.questionId}`)
       );
       const filtered = prev.filter(a => !submittedKeys.has(`${a.learnerId}::${a.lessonId}::${a.questionId}`));
-      const updatedAttempts = [...submittedAttempts, ...filtered].slice(0, 200);
+      const updatedAttempts = [...submittedAttempts, ...filtered];
       void persistLearningUserData(normalizedProfile, updatedAttempts);
 
       return updatedAttempts;

@@ -229,6 +229,71 @@ const mergePersistedState = (base: Partial<AppState>, patch: Partial<AppState>):
   ...patch
 });
 
+const getLearningAttemptKey = (attempt: any) =>
+  `${attempt?.learnerId || ''}::${attempt?.lessonId || ''}::${attempt?.questionId || ''}`;
+
+const sortLearningAttempts = (attempts: any[]) =>
+  [...attempts].sort((left, right) => (right?.createdAt || '').localeCompare(left?.createdAt || ''));
+
+const mergeLearningAttempts = (existing: any[], incoming: any[]) => {
+  const map = new Map<string, any>();
+
+  [...existing, ...incoming].forEach(attempt => {
+    if (!attempt) return;
+    const key = getLearningAttemptKey(attempt);
+    const current = map.get(key);
+
+    if (!current) {
+      map.set(key, attempt);
+      return;
+    }
+
+    const currentTime = current?.createdAt ? new Date(current.createdAt).getTime() : 0;
+    const nextTime = attempt?.createdAt ? new Date(attempt.createdAt).getTime() : 0;
+    map.set(key, nextTime >= currentTime ? attempt : current);
+  });
+
+  return sortLearningAttempts(Array.from(map.values()));
+};
+
+const mergeStringList = (existing: any, incoming: any) => {
+  const result = new Set<string>();
+  (Array.isArray(existing) ? existing : []).forEach((value: string) => value && result.add(value));
+  (Array.isArray(incoming) ? incoming : []).forEach((value: string) => value && result.add(value));
+  return Array.from(result);
+};
+
+const mergeLearningProfile = (existing: any, incoming: any, mergedAttempts: any[]) => {
+  const nextProfile = {
+    ...(existing || {}),
+    ...(incoming || {})
+  };
+
+  const completedFromAttempts = mergedAttempts
+    .map(attempt => attempt?.lessonId)
+    .filter(Boolean);
+
+  nextProfile.roleHistory = mergeStringList(existing?.roleHistory, incoming?.roleHistory);
+  nextProfile.badges = mergeStringList(existing?.badges, incoming?.badges);
+  nextProfile.preferredTracks = mergeStringList(existing?.preferredTracks, incoming?.preferredTracks);
+  nextProfile.certificates = mergeStringList(existing?.certificates, incoming?.certificates);
+  nextProfile.completedLessons = mergeStringList(
+    mergeStringList(existing?.completedLessons, incoming?.completedLessons),
+    completedFromAttempts
+  );
+  nextProfile.progress = {
+    ...(existing?.progress || {}),
+    ...(incoming?.progress || {})
+  };
+  nextProfile.retakePermissions =
+    incoming && 'retakePermissions' in incoming
+      ? (incoming.retakePermissions || {})
+      : (existing?.retakePermissions || {});
+  nextProfile.totalScore = mergedAttempts.reduce((sum, attempt) => sum + (Number(attempt?.score) || 0), 0);
+
+  return nextProfile;
+};
+
 // Hàm để đảm bảo người dùng được xác thực (Anonymous Auth)
 export const initializeAuth = (): Promise<void> => {
   return new Promise((resolve, reject) => {
@@ -566,12 +631,26 @@ export const saveLearningUserState = async (
     await initializeAuth();
     const timestamp = new Date().toISOString();
     const safePayload = serializeForFirestore(payload);
+    const ref = getLearningUserDocRef(userId);
 
-    await setDoc(getLearningUserDocRef(userId), {
-      ...safePayload,
-      userId,
-      updatedAt: timestamp
-    }, { merge: true });
+    await runTransaction(db, async transaction => {
+      const snap = await transaction.get(ref);
+      const existing = snap.exists() ? (snap.data() as Record<string, any>) : {};
+      const mergedAttempts = mergeLearningAttempts(
+        Array.isArray(existing.attempts) ? existing.attempts : [],
+        Array.isArray(safePayload.attempts) ? safePayload.attempts : []
+      );
+      const mergedProfile = mergeLearningProfile(existing.profile, safePayload.profile, mergedAttempts);
+
+      transaction.set(ref, {
+        ...existing,
+        userId,
+        userName: safePayload.userName || existing.userName,
+        profile: mergedProfile,
+        attempts: mergedAttempts,
+        updatedAt: timestamp
+      }, { merge: true });
+    });
 
     return timestamp;
   } catch (error) {
