@@ -14,7 +14,7 @@ import { AdminLogPage } from './components/AdminLogPage';
 import { AppState, InventoryItem, Event, EventStatus, Transaction, TransactionType, ComboPackage, Employee, Quotation, EventStaffAllocation, EventExpense, EventAdvanceRequest, LogEntry, ChecklistDirection, ChecklistStatus, ChecklistSignature, EventChecklist, LearningAttempt, LearningProfile, AccessPermission, UserAccount, LearningTrack, InventoryReceipt, InventoryReceiptItem, ActiveSession, PayrollAdjustment } from './types';
 import { MOCK_INVENTORY, MOCK_EVENTS, MOCK_TRANSACTIONS, MOCK_PACKAGES, MOCK_EMPLOYEES, MOCK_LEARNING_TRACKS, MOCK_CAREER_RANKS, DEFAULT_USER_ACCOUNTS, MOCK_INVENTORY_RECEIPTS } from './constants';
 import { MessageSquare } from 'lucide-react';
-import { saveAppState, loadAppState, initializeAuth, subscribeToAppState, subscribeToSessions, setSessionOnline, setSessionOffline, saveLearningUserState, subscribeToLearningUserState, deleteLearningUserState, subscribeToLearningUsers } from './services/firebaseService';
+import { PERSISTED_STATE_KEYS, ensureCollectionModelInitialized, initializeAuth, loadCollectionState, subscribeToCollectionState, subscribeToSessions, setSessionOnline, setSessionOffline, syncCollectionStateDiff, saveLearningUserState, subscribeToLearningUserState, deleteLearningUserState, subscribeToLearningUsers } from './services/firebaseService';
 import { ensureInventoryBarcodes, ensureItemBarcode, findDuplicateBarcodeItem, findItemByBarcode, generateBarcode, normalizeBarcode } from './services/barcodeService';
 import { normalizeChecklist } from './services/checklistService';
 import { ACCESS_PERMISSION_VERSION, getDefaultPermissionsForRole, hasPermission, normalizePermissionsForRole, normalizePhone } from './services/accessControl';
@@ -70,6 +70,25 @@ const stripLearningUserData = (state: AppState): AppState => ({
   learningAttempts: []
 });
 
+const createInitialAppState = (): AppState => ({
+  inventory: ensureInventoryBarcodes(MOCK_INVENTORY),
+  events: MOCK_EVENTS,
+  transactions: MOCK_TRANSACTIONS,
+  packages: MOCK_PACKAGES,
+  employees: MOCK_EMPLOYEES,
+  saleItems: [],
+  saleOrders: [],
+  quotations: [],
+  logs: [],
+  inventoryReceipts: MOCK_INVENTORY_RECEIPTS,
+  learningTracks: MOCK_LEARNING_TRACKS,
+  learningProfiles: [],
+  learningAttempts: [],
+  careerRanks: MOCK_CAREER_RANKS,
+  userAccounts: DEFAULT_USER_ACCOUNTS,
+  payrollAdjustments: []
+});
+
 const buildLearningProfileForUser = (
   account: UserAccount,
   employees: Employee[],
@@ -115,26 +134,7 @@ const App: React.FC = () => {
     return localStorage.getItem('ebus_current_user') || '';
   });
   
-  const [appState, setAppState] = useState<AppState>(() => {
-    return {
-      inventory: ensureInventoryBarcodes(MOCK_INVENTORY),
-      events: MOCK_EVENTS,
-      transactions: MOCK_TRANSACTIONS,
-      packages: MOCK_PACKAGES,
-      employees: MOCK_EMPLOYEES,
-      saleItems: [],
-      saleOrders: [],
-      quotations: [],
-      logs: [],
-      inventoryReceipts: MOCK_INVENTORY_RECEIPTS,
-      learningTracks: MOCK_LEARNING_TRACKS,
-      learningProfiles: [],
-      learningAttempts: [],
-      careerRanks: MOCK_CAREER_RANKS,
-      userAccounts: DEFAULT_USER_ACCOUNTS,
-      payrollAdjustments: []
-    };
-  });
+  const [appState, setAppState] = useState<AppState>(() => createInitialAppState());
   const [learningProfilesState, setLearningProfilesState] = useState<LearningProfile[]>([]);
   const [learningAttemptsState, setLearningAttemptsState] = useState<LearningAttempt[]>([]);
   const [learningTeamProfilesState, setLearningTeamProfilesState] = useState<LearningProfile[]>([]);
@@ -145,6 +145,8 @@ const App: React.FC = () => {
   const lastSyncedAtRef = useRef<number>(initialLastUpdate ? new Date(initialLastUpdate).getTime() : 0);
   const isApplyingRemoteRef = useRef(false);
   const pendingRemoteTimestampRef = useRef<string | null>(initialLastUpdate);
+  const lastPersistedStateRef = useRef<AppState>(stripLearningUserData(createInitialAppState()));
+  const lastConflictNoticeRef = useRef<string>('');
   const sessionIdRef = useRef<string>(getSessionId());
   const deviceIdRef = useRef<string>(getDeviceId());
   const presenceIntervalRef = useRef<number | undefined>(undefined);
@@ -352,89 +354,69 @@ const App: React.FC = () => {
     }
   }, [currentUserId, currentUser]);
 
-  // Tải dữ liệu từ Firebase khi component mount
+  // Khởi tạo mô hình dữ liệu mới theo collection và subscribe realtime từng phần
   useEffect(() => {
+    let unsubscribers: Array<() => void> = [];
+    let cancelled = false;
+
     const loadData = async () => {
       try {
         setIsLoading(true);
         await initializeAuth();
-        
-        const firebaseState = await loadAppState();
-        if (firebaseState) {
-          const remoteTimestamp = (firebaseState as any).lastUpdated || null;
-          if (remoteTimestamp) {
-            lastSyncedAtRef.current = new Date(remoteTimestamp).getTime();
-            pendingRemoteTimestampRef.current = remoteTimestamp;
-          }
-          isApplyingRemoteRef.current = true;
-          setAppState(withDefaults(firebaseState));
-        } else {
-          // Nếu Firebase trống, lưu dữ liệu mặc định
-          const now = new Date().toISOString();
-          lastSyncedAtRef.current = new Date(now).getTime();
-          pendingRemoteTimestampRef.current = now;
-          isApplyingRemoteRef.current = true;
-          await saveAppState(stripLearningUserData(withDefaults(appState)), now);
-        }
+
+        const seedState = stripLearningUserData(withDefaults(createInitialAppState()));
+        await ensureCollectionModelInitialized(seedState);
+
+        const collectionState = await loadCollectionState();
+        if (cancelled) return;
+
+        const nextState = withDefaults({
+          ...seedState,
+          ...collectionState
+        } as AppState);
+
+        isApplyingRemoteRef.current = true;
+        lastPersistedStateRef.current = stripLearningUserData(nextState);
+        setAppState(nextState);
+
+        unsubscribers = PERSISTED_STATE_KEYS.map(key =>
+          subscribeToCollectionState(key, rows => {
+            if (cancelled) return;
+            const patch = { [key]: rows } as Partial<AppState>;
+            const merged = withDefaults({
+              ...lastPersistedStateRef.current,
+              ...patch
+            } as AppState);
+            lastPersistedStateRef.current = stripLearningUserData(merged);
+            isApplyingRemoteRef.current = true;
+            setAppState(prev => withDefaults({ ...prev, ...patch } as AppState));
+          })
+        );
       } catch (error) {
-        console.error('Failed to load data from Firebase:', error);
-        // Fallback to localStorage
+        console.error('Failed to load collection-based data from Firebase:', error);
         try {
           const raw = localStorage.getItem('ebus_app_state');
           if (raw) {
-            const savedTimestamp = localStorage.getItem('ebus_last_update');
-            if (savedTimestamp) {
-              lastSyncedAtRef.current = new Date(savedTimestamp).getTime();
-              pendingRemoteTimestampRef.current = savedTimestamp;
-            }
+            const parsed = withDefaults(JSON.parse(raw) as AppState);
             isApplyingRemoteRef.current = true;
-            setAppState(withDefaults(JSON.parse(raw) as AppState));
+            lastPersistedStateRef.current = stripLearningUserData(parsed);
+            setAppState(parsed);
           }
         } catch (err) {
           console.warn('Failed to parse stored app state', err);
         }
       } finally {
-        setIsLoading(false);
+        if (!cancelled) {
+          setIsLoading(false);
+        }
       }
     };
 
-    loadData();
-  }, []);
-
-  // Lắng nghe thay đổi real-time từ Firebase để đồng bộ giữa các tab/thiet bi
-  useEffect(() => {
-    let unsubscribe: (() => void) | undefined;
-
-    const startRealtimeSync = async () => {
-      try {
-        await initializeAuth();
-        unsubscribe = subscribeToAppState((data) => {
-          if (!data) return;
-          const remoteTimestamp = (data as any).lastUpdated || null;
-          const remoteTime = remoteTimestamp ? new Date(remoteTimestamp).getTime() : 0;
-          const localTime = lastSyncedAtRef.current;
-
-          if (remoteTime && remoteTime <= localTime) return;
-
-          if (remoteTime) {
-            lastSyncedAtRef.current = remoteTime;
-            pendingRemoteTimestampRef.current = remoteTimestamp;
-          } else {
-            lastSyncedAtRef.current = Date.now();
-            pendingRemoteTimestampRef.current = null;
-          }
-          isApplyingRemoteRef.current = true;
-          setAppState(withDefaults(data));
-        });
-      } catch (err) {
-        console.error('Failed to start realtime sync:', err);
-      }
-    };
-
-    void startRealtimeSync();
+    void loadData();
 
     return () => {
-      if (unsubscribe) unsubscribe();
+      cancelled = true;
+      unsubscribers.forEach(unsubscribe => unsubscribe());
     };
   }, []);
 
@@ -467,34 +449,52 @@ const App: React.FC = () => {
     };
   }, []);
 
-  // Lưu dữ liệu vào cả localStorage và Firebase ngay sau khi có thay đổi
+  // Lưu dữ liệu theo từng collection để tránh ghi đè toàn bộ appState
   useEffect(() => {
-    if (isLoading) return; // Không lưu khi đang tải
+    if (isLoading) return;
 
     const saveData = async () => {
-      const timestamp = pendingRemoteTimestampRef.current || new Date().toISOString();
-      const persistentAppState = stripLearningUserData(appState);
+      const timestamp = new Date().toISOString();
+      const persistentAppState = stripLearningUserData(withDefaults(appState));
+      let shouldKeepRemoteFlag = false;
       try {
-        // Lưu vào localStorage (backup) nhưng loại bỏ dữ liệu học tập cá nhân
         localStorage.setItem('ebus_app_state', JSON.stringify(persistentAppState));
         localStorage.setItem('ebus_last_update', timestamp);
         lastSyncedAtRef.current = new Date(timestamp).getTime();
 
         if (isApplyingRemoteRef.current) {
           isApplyingRemoteRef.current = false;
-          pendingRemoteTimestampRef.current = null;
           return;
         }
-        
-        // Lưu vào Firebase ngay để tránh mất dữ liệu khi reload
-        await saveAppState(persistentAppState, timestamp);
+
+        const result = await syncCollectionStateDiff(
+          lastPersistedStateRef.current,
+          persistentAppState,
+          resolveActor()
+        );
+        lastPersistedStateRef.current = stripLearningUserData(withDefaults({
+          ...persistentAppState,
+          ...result.nextState
+        } as AppState));
+
+        if (result.conflicts.length > 0 && Object.keys(result.remoteOverrides).length > 0) {
+          const notice = result.conflicts.map(conflict => `${conflict.key}:${conflict.id}`).join(', ');
+          if (lastConflictNoticeRef.current !== notice) {
+            lastConflictNoticeRef.current = notice;
+            alert('Một số dữ liệu đã được người khác cập nhật trước bạn. Hệ thống đã nạp lại bản mới nhất để tránh ghi đè.');
+          }
+          isApplyingRemoteRef.current = true;
+          shouldKeepRemoteFlag = true;
+          setAppState(prev => withDefaults({ ...prev, ...result.remoteOverrides } as AppState));
+        } else {
+          lastConflictNoticeRef.current = '';
+        }
       } catch (err) {
         console.warn('Failed to persist app state:', err);
       } finally {
-        if (isApplyingRemoteRef.current) {
+        if (isApplyingRemoteRef.current && !shouldKeepRemoteFlag) {
           isApplyingRemoteRef.current = false;
         }
-        pendingRemoteTimestampRef.current = null;
       }
     };
 
@@ -1566,26 +1566,10 @@ const App: React.FC = () => {
     addLog(`Đã xóa hàng bán: ${name}`, 'SUCCESS');
   };
 
-  // Helper to save state immediately for critical event operations
-  const saveEventStateImmediate = async (newState: AppState) => {
-    const timestamp = new Date().toISOString();
-    try {
-      lastSyncedAtRef.current = new Date(timestamp).getTime();
-      pendingRemoteTimestampRef.current = timestamp;
-      isApplyingRemoteRef.current = true;
-      await saveAppState(newState, timestamp);
-      console.log('Event state saved immediately to Firestore');
-    } catch (err) {
-      console.error('Failed to save event state immediately:', err);
-    }
-  };
-
   // --- Handlers cho Sự kiện (Full Logic) ---
   const handleCreateEvent = (event: Event) => {
     const eventWithChecklist: Event = { ...event, checklist: normalizeChecklist(event.checklist) };
-    const newState = { ...appState, events: [...appState.events, eventWithChecklist] };
-    setAppState(newState);
-    saveEventStateImmediate(newState); // Save immediately
+    setAppState(prev => ({ ...prev, events: [...prev.events, eventWithChecklist] }));
     addLog(`Tạo sự kiện mới: "${event.name}"`, 'SUCCESS');
   };
 
@@ -1624,7 +1608,6 @@ const App: React.FC = () => {
     });
 
     if (nextState) {
-      saveEventStateImmediate(nextState);
       addLog(`ADMIN xóa sự kiện: "${deletedName}"`, 'WARNING');
     }
   };
