@@ -366,7 +366,51 @@ export const Elearning: React.FC<ElearningProps> = ({
     setLatestQuizResult(null);
   }, [selectedLessonId]);
 
-  const getVideoEmbedSource = (sourceUrl: string) => {
+  const getVideoUrlList = (rawUrls?: string) =>
+    (rawUrls || '')
+      .split(/[\s,;]+/)
+      .map(url => url.trim())
+      .filter(Boolean);
+
+  const getYoutubeEmbedUrl = (sourceUrl: string) => {
+    const normalizedUrl = /^https?:\/\//i.test(sourceUrl) ? sourceUrl : `https://${sourceUrl}`;
+
+    try {
+      const url = new URL(normalizedUrl);
+      const hostname = url.hostname.replace(/^www\./, '').toLowerCase();
+      const pathParts = url.pathname.split('/').filter(Boolean);
+      let videoId = '';
+
+      if (hostname === 'youtu.be') {
+        videoId = pathParts[0] || '';
+      } else if (hostname === 'youtube.com' || hostname === 'm.youtube.com' || hostname === 'music.youtube.com') {
+        if (pathParts[0] === 'watch') {
+          videoId = url.searchParams.get('v') || '';
+        } else if (['embed', 'shorts', 'live'].includes(pathParts[0])) {
+          videoId = pathParts[1] || '';
+        }
+      }
+
+      if (!videoId) return '';
+
+      const playlistId = url.searchParams.get('list');
+      const embedUrl = new URL(`https://www.youtube.com/embed/${videoId}`);
+      if (playlistId) {
+        embedUrl.searchParams.set('list', playlistId);
+      }
+      return embedUrl.toString();
+    } catch {
+      return '';
+    }
+  };
+
+  const getVideoEmbedSource = (rawSourceUrl: string) => {
+    const sourceUrl = rawSourceUrl.trim();
+    const youtubeEmbedUrl = getYoutubeEmbedUrl(sourceUrl);
+    if (youtubeEmbedUrl) {
+      return { type: 'iframe' as const, src: youtubeEmbedUrl };
+    }
+
     const driveIdMatch = sourceUrl.match(/(?:drive\.google\.com\/file\/d\/|drive\.google\.com\/open\?id=|drive\.google\.com\/uc\?id=)([a-zA-Z0-9_-]+)/);
     if (driveIdMatch) {
       return { type: 'iframe' as const, src: `https://drive.google.com/file/d/${driveIdMatch[1]}/preview` };
@@ -379,6 +423,31 @@ export const Elearning: React.FC<ElearningProps> = ({
 
     const isDirectVideo = /\.(mp4|webm|ogg)(?:[?#].*)?$/i.test(sourceUrl);
     return { type: isDirectVideo ? 'video' as const : 'iframe' as const, src: sourceUrl };
+  };
+
+  const renderVideoPlayer = (sourceUrl: string, title: string) => {
+    const videoSource = getVideoEmbedSource(sourceUrl);
+    return videoSource.type === 'video' ? (
+      <div className="aspect-video bg-black rounded-lg overflow-hidden">
+        <video
+          controls
+          className="w-full h-full"
+          src={videoSource.src}
+        >
+          Trình duyệt không hỗ trợ video.
+        </video>
+      </div>
+    ) : (
+      <div className="aspect-video rounded-lg overflow-hidden bg-slate-950">
+        <iframe
+          src={videoSource.src}
+          className="w-full h-full border-0"
+          title={title}
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+          allowFullScreen
+        />
+      </div>
+    );
   };
 
   const profileAttempts = useMemo(() =>
@@ -1948,10 +2017,11 @@ export const Elearning: React.FC<ElearningProps> = ({
                 <div className="grid gap-4 sm:grid-cols-2 mt-4">
                   <label className="block sm:col-span-2">
                     <div className="text-xs font-semibold text-slate-600 mb-2">Link video bổ sung (tùy chọn)</div>
-                    <input
+                    <textarea
                       value={selectedLesson.videoUrl || ''}
                       onChange={e => handleLessonFieldChange('videoUrl', e.target.value)}
-                      placeholder="Link Google Drive hoặc video trực tiếp"
+                      placeholder="Link YouTube, Google Drive hoặc video trực tiếp. Nhiều link cách nhau bằng xuống dòng, dấu cách hoặc dấu phẩy"
+                      rows={2}
                       className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </label>
@@ -2197,30 +2267,13 @@ D. ...
               {selectedLesson.videoUrl && (
                 <div>
                   <h4 className="text-sm font-semibold mb-2">Video</h4>
-                  {(() => {
-                    const videoSource = getVideoEmbedSource(selectedLesson.videoUrl);
-                    return videoSource.type === 'video' ? (
-                      <div className="aspect-video bg-black rounded-lg overflow-hidden">
-                        <video
-                          controls
-                          className="w-full h-full"
-                          src={videoSource.src}
-                        >
-                          Trình duyệt không hỗ trợ video.
-                        </video>
+                  <div className="space-y-3">
+                    {getVideoUrlList(selectedLesson.videoUrl).map((videoUrl, index) => (
+                      <div key={`${videoUrl}-${index}`}>
+                        {renderVideoPlayer(videoUrl, `Video ${index + 1}`)}
                       </div>
-                    ) : (
-                      <div className="aspect-video rounded-lg overflow-hidden bg-slate-950">
-                        <iframe
-                          src={videoSource.src}
-                          className="w-full h-full border-0"
-                          title="Video"
-                          allow="autoplay; encrypted-media; fullscreen"
-                          allowFullScreen
-                        />
-                      </div>
-                    );
-                  })()}
+                    ))}
+                  </div>
                 </div>
               )}
 
@@ -2255,30 +2308,13 @@ D. ...
               {!selectedLesson.videoUrl && !selectedLesson.documentUrl && selectedLesson.mediaUrl && (
                 <div>
                   {selectedLesson.mediaType === 'video' ? (
-                    (() => {
-                      const videoSource = getVideoEmbedSource(selectedLesson.mediaUrl);
-                      return videoSource.type === 'video' ? (
-                        <div className="aspect-video bg-black rounded-lg overflow-hidden">
-                          <video
-                            controls
-                            className="w-full h-full"
-                            src={videoSource.src}
-                          >
-                            Trình duyệt không hỗ trợ video.
-                          </video>
+                    <div className="space-y-3">
+                      {getVideoUrlList(selectedLesson.mediaUrl).map((videoUrl, index) => (
+                        <div key={`${videoUrl}-${index}`}>
+                          {renderVideoPlayer(videoUrl, `Video ${index + 1}`)}
                         </div>
-                      ) : (
-                        <div className="aspect-video rounded-lg overflow-hidden bg-slate-950">
-                          <iframe
-                            src={videoSource.src}
-                            className="w-full h-full border-0"
-                            title="Video"
-                            allow="autoplay; encrypted-media; fullscreen"
-                            allowFullScreen
-                          />
-                        </div>
-                      );
-                    })()
+                      ))}
+                    </div>
                   ) : (
                     <div className="aspect-video bg-slate-100 rounded-lg flex items-center justify-center">
                       <iframe
