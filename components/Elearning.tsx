@@ -411,11 +411,69 @@ export const Elearning: React.FC<ElearningProps> = ({
     }
   };
 
+  const getGoogleEmbedUrl = (sourceUrl: string) => {
+    const normalizedUrl = /^https?:\/\//i.test(sourceUrl) ? sourceUrl : `https://${sourceUrl}`;
+
+    try {
+      const url = new URL(normalizedUrl);
+      const hostname = url.hostname.replace(/^www\./, '').toLowerCase();
+      const pathParts = url.pathname.split('/').filter(Boolean);
+
+      if (hostname === 'drive.google.com') {
+        const fileId = pathParts[0] === 'file' && pathParts[1] === 'd'
+          ? pathParts[2]
+          : url.searchParams.get('id');
+
+        return fileId ? `https://drive.google.com/file/d/${fileId}/preview` : '';
+      }
+
+      if (hostname !== 'docs.google.com') return '';
+
+      const appType = pathParts[0];
+      const supportedApps = ['document', 'spreadsheets', 'presentation', 'drawings', 'forms'];
+      if (!supportedApps.includes(appType)) return '';
+
+      const fileId = pathParts[1] === 'd' ? pathParts[2] : '';
+      const publishedId = pathParts[1] === 'd' && pathParts[2] === 'e' ? pathParts[3] : '';
+      const gid = url.searchParams.get('gid') || url.hash.match(/gid=(\d+)/)?.[1] || '';
+
+      if (publishedId) {
+        if (appType === 'forms') {
+          const formUrl = new URL(`https://docs.google.com/forms/d/e/${publishedId}/viewform`);
+          formUrl.searchParams.set('embedded', 'true');
+          return formUrl.toString();
+        }
+
+        const publishedUrl = new URL(`https://docs.google.com/${appType}/d/e/${publishedId}/${appType === 'spreadsheets' ? 'pubhtml' : 'pub'}`);
+        publishedUrl.searchParams.set('embedded', 'true');
+        if (gid) publishedUrl.searchParams.set('gid', gid);
+        return publishedUrl.toString();
+      }
+
+      if (!fileId) return '';
+
+      if (appType === 'presentation') {
+        return `https://docs.google.com/presentation/d/${fileId}/embed`;
+      }
+
+      const previewUrl = new URL(`https://docs.google.com/${appType}/d/${fileId}/preview`);
+      if (gid) previewUrl.searchParams.set('gid', gid);
+      return previewUrl.toString();
+    } catch {
+      return '';
+    }
+  };
+
   const getVideoEmbedSource = (rawSourceUrl: string) => {
     const sourceUrl = rawSourceUrl.trim();
     const youtubeEmbedUrl = getYoutubeEmbedUrl(sourceUrl);
     if (youtubeEmbedUrl) {
       return { type: 'iframe' as const, src: youtubeEmbedUrl };
+    }
+
+    const googleEmbedUrl = getGoogleEmbedUrl(sourceUrl);
+    if (googleEmbedUrl) {
+      return { type: 'iframe' as const, src: googleEmbedUrl };
     }
 
     const driveIdMatch = sourceUrl.match(/(?:drive\.google\.com\/file\/d\/|drive\.google\.com\/open\?id=|drive\.google\.com\/uc\?id=)([a-zA-Z0-9_-]+)/);
@@ -463,7 +521,7 @@ export const Elearning: React.FC<ElearningProps> = ({
   const renderDocumentFrame = (sourceUrl: string, title: string) => (
     <div className="aspect-video bg-slate-100 rounded-lg flex items-center justify-center overflow-hidden">
       <iframe
-        src={sourceUrl.trim()}
+        src={getGoogleEmbedUrl(sourceUrl.trim()) || sourceUrl.trim()}
         className="w-full h-full border-0"
         title={title}
       />
