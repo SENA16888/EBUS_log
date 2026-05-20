@@ -366,7 +366,7 @@ export const Elearning: React.FC<ElearningProps> = ({
     setLatestQuizResult(null);
   }, [selectedLessonId]);
 
-  const getVideoUrlList = (rawUrls?: string) =>
+  const getUrlList = (rawUrls?: string) =>
     (rawUrls || '')
       .split(/[\s,;]+/)
       .map(url => url.trim())
@@ -425,6 +425,9 @@ export const Elearning: React.FC<ElearningProps> = ({
     return { type: isDirectVideo ? 'video' as const : 'iframe' as const, src: sourceUrl };
   };
 
+  const isVideoUrl = (sourceUrl: string) =>
+    Boolean(getYoutubeEmbedUrl(sourceUrl)) || /\.(mp4|webm|ogg)(?:[?#].*)?$/i.test(sourceUrl.trim());
+
   const renderVideoPlayer = (sourceUrl: string, title: string) => {
     const videoSource = getVideoEmbedSource(sourceUrl);
     return videoSource.type === 'video' ? (
@@ -449,6 +452,19 @@ export const Elearning: React.FC<ElearningProps> = ({
       </div>
     );
   };
+
+  const renderDocumentFrame = (sourceUrl: string, title: string) => (
+    <div className="aspect-video bg-slate-100 rounded-lg flex items-center justify-center overflow-hidden">
+      <iframe
+        src={sourceUrl.trim()}
+        className="w-full h-full border-0"
+        title={title}
+      />
+    </div>
+  );
+
+  const renderMixedMediaFrame = (sourceUrl: string, title: string) =>
+    isVideoUrl(sourceUrl) ? renderVideoPlayer(sourceUrl, title) : renderDocumentFrame(sourceUrl, title);
 
   const profileAttempts = useMemo(() =>
     attempts.filter(a => a.learnerId === activeProfile?.id),
@@ -2030,10 +2046,11 @@ export const Elearning: React.FC<ElearningProps> = ({
                 <div className="grid gap-4 sm:grid-cols-2 mt-4">
                   <label className="block sm:col-span-2">
                     <div className="text-xs font-semibold text-slate-600 mb-2">Link tài liệu bổ sung (tùy chọn)</div>
-                    <input
+                    <textarea
                       value={selectedLesson.documentUrl || ''}
                       onChange={e => handleLessonFieldChange('documentUrl', e.target.value)}
-                      placeholder="Link PDF hoặc tài liệu khác"
+                      placeholder="Link PDF, tài liệu, YouTube hoặc video khác. Nhiều link cách nhau bằng xuống dòng, dấu cách hoặc dấu phẩy"
+                      rows={2}
                       className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </label>
@@ -2268,7 +2285,7 @@ D. ...
                 <div>
                   <h4 className="text-sm font-semibold mb-2">Video</h4>
                   <div className="space-y-3">
-                    {getVideoUrlList(selectedLesson.videoUrl).map((videoUrl, index) => (
+                    {getUrlList(selectedLesson.videoUrl).map((videoUrl, index) => (
                       <div key={`${videoUrl}-${index}`}>
                         {renderVideoPlayer(videoUrl, `Video ${index + 1}`)}
                       </div>
@@ -2280,12 +2297,12 @@ D. ...
               {selectedLesson.documentUrl && (
                 <div>
                   <h4 className="text-sm font-semibold mb-2">Tài liệu</h4>
-                  <div className="aspect-video bg-slate-100 rounded-lg flex items-center justify-center">
-                    <iframe
-                      src={selectedLesson.documentUrl}
-                      className="w-full h-full border-0"
-                      title="Document"
-                    />
+                  <div className="space-y-3">
+                    {getUrlList(selectedLesson.documentUrl).map((documentUrl, index) => (
+                      <div key={`${documentUrl}-${index}`}>
+                        {renderMixedMediaFrame(documentUrl, `Tài liệu ${index + 1}`)}
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
@@ -2309,19 +2326,19 @@ D. ...
                 <div>
                   {selectedLesson.mediaType === 'video' ? (
                     <div className="space-y-3">
-                      {getVideoUrlList(selectedLesson.mediaUrl).map((videoUrl, index) => (
+                      {getUrlList(selectedLesson.mediaUrl).map((videoUrl, index) => (
                         <div key={`${videoUrl}-${index}`}>
                           {renderVideoPlayer(videoUrl, `Video ${index + 1}`)}
                         </div>
                       ))}
                     </div>
                   ) : (
-                    <div className="aspect-video bg-slate-100 rounded-lg flex items-center justify-center">
-                      <iframe
-                        src={selectedLesson.mediaUrl}
-                        className="w-full h-full border-0"
-                        title="Document"
-                      />
+                    <div className="space-y-3">
+                      {getUrlList(selectedLesson.mediaUrl).map((documentUrl, index) => (
+                        <div key={`${documentUrl}-${index}`}>
+                          {renderMixedMediaFrame(documentUrl, `Tài liệu ${index + 1}`)}
+                        </div>
+                      ))}
                     </div>
                   )}
                 </div>
