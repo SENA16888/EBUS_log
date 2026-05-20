@@ -394,9 +394,16 @@ export const Elearning: React.FC<ElearningProps> = ({
       if (!videoId) return '';
 
       const playlistId = url.searchParams.get('list');
+      const startAt = url.searchParams.get('start') || url.searchParams.get('t');
       const embedUrl = new URL(`https://www.youtube.com/embed/${videoId}`);
       if (playlistId) {
         embedUrl.searchParams.set('list', playlistId);
+      }
+      if (startAt) {
+        const startSeconds = startAt.endsWith('s') ? startAt.slice(0, -1) : startAt;
+        if (/^\d+$/.test(startSeconds)) {
+          embedUrl.searchParams.set('start', startSeconds);
+        }
       }
       return embedUrl.toString();
     } catch {
@@ -465,6 +472,24 @@ export const Elearning: React.FC<ElearningProps> = ({
 
   const renderMixedMediaFrame = (sourceUrl: string, title: string) =>
     isVideoUrl(sourceUrl) ? renderVideoPlayer(sourceUrl, title) : renderDocumentFrame(sourceUrl, title);
+
+  const renderMediaGroup = (rawUrls: string | undefined, heading: string, titlePrefix: string) => {
+    const urls = getUrlList(rawUrls);
+    if (urls.length === 0) return null;
+
+    return (
+      <div>
+        <h4 className="text-sm font-semibold mb-2">{heading}</h4>
+        <div className="space-y-3">
+          {urls.map((url, index) => (
+            <div key={`${url}-${index}`}>
+              {renderMixedMediaFrame(url, `${titlePrefix} ${index + 1}`)}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
 
   const profileAttempts = useMemo(() =>
     attempts.filter(a => a.learnerId === activeProfile?.id),
@@ -1089,7 +1114,7 @@ export const Elearning: React.FC<ElearningProps> = ({
   };
 
   const handleLessonFieldChange = <K extends keyof LearningLesson>(field: K, value: LearningLesson[K]) => {
-    updateSelectedLesson(lesson => ({ ...lesson, [field]: value }));
+    updateSelectedLesson(lesson => ({ ...lesson, [field]: value, mediaType: 'video' }));
   };
 
   const handleAddSkill = () => {
@@ -2009,22 +2034,17 @@ export const Elearning: React.FC<ElearningProps> = ({
                 </div>
 
                 <div className="grid gap-4 sm:grid-cols-2 mt-4">
-                  <label className="block">
-                    <div className="text-xs font-semibold text-slate-600 mb-2">Loại nội dung</div>
-                    <select
-                      value={selectedLesson.mediaType}
-                      onChange={e => handleLessonFieldChange('mediaType', e.target.value as LearningLesson['mediaType'])}
-                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="video">Video</option>
-                      <option value="pdf">PDF</option>
-                    </select>
-                  </label>
-                  <label className="block">
+                  <label className="block sm:col-span-2">
                     <div className="text-xs font-semibold text-slate-600 mb-2">Link video / tài liệu</div>
-                    <input
+                    <textarea
                       value={selectedLesson.mediaUrl}
-                      onChange={e => handleLessonFieldChange('mediaUrl', e.target.value)}
+                      onChange={e => updateSelectedLesson(lesson => ({
+                        ...lesson,
+                        mediaType: 'video',
+                        mediaUrl: e.target.value
+                      }))}
+                      placeholder="Link YouTube, tài liệu hoặc video. Nhiều link cách nhau bằng xuống dòng, dấu cách hoặc dấu phẩy"
+                      rows={2}
                       className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </label>
@@ -2281,31 +2301,9 @@ D. ...
 
             {/* Media Section */}
             <div className="mb-6 space-y-4">
-              {selectedLesson.videoUrl && (
-                <div>
-                  <h4 className="text-sm font-semibold mb-2">Video</h4>
-                  <div className="space-y-3">
-                    {getUrlList(selectedLesson.videoUrl).map((videoUrl, index) => (
-                      <div key={`${videoUrl}-${index}`}>
-                        {renderVideoPlayer(videoUrl, `Video ${index + 1}`)}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {selectedLesson.documentUrl && (
-                <div>
-                  <h4 className="text-sm font-semibold mb-2">Tài liệu</h4>
-                  <div className="space-y-3">
-                    {getUrlList(selectedLesson.documentUrl).map((documentUrl, index) => (
-                      <div key={`${documentUrl}-${index}`}>
-                        {renderMixedMediaFrame(documentUrl, `Tài liệu ${index + 1}`)}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+              {renderMediaGroup(selectedLesson.mediaUrl, 'Nội dung chính', 'Nội dung chính')}
+              {renderMediaGroup(selectedLesson.videoUrl, 'Video bổ sung', 'Video bổ sung')}
+              {renderMediaGroup(selectedLesson.documentUrl, 'Tài liệu bổ sung', 'Tài liệu bổ sung')}
 
               {selectedLesson.guideUrl && (
                 <div>
@@ -2318,29 +2316,6 @@ D. ...
                   >
                     Xem hướng dẫn
                   </a>
-                </div>
-              )}
-
-              {/* Backward compatibility with old mediaUrl */}
-              {!selectedLesson.videoUrl && !selectedLesson.documentUrl && selectedLesson.mediaUrl && (
-                <div>
-                  {selectedLesson.mediaType === 'video' ? (
-                    <div className="space-y-3">
-                      {getUrlList(selectedLesson.mediaUrl).map((videoUrl, index) => (
-                        <div key={`${videoUrl}-${index}`}>
-                          {renderVideoPlayer(videoUrl, `Video ${index + 1}`)}
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      {getUrlList(selectedLesson.mediaUrl).map((documentUrl, index) => (
-                        <div key={`${documentUrl}-${index}`}>
-                          {renderMixedMediaFrame(documentUrl, `Tài liệu ${index + 1}`)}
-                        </div>
-                      ))}
-                    </div>
-                  )}
                 </div>
               )}
             </div>
