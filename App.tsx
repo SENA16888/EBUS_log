@@ -150,6 +150,9 @@ const App: React.FC = () => {
   const sessionIdRef = useRef<string>(getSessionId());
   const deviceIdRef = useRef<string>(getDeviceId());
   const presenceIntervalRef = useRef<number | undefined>(undefined);
+  const persistInFlightRef = useRef(false);
+  const pendingPersistStateRef = useRef<AppState | null>(null);
+  const persistDebounceRef = useRef<number | undefined>(undefined);
 
   const withDefaults = (state: AppState): AppState => {
     const baseAccounts = state.userAccounts && state.userAccounts.length > 0 ? state.userAccounts : DEFAULT_USER_ACCOUNTS;
@@ -449,56 +452,87 @@ const App: React.FC = () => {
     };
   }, []);
 
-  // Lưu dữ liệu theo từng collection để tránh ghi đè toàn bộ appState
+  // Lưu dữ liệu theo từng collection để tránh ghi đè toàn bộ appState.
+  // Gom các thay đổi nhanh và lưu tuần tự để chính phiên hiện tại không tự tạo conflict.
   useEffect(() => {
     if (isLoading) return;
 
-    const saveData = async () => {
-      const timestamp = new Date().toISOString();
-      const persistentAppState = stripLearningUserData(withDefaults(appState));
-      let shouldKeepRemoteFlag = false;
+    const flushPersistQueue = async () => {
+      if (persistInFlightRef.current) return;
+      persistInFlightRef.current = true;
       try {
-        localStorage.setItem('ebus_app_state', JSON.stringify(persistentAppState));
-        localStorage.setItem('ebus_last_update', timestamp);
-        lastSyncedAtRef.current = new Date(timestamp).getTime();
+        while (pendingPersistStateRef.current) {
+          const persistentAppState = pendingPersistStateRef.current;
+          pendingPersistStateRef.current = null;
+          let shouldKeepRemoteFlag = false;
+          try {
+            const result = await syncCollectionStateDiff(
+              lastPersistedStateRef.current,
+              persistentAppState,
+              resolveActor()
+            );
+            lastPersistedStateRef.current = stripLearningUserData(withDefaults({
+              ...persistentAppState,
+              ...result.nextState
+            } as AppState));
 
-        if (isApplyingRemoteRef.current) {
-          isApplyingRemoteRef.current = false;
-          return;
-        }
-
-        const result = await syncCollectionStateDiff(
-          lastPersistedStateRef.current,
-          persistentAppState,
-          resolveActor()
-        );
-        lastPersistedStateRef.current = stripLearningUserData(withDefaults({
-          ...persistentAppState,
-          ...result.nextState
-        } as AppState));
-
-        if (result.conflicts.length > 0 && Object.keys(result.remoteOverrides).length > 0) {
-          const notice = result.conflicts.map(conflict => `${conflict.key}:${conflict.id}`).join(', ');
-          if (lastConflictNoticeRef.current !== notice) {
-            lastConflictNoticeRef.current = notice;
-            alert('Một số dữ liệu đã được người khác cập nhật trước bạn. Hệ thống đã nạp lại bản mới nhất để tránh ghi đè.');
+            if (result.conflicts.length > 0 && Object.keys(result.remoteOverrides).length > 0) {
+              const notice = result.conflicts.map(conflict => `${conflict.key}:${conflict.id}`).join(', ');
+              if (lastConflictNoticeRef.current !== notice) {
+                lastConflictNoticeRef.current = notice;
+                alert('Một số dữ liệu đã được người khác cập nhật trước bạn. Hệ thống đã nạp lại bản mới nhất để tránh ghi đè.');
+              }
+              isApplyingRemoteRef.current = true;
+              shouldKeepRemoteFlag = true;
+              setAppState(prev => withDefaults({ ...prev, ...result.remoteOverrides } as AppState));
+            } else {
+              lastConflictNoticeRef.current = '';
+            }
+          } catch (err) {
+            console.warn('Failed to persist app state:', err);
+          } finally {
+            if (isApplyingRemoteRef.current && !shouldKeepRemoteFlag) {
+              isApplyingRemoteRef.current = false;
+            }
           }
-          isApplyingRemoteRef.current = true;
-          shouldKeepRemoteFlag = true;
-          setAppState(prev => withDefaults({ ...prev, ...result.remoteOverrides } as AppState));
-        } else {
-          lastConflictNoticeRef.current = '';
         }
-      } catch (err) {
-        console.warn('Failed to persist app state:', err);
       } finally {
-        if (isApplyingRemoteRef.current && !shouldKeepRemoteFlag) {
-          isApplyingRemoteRef.current = false;
+        persistInFlightRef.current = false;
+        if (pendingPersistStateRef.current) {
+          void flushPersistQueue();
         }
       }
     };
 
-    void saveData();
+    const timestamp = new Date().toISOString();
+    const persistentAppState = stripLearningUserData(withDefaults(appState));
+    try {
+      localStorage.setItem('ebus_app_state', JSON.stringify(persistentAppState));
+      localStorage.setItem('ebus_last_update', timestamp);
+      lastSyncedAtRef.current = new Date(timestamp).getTime();
+
+      if (isApplyingRemoteRef.current) {
+        isApplyingRemoteRef.current = false;
+        return;
+      }
+
+      pendingPersistStateRef.current = persistentAppState;
+      if (persistDebounceRef.current) {
+        window.clearTimeout(persistDebounceRef.current);
+      }
+      persistDebounceRef.current = window.setTimeout(() => {
+        void flushPersistQueue();
+      }, 250);
+    } catch (err) {
+      console.warn('Failed to persist app state:', err);
+    }
+
+    return () => {
+      if (persistDebounceRef.current) {
+        window.clearTimeout(persistDebounceRef.current);
+        persistDebounceRef.current = undefined;
+      }
+    };
   }, [appState, isLoading]);
 
   // Duy tri heartbeat presence cho tai khoan dang dang nhap
