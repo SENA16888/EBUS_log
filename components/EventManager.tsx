@@ -331,6 +331,24 @@ export const EventManager: React.FC<EventManagerProps> = ({
     return list;
   }, [sortedInventoryForExport, exportSearchTerm, selectedItemForExport]);
 
+  const selectedPackageForExport = useMemo(
+    () => packages.find(pkg => pkg.id === selectedPackageId),
+    [packages, selectedPackageId]
+  );
+
+  const selectedPackagePreviewItems = useMemo(() => {
+    if (!selectedPackageForExport) return [];
+    return selectedPackageForExport.items.map(pkgItem => {
+      const inventoryItem = inventory.find(item => item.id === pkgItem.itemId);
+      return {
+        itemId: pkgItem.itemId,
+        name: inventoryItem?.name || 'Thiết bị không còn trong kho',
+        category: inventoryItem?.category || '',
+        quantity: pkgItem.quantity
+      };
+    });
+  }, [inventory, selectedPackageForExport]);
+
   useEffect(() => {
     if (!showExportModal) {
       setExportSearchTerm('');
@@ -659,6 +677,9 @@ export const EventManager: React.FC<EventManagerProps> = ({
       onExportToEvent(selectedEventId, selectedItemForExport, Number(exportQty));
     } else if (exportMode === 'COMBO' && selectedPackageId && onExportPackageToEvent) {
       onExportPackageToEvent(selectedEventId, selectedPackageId, Number(exportQty));
+    } else {
+      alert(exportMode === 'COMBO' ? 'Vui lòng chọn gói combo cần thêm.' : 'Vui lòng chọn thiết bị cần thêm.');
+      return;
     }
     setShowExportModal(false);
     setSelectedItemForExport('');
@@ -3048,7 +3069,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl">
             <div className="flex justify-between items-center mb-6">
-               <h3 className="text-xl font-bold">Xuất thiết bị lẻ</h3>
+               <h3 className="text-xl font-bold">{exportMode === 'COMBO' ? 'Thêm Combo vào order' : 'Xuất thiết bị lẻ'}</h3>
                <button onClick={() => setShowExportModal(false)} className="text-gray-400"><X size={24}/></button>
             </div>
             <div className="space-y-4">
@@ -3077,10 +3098,45 @@ export const EventManager: React.FC<EventManagerProps> = ({
                   </select>
                 </>
               ) : (
-                <select className="w-full border rounded-xl p-3 bg-white" value={selectedPackageId} onChange={e => setSelectedPackageId(e.target.value)}>
-                  <option value="">-- Chọn gói combo --</option>
-                  {packages.map(pkg => <option key={pkg.id} value={pkg.id}>{pkg.name}</option>)}
-                </select>
+                <div className="space-y-3">
+                  <select className="w-full border rounded-xl p-3 bg-white" value={selectedPackageId} onChange={e => setSelectedPackageId(e.target.value)}>
+                    <option value="">-- Chọn gói combo --</option>
+                    {packages.map(pkg => <option key={pkg.id} value={pkg.id}>{pkg.name}</option>)}
+                  </select>
+                  {selectedPackageForExport ? (
+                    <div className="rounded-xl border border-blue-100 bg-blue-50 p-3">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-blue-500">Combo đã chọn</p>
+                      <div className="mt-1 flex items-start justify-between gap-3">
+                        <div>
+                          <p className="font-black text-slate-900">{selectedPackageForExport.name}</p>
+                          {selectedPackageForExport.description && (
+                            <p className="mt-0.5 text-xs text-slate-600">{selectedPackageForExport.description}</p>
+                          )}
+                        </div>
+                        <span className="shrink-0 rounded-lg bg-white px-2 py-1 text-[11px] font-black text-blue-700 border border-blue-100">
+                          x{exportQty || 1}
+                        </span>
+                      </div>
+                      <div className="mt-3 max-h-32 overflow-y-auto rounded-lg bg-white/70 border border-blue-100 divide-y divide-blue-50">
+                        {selectedPackagePreviewItems.map(pkgItem => (
+                          <div key={pkgItem.itemId} className="flex items-center justify-between gap-3 px-3 py-2">
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-bold text-slate-800">{pkgItem.name}</p>
+                              {pkgItem.category && <p className="truncate text-[11px] text-slate-500">{pkgItem.category}</p>}
+                            </div>
+                            <span className="shrink-0 text-xs font-black text-slate-700">
+                              {pkgItem.quantity * Math.max(1, Number(exportQty) || 1)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm font-semibold text-slate-500">
+                      Chưa chọn combo nào.
+                    </div>
+                  )}
+                </div>
               )}
               <input type="number" min="1" className="w-full border rounded-xl p-3" value={exportQty} onChange={e => setExportQty(Number(e.target.value))} />
               <button onClick={handleExportSubmit} className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold">Xác nhận thêm</button>
