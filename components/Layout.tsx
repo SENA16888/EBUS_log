@@ -2,21 +2,22 @@
 import React from 'react';
 import { 
   LayoutDashboard, Package, CalendarDays, 
-  Settings, Layers, Users, FileText, BookOpen, ShoppingBag, LucideIcon, GraduationCap, LogOut, ClipboardList 
+  Settings, Layers, Users, FileText, BookOpen, ShoppingBag, LucideIcon, GraduationCap, LogOut, ClipboardList, ScanBarcode
 } from 'lucide-react';
 import { ActivityLog } from './ActivityLog';
 import { LogEntry, UserAccount } from '../types';
 
 interface LayoutProps {
   children: React.ReactNode;
-  activeTab: 'dashboard' | 'inventory' | 'events' | 'packages' | 'employees' | 'quotations' | 'sales' | 'elearning' | 'logs';
-  onTabChange: (tab: 'dashboard' | 'inventory' | 'events' | 'packages' | 'employees' | 'quotations' | 'sales' | 'elearning' | 'logs') => void;
+  activeTab: 'dashboard' | 'inventory' | 'stocktake' | 'events' | 'packages' | 'employees' | 'quotations' | 'sales' | 'elearning' | 'logs';
+  onTabChange: (tab: 'dashboard' | 'inventory' | 'stocktake' | 'events' | 'packages' | 'employees' | 'quotations' | 'sales' | 'elearning' | 'logs') => void;
   logs: LogEntry[];
   currentUser?: UserAccount | null;
   canManageAccess?: boolean;
   canViewLogs?: boolean;
   canViewDashboard?: boolean;
   canViewInventory?: boolean;
+  canViewStocktake?: boolean;
   canViewPackages?: boolean;
   canViewQuotations?: boolean;
   canViewSales?: boolean;
@@ -37,6 +38,7 @@ export const Layout: React.FC<LayoutProps> = ({
   canViewLogs, 
   canViewDashboard = true,
   canViewInventory = true,
+  canViewStocktake = true,
   canViewPackages = true,
   canViewQuotations = true,
   canViewSales = true,
@@ -49,6 +51,7 @@ export const Layout: React.FC<LayoutProps> = ({
   const tabs: { key: LayoutProps['activeTab']; label: string; icon: LucideIcon }[] = [
     { key: 'dashboard', label: 'Tổng quan', icon: LayoutDashboard },
     { key: 'inventory', label: 'Kho hàng', icon: Package },
+    { key: 'stocktake', label: 'Kiểm kho', icon: ScanBarcode },
     { key: 'packages', label: 'Gói thiết bị', icon: Layers },
     { key: 'quotations', label: 'Báo giá', icon: FileText },
     { key: 'sales', label: 'Hàng bán', icon: ShoppingBag },
@@ -58,6 +61,7 @@ export const Layout: React.FC<LayoutProps> = ({
   ].filter(tab =>
     (tab.key !== 'dashboard' || canViewDashboard) &&
     (tab.key !== 'inventory' || canViewInventory) &&
+    (tab.key !== 'stocktake' || canViewStocktake) &&
     (tab.key !== 'packages' || canViewPackages) &&
     (tab.key !== 'quotations' || canViewQuotations) &&
     (tab.key !== 'sales' || canViewSales) &&

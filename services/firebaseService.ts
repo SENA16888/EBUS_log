@@ -40,6 +40,7 @@ export const PERSISTED_STATE_KEYS = [
   'saleOrders',
   'logs',
   'inventoryReceipts',
+  'inventoryAudits',
   'learningTracks',
   'careerRanks',
   'userAccounts',
@@ -59,6 +60,7 @@ const PERSISTED_COLLECTIONS: Record<PersistedStateKey, string> = {
   saleOrders: 'saleOrders',
   logs: 'auditLogs',
   inventoryReceipts: 'inventoryReceipts',
+  inventoryAudits: 'inventoryAudits',
   learningTracks: 'learningTracks',
   careerRanks: 'careerRanks',
   userAccounts: 'userAccounts',
@@ -122,6 +124,9 @@ const sortPersistedRecords = <T>(key: PersistedStateKey, rows: T[]): T[] => {
     return [...rows].sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
   }
   if (key === 'inventoryReceipts') {
+    return [...rows].sort((a: any, b: any) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+  }
+  if (key === 'inventoryAudits') {
     return [...rows].sort((a: any, b: any) => (b.createdAt || '').localeCompare(a.createdAt || ''));
   }
   return rows;

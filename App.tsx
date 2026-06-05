@@ -4,6 +4,7 @@ import { Layout } from './components/Layout';
 import { SalesManager } from './components/SalesManager';
 import { Dashboard } from './components/Dashboard';
 import { InventoryManager } from './components/InventoryManager';
+import { StocktakeManager } from './components/StocktakeManager';
 import { EventManager } from './components/EventManager';
 import { PackageManager } from './components/PackageManager';
 import { EmployeeManager } from './components/EmployeeManager';
@@ -11,7 +12,7 @@ import { QuotationManager } from './components/QuotationManager';
 import { AIChat } from './components/AIChat';
 import { Elearning } from './components/Elearning';
 import { AdminLogPage } from './components/AdminLogPage';
-import { AppState, InventoryItem, Event, EventStatus, Transaction, TransactionType, ComboPackage, Employee, Quotation, EventStaffAllocation, EventExpense, EventAdvanceRequest, LogEntry, ChecklistDirection, ChecklistStatus, ChecklistSignature, EventChecklist, LearningAttempt, LearningProfile, AccessPermission, UserAccount, LearningTrack, InventoryReceipt, InventoryReceiptItem, ActiveSession, PayrollAdjustment } from './types';
+import { AppState, InventoryItem, Event, EventStatus, Transaction, TransactionType, ComboPackage, Employee, Quotation, EventStaffAllocation, EventExpense, EventAdvanceRequest, LogEntry, ChecklistDirection, ChecklistStatus, ChecklistSignature, EventChecklist, LearningAttempt, LearningProfile, AccessPermission, UserAccount, LearningTrack, InventoryReceipt, InventoryReceiptItem, ActiveSession, PayrollAdjustment, InventoryAuditSession, InventoryAuditItem, InventoryAuditBaseline } from './types';
 import { MOCK_INVENTORY, MOCK_EVENTS, MOCK_TRANSACTIONS, MOCK_PACKAGES, MOCK_EMPLOYEES, MOCK_LEARNING_TRACKS, MOCK_CAREER_RANKS, DEFAULT_USER_ACCOUNTS, MOCK_INVENTORY_RECEIPTS } from './constants';
 import { MessageSquare } from 'lucide-react';
 import { PERSISTED_STATE_KEYS, ensureCollectionModelInitialized, initializeAuth, loadCollectionState, subscribeToCollectionState, subscribeToSessions, setSessionOnline, setSessionOffline, syncCollectionStateDiff, saveLearningUserState, subscribeToLearningUserState, deleteLearningUserState, subscribeToLearningUsers } from './services/firebaseService';
@@ -23,7 +24,7 @@ import { LoginModal } from './components/LoginModal';
 
 const generateId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-type AppTab = 'dashboard' | 'inventory' | 'events' | 'packages' | 'employees' | 'quotations' | 'sales' | 'elearning' | 'logs';
+type AppTab = 'dashboard' | 'inventory' | 'stocktake' | 'events' | 'packages' | 'employees' | 'quotations' | 'sales' | 'elearning' | 'logs';
 
 const getSessionId = () => {
   try {
@@ -81,6 +82,7 @@ const createInitialAppState = (): AppState => ({
   quotations: [],
   logs: [],
   inventoryReceipts: MOCK_INVENTORY_RECEIPTS,
+  inventoryAudits: [],
   learningTracks: MOCK_LEARNING_TRACKS,
   learningProfiles: [],
   learningAttempts: [],
@@ -200,6 +202,7 @@ const App: React.FC = () => {
       learningAttempts: [],
       careerRanks: state.careerRanks || MOCK_CAREER_RANKS,
       inventoryReceipts: state.inventoryReceipts || [],
+      inventoryAudits: state.inventoryAudits || [],
       logs: normalizedLogs,
       userAccounts: normalizedAccounts,
       payrollAdjustments: state.payrollAdjustments || []
@@ -212,6 +215,7 @@ const App: React.FC = () => {
   const canViewLogs = can('LOGS_VIEW');
   const canViewDashboard = can('DASHBOARD_VIEW');
   const canViewInventory = can('INVENTORY_VIEW');
+  const canViewStocktake = canViewInventory;
   const canViewPackages = can('PACKAGES_VIEW');
   const canViewQuotations = can('QUOTATIONS_VIEW');
   const canViewSales = can('SALES_VIEW');
@@ -223,6 +227,7 @@ const App: React.FC = () => {
     (canViewDashboard && 'dashboard') ||
     (canViewEvents && 'events') ||
     (canViewInventory && 'inventory') ||
+    (canViewStocktake && 'stocktake') ||
     (canViewPackages && 'packages') ||
     (canViewQuotations && 'quotations') ||
     (canViewSales && 'sales') ||
@@ -317,6 +322,7 @@ const App: React.FC = () => {
     const tabAccessMap: Record<AppTab, boolean> = {
       dashboard: canViewDashboard,
       inventory: canViewInventory,
+      stocktake: canViewStocktake,
       events: canViewEvents,
       packages: canViewPackages,
       employees: canViewEmployees,
@@ -334,6 +340,7 @@ const App: React.FC = () => {
     canViewDashboard,
     canViewEmployees,
     canViewInventory,
+    canViewStocktake,
     canViewEvents,
     canViewPackages,
     canViewQuotations,
@@ -1387,6 +1394,40 @@ const App: React.FC = () => {
     }
   };
 
+  const handleSaveInventoryAudit = (payload: {
+    title: string;
+    baseline: InventoryAuditBaseline;
+    note?: string;
+    items: InventoryAuditItem[];
+    unknownBarcodes?: string[];
+    summary: InventoryAuditSession['summary'];
+  }) => {
+    const countedItems = (payload.items || []).filter(item => item.countedQuantity !== null);
+    if (countedItems.length === 0) {
+      alert('Vui lòng kiểm ít nhất 1 mã hàng trước khi lưu phiên.');
+      return;
+    }
+
+    const audit: InventoryAuditSession = {
+      id: `AUD-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      code: `KK-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.random().toString(36).slice(2, 5).toUpperCase()}`,
+      createdAt: new Date().toISOString(),
+      title: payload.title.trim() || `Kiểm kho ${new Date().toLocaleDateString('vi-VN')}`,
+      baseline: payload.baseline,
+      note: payload.note?.trim(),
+      createdBy: resolveActor(),
+      items: payload.items,
+      unknownBarcodes: payload.unknownBarcodes || [],
+      summary: payload.summary
+    };
+
+    setAppState(prev => ({
+      ...prev,
+      inventoryAudits: [audit, ...(prev.inventoryAudits || [])].slice(0, 120)
+    }));
+    addLog(`Lưu phiên kiểm kho ${audit.code}: ${audit.summary.countedItems}/${audit.summary.totalItems} mã, ${audit.summary.varianceItems} mã lệch.`, audit.summary.varianceItems > 0 ? 'WARNING' : 'SUCCESS');
+  };
+
   const handleDeleteItem = (id: string) => {
     let itemName = 'Không xác định';
     setAppState(prev => {
@@ -1904,6 +1945,7 @@ const App: React.FC = () => {
       canViewLogs={canViewLogs}
       canViewDashboard={canViewDashboard}
       canViewInventory={canViewInventory}
+      canViewStocktake={canViewStocktake}
       canViewPackages={canViewPackages}
       canViewQuotations={canViewQuotations}
       canViewSales={canViewSales}
@@ -1927,6 +1969,14 @@ const App: React.FC = () => {
           canEdit={can('INVENTORY_EDIT')}
           canDelete={can('INVENTORY_DELETE')}
           isAdmin={isAdmin}
+        />
+      )}
+      {activeTab === 'stocktake' && canViewStocktake && (
+        <StocktakeManager
+          inventory={appState.inventory}
+          audits={appState.inventoryAudits || []}
+          onSaveAudit={guard('INVENTORY_EDIT', handleSaveInventoryAudit)}
+          canEdit={can('INVENTORY_EDIT')}
         />
       )}
       {activeTab === 'packages' && canViewPackages && (

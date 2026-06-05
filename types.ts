@@ -94,6 +94,56 @@ export interface InventoryReceipt {
   items: InventoryReceiptItem[];
 }
 
+export type InventoryAuditBaseline = 'AVAILABLE' | 'TOTAL';
+
+export interface InventoryAuditItem {
+  itemId: string;
+  barcode?: string;
+  name: string;
+  category: string;
+  location?: string;
+  systemQuantity: number;
+  countedQuantity: number | null;
+  variance: number | null;
+  note?: string;
+  snapshot: {
+    totalQuantity: number;
+    availableQuantity: number;
+    inUseQuantity: number;
+    maintenanceQuantity: number;
+    brokenQuantity: number;
+    lostQuantity: number;
+  };
+}
+
+export interface InventoryAuditSession {
+  id: string;
+  code: string;
+  createdAt: string;
+  title: string;
+  baseline: InventoryAuditBaseline;
+  note?: string;
+  createdBy?: {
+    id?: string;
+    name?: string;
+    role?: string;
+    phone?: string;
+  };
+  items: InventoryAuditItem[];
+  unknownBarcodes?: string[];
+  summary: {
+    totalItems: number;
+    countedItems: number;
+    matchedItems: number;
+    varianceItems: number;
+    shortageItems: number;
+    surplusItems: number;
+    missingItems: number;
+    shortageUnits: number;
+    surplusUnits: number;
+  };
+}
+
 export type ChecklistDirection = 'OUT' | 'IN';
 export type ChecklistStatus = 'OK' | 'DAMAGED' | 'LOST' | 'MISSING';
 
@@ -586,6 +636,7 @@ export interface AppState {
   saleOrders?: SaleOrder[];
   logs: LogEntry[];
   inventoryReceipts?: InventoryReceipt[];
+  inventoryAudits?: InventoryAuditSession[];
   learningTracks?: LearningTrack[];
   learningProfiles?: LearningProfile[];
   learningAttempts?: LearningAttempt[];
