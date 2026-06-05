@@ -105,6 +105,7 @@ export interface InventoryAuditItem {
   systemQuantity: number;
   countedQuantity: number | null;
   variance: number | null;
+  barcodeAttached?: boolean;
   note?: string;
   snapshot: {
     totalQuantity: number;

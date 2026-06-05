@@ -50,6 +50,7 @@ export const StocktakeManager: React.FC<StocktakeManagerProps> = ({
   const [quantityDraft, setQuantityDraft] = useState(1);
   const [noteDraft, setNoteDraft] = useState('');
   const [counts, setCounts] = useState<Record<string, CountDraft>>({});
+  const [barcodeAttached, setBarcodeAttached] = useState<Record<string, boolean>>({});
   const [unknownBarcodes, setUnknownBarcodes] = useState<string[]>([]);
   const [sessionTitle, setSessionTitle] = useState(() => `Kiểm kho ${new Date().toLocaleDateString('vi-VN')}`);
   const [sessionNote, setSessionNote] = useState('');
@@ -80,11 +81,12 @@ export const StocktakeManager: React.FC<StocktakeManagerProps> = ({
         systemQuantity,
         countedQuantity,
         variance,
+        barcodeAttached: !!barcodeAttached[item.id],
         note: counts[item.id]?.note,
         snapshot: buildSnapshot(item)
       };
     });
-  }, [baseline, counts, inventory]);
+  }, [barcodeAttached, baseline, counts, inventory]);
 
   const summary = useMemo<InventoryAuditSession['summary']>(() => {
     const countedRows = auditRows.filter(row => row.countedQuantity !== null);
@@ -176,6 +178,7 @@ export const StocktakeManager: React.FC<StocktakeManagerProps> = ({
   const resetDraft = () => {
     if (!window.confirm('Xóa toàn bộ số lượng đã kiểm trong phiên đang nhập?')) return;
     setCounts({});
+    setBarcodeAttached({});
     setUnknownBarcodes([]);
     setSelectedItemId('');
     setScanCode('');
@@ -199,6 +202,7 @@ export const StocktakeManager: React.FC<StocktakeManagerProps> = ({
       summary
     });
     setCounts({});
+    setBarcodeAttached({});
     setUnknownBarcodes([]);
     setSelectedItemId('');
     setSessionNote('');
@@ -207,10 +211,11 @@ export const StocktakeManager: React.FC<StocktakeManagerProps> = ({
   };
 
   const exportCsv = () => {
-    const headers = ['Ma hang', 'Barcode', 'Ten thiet bi', 'Danh muc', 'Vi tri', 'He thong', 'Thuc dem', 'Lech', 'Ghi chu'];
+    const headers = ['Ma hang', 'Barcode', 'Da dan barcode', 'Ten thiet bi', 'Danh muc', 'Vi tri', 'He thong', 'Thuc dem', 'Lech', 'Ghi chu'];
     const lines = auditRows.map(row => [
       row.itemId,
       row.barcode || '',
+      row.barcodeAttached ? 'Co' : 'Khong',
       row.name,
       row.category,
       row.location || '',
@@ -481,6 +486,7 @@ export const StocktakeManager: React.FC<StocktakeManagerProps> = ({
                     <th className="px-3 py-3 text-right">Tổng</th>
                     <th className="px-3 py-3 text-right">Sẵn</th>
                     <th className="px-3 py-3 text-right">Đang dùng</th>
+                    <th className="px-3 py-3 text-center">Đã dán barcode</th>
                     <th className="px-3 py-3 text-right">Hệ thống</th>
                     <th className="px-3 py-3 text-right">Thực đếm</th>
                     <th className="px-3 py-3 text-right">Lệch</th>
@@ -503,6 +509,21 @@ export const StocktakeManager: React.FC<StocktakeManagerProps> = ({
                         <td className="px-3 py-3 text-right font-bold text-slate-700">{formatNumber(row.snapshot.totalQuantity)}</td>
                         <td className="px-3 py-3 text-right font-bold text-blue-600">{formatNumber(row.snapshot.availableQuantity)}</td>
                         <td className="px-3 py-3 text-right font-bold text-amber-600">{formatNumber(row.snapshot.inUseQuantity)}</td>
+                        <td className="px-3 py-3 text-center">
+                          <input
+                            type="checkbox"
+                            checked={!!row.barcodeAttached}
+                            disabled={!canEdit}
+                            onChange={event => {
+                              event.stopPropagation();
+                              const checked = event.target.checked;
+                              setBarcodeAttached(prev => ({ ...prev, [row.itemId]: checked }));
+                            }}
+                            onClick={event => event.stopPropagation()}
+                            className="w-5 h-5 accent-blue-600"
+                            title="Đánh dấu thiết bị đã dán tem barcode thực tế"
+                          />
+                        </td>
                         <td className="px-3 py-3 text-right font-black text-slate-800">{formatNumber(row.systemQuantity)}</td>
                         <td className="px-3 py-3 text-right">
                           {isCounted ? (
