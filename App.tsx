@@ -15,7 +15,7 @@ import { AdminLogPage } from './components/AdminLogPage';
 import { AppState, InventoryItem, Event, EventStatus, Transaction, TransactionType, ComboPackage, Employee, Quotation, EventStaffAllocation, EventExpense, EventAdvanceRequest, LogEntry, ChecklistDirection, ChecklistStatus, ChecklistSignature, EventChecklist, LearningAttempt, LearningProfile, AccessPermission, UserAccount, LearningTrack, InventoryReceipt, InventoryReceiptItem, ActiveSession, PayrollAdjustment, InventoryAuditSession, InventoryAuditItem, InventoryAuditBaseline } from './types';
 import { MOCK_INVENTORY, MOCK_EVENTS, MOCK_TRANSACTIONS, MOCK_PACKAGES, MOCK_EMPLOYEES, MOCK_LEARNING_TRACKS, MOCK_CAREER_RANKS, DEFAULT_USER_ACCOUNTS, MOCK_INVENTORY_RECEIPTS } from './constants';
 import { MessageSquare } from 'lucide-react';
-import { PERSISTED_STATE_KEYS, ensureCollectionModelInitialized, initializeAuth, loadCollectionState, subscribeToCollectionState, subscribeToSessions, setSessionOnline, setSessionOffline, syncCollectionStateDiff, saveLearningUserState, subscribeToLearningUserState, deleteLearningUserState, subscribeToLearningUsers } from './services/firebaseService';
+import { ensureCollectionModelInitialized, initializeAuth, loadCollectionState, subscribeToSessions, setSessionOnline, setSessionOffline, syncCollectionStateDiff, saveLearningUserState, subscribeToLearningUserState, deleteLearningUserState, subscribeToLearningUsers } from './services/firebaseService';
 import { ensureInventoryBarcodes, ensureItemBarcode, findDuplicateBarcodeItem, findItemByBarcode, generateBarcode, normalizeBarcode } from './services/barcodeService';
 import { normalizeChecklist } from './services/checklistService';
 import { ACCESS_PERMISSION_VERSION, getDefaultPermissionsForRole, hasPermission, normalizePermissionsForRole, normalizePhone } from './services/accessControl';
@@ -143,10 +143,7 @@ const App: React.FC = () => {
   const [learningTeamAttemptsState, setLearningTeamAttemptsState] = useState<LearningAttempt[]>([]);
   const [learningLeaderboardProfiles, setLearningLeaderboardProfiles] = useState<LearningProfile[]>([]);
   const [activeSessions, setActiveSessions] = useState<ActiveSession[]>([]);
-  const initialLastUpdate = typeof localStorage !== 'undefined' ? localStorage.getItem('ebus_last_update') : null;
-  const lastSyncedAtRef = useRef<number>(initialLastUpdate ? new Date(initialLastUpdate).getTime() : 0);
   const isApplyingRemoteRef = useRef(false);
-  const pendingRemoteTimestampRef = useRef<string | null>(initialLastUpdate);
   const lastPersistedStateRef = useRef<AppState>(stripLearningUserData(createInitialAppState()));
   const lastConflictNoticeRef = useRef<string>('');
   const sessionIdRef = useRef<string>(getSessionId());
@@ -364,9 +361,10 @@ const App: React.FC = () => {
     }
   }, [currentUserId, currentUser]);
 
-  // Khởi tạo mô hình dữ liệu mới theo collection và subscribe realtime từng phần
+  // Khởi tạo mô hình dữ liệu mới theo collection.
+  // Dữ liệu vận hành chỉ tải một lần khi mở app để tránh snapshot realtime cũ ghi đè thao tác đang nhập.
+  // Elearning vẫn có realtime riêng theo user ở các effect phía trên.
   useEffect(() => {
-    let unsubscribers: Array<() => void> = [];
     let cancelled = false;
 
     const loadData = async () => {
@@ -388,20 +386,6 @@ const App: React.FC = () => {
         isApplyingRemoteRef.current = true;
         lastPersistedStateRef.current = stripLearningUserData(nextState);
         setAppState(nextState);
-
-        unsubscribers = PERSISTED_STATE_KEYS.map(key =>
-          subscribeToCollectionState(key, rows => {
-            if (cancelled) return;
-            const patch = { [key]: rows } as Partial<AppState>;
-            const merged = withDefaults({
-              ...lastPersistedStateRef.current,
-              ...patch
-            } as AppState);
-            lastPersistedStateRef.current = stripLearningUserData(merged);
-            isApplyingRemoteRef.current = true;
-            setAppState(prev => withDefaults({ ...prev, ...patch } as AppState));
-          })
-        );
       } catch (error) {
         console.error('Failed to load collection-based data from Firebase:', error);
         try {
@@ -426,7 +410,6 @@ const App: React.FC = () => {
 
     return () => {
       cancelled = true;
-      unsubscribers.forEach(unsubscribe => unsubscribe());
     };
   }, []);
 
@@ -516,7 +499,6 @@ const App: React.FC = () => {
     try {
       localStorage.setItem('ebus_app_state', JSON.stringify(persistentAppState));
       localStorage.setItem('ebus_last_update', timestamp);
-      lastSyncedAtRef.current = new Date(timestamp).getTime();
 
       if (isApplyingRemoteRef.current) {
         isApplyingRemoteRef.current = false;
