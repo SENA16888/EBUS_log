@@ -267,6 +267,7 @@ export interface Employee {
   email?: string;
   avatarUrl?: string;
   baseRate?: number;
+  inactive?: boolean;
 }
 
 export interface EventStaffAllocation {

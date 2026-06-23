@@ -58,7 +58,8 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
     role: '',
     phone: '',
     email: '',
-    baseRate: ''
+    baseRate: '',
+    inactive: false
   });
 
   const filteredEmployees = employees.filter(e => 
@@ -75,7 +76,8 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
       role: emp.role,
       phone: emp.phone,
       email: emp.email || '',
-      baseRate: emp.baseRate ? emp.baseRate.toString() : ''
+      baseRate: emp.baseRate ? emp.baseRate.toString() : '',
+      inactive: !!emp.inactive
     });
     setShowModal(true);
   };
@@ -88,7 +90,8 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
       role: '',
       phone: '',
       email: '',
-      baseRate: ''
+      baseRate: '',
+      inactive: false
     });
     setShowModal(true);
   };
@@ -191,7 +194,7 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
         grouped.set(entry.employeeId, list);
       });
 
-    return employees.map(emp => {
+    return employees.filter(emp => !emp.inactive).map(emp => {
       const entries = [...(grouped.get(emp.id) || [])].sort((a, b) => (a.date || '').localeCompare(b.date || ''));
       const baseTotal = entries.reduce((sum, entry) => sum + (Number.isFinite(entry.salary) ? entry.salary : 0), 0);
       const adj = payrollAdjustmentMap.get(`${emp.id}-${payrollMonth}`);
@@ -310,7 +313,8 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
       phone: formData.phone,
       email: formData.email,
       baseRate: formData.baseRate ? Number(formData.baseRate) : 0,
-      avatarUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(formData.name)}&background=random`
+      avatarUrl: employees.find(emp => emp.id === editingId)?.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(formData.name)}&background=random`,
+      inactive: formData.inactive
     };
 
     if (editingId) {
@@ -509,7 +513,12 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
              <img src={emp.avatarUrl} alt={emp.name} className="w-12 h-12 rounded-full object-cover border border-slate-200" />
              
              <div className="flex-1">
-                <h3 className="font-semibold text-gray-800 text-base leading-tight">{emp.name}</h3>
+                <div className="flex items-center gap-2 pr-14">
+                  <h3 className="font-semibold text-gray-800 text-base leading-tight">{emp.name}</h3>
+                  {emp.inactive && (
+                    <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 text-[10px] font-bold uppercase whitespace-nowrap">Đã nghỉ</span>
+                  )}
+                </div>
                 <p className="text-blue-600 font-medium text-xs mb-1">{emp.role || 'Chưa có vị trí'}</p>
                 
                 <div className="space-y-0.5 text-xs text-gray-600">
@@ -519,6 +528,14 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
                      <p className="flex items-center gap-2 text-green-600 font-medium">
                     <DollarSign size={12} /> {emp.baseRate.toLocaleString()} đ/ngày
                   </p>
+                 )}
+                 {canEdit && (
+                   <button
+                     onClick={() => onUpdateEmployee({ ...emp, inactive: !emp.inactive })}
+                     className={`mt-2 px-2 py-1 rounded-md text-[11px] font-semibold border transition ${emp.inactive ? 'border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100' : 'border-slate-200 text-slate-600 bg-slate-50 hover:bg-slate-100'}`}
+                   >
+                     {emp.inactive ? 'Cho làm lại' : 'Đã nghỉ'}
+                   </button>
                  )}
                 </div>
              </div>
@@ -653,6 +670,16 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
                   placeholder="500000"
                 />
               </div>
+
+              <label className="flex items-center gap-2 rounded-lg border border-slate-200 p-3 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={formData.inactive}
+                  onChange={(e) => setFormData({...formData, inactive: e.target.checked})}
+                  className="h-4 w-4"
+                />
+                <span className="font-medium">Đã nghỉ - ẩn khỏi phân công tương lai và bảng lương</span>
+              </label>
             </div>
 
             <div className="flex justify-end gap-3 mt-8">

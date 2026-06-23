@@ -378,6 +378,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
 
   // Assign Staff State
   const [selectedStaffId, setSelectedStaffId] = useState('');
+  const [staffSearchTerm, setStaffSearchTerm] = useState('');
   const [staffTask, setStaffTask] = useState('');
   const [staffUnit, setStaffUnit] = useState<'HOUR' | 'DAY' | 'FIXED'>('DAY');
   const [staffQty, setStaffQty] = useState(1);
@@ -473,6 +474,19 @@ export const EventManager: React.FC<EventManagerProps> = ({
     });
     return groups;
   }, [timelineEntries]);
+  const activeEmployees = useMemo(
+    () => employees.filter(emp => !emp.inactive),
+    [employees]
+  );
+  const staffSearch = staffSearchTerm.trim().toLowerCase();
+  const assignableEmployees = useMemo(() => {
+    if (!staffSearch) return activeEmployees;
+    return activeEmployees.filter(emp =>
+      emp.name.toLowerCase().includes(staffSearch) ||
+      (emp.role || '').toLowerCase().includes(staffSearch) ||
+      emp.phone.includes(staffSearch)
+    );
+  }, [activeEmployees, staffSearch]);
 
   useEffect(() => {
     setSelectedItemIds([]);
@@ -745,6 +759,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
       shiftDate: selectedShiftDate || undefined
     });
     setSelectedStaffId('');
+    setStaffSearchTerm('');
     setStaffTask('');
     setStaffRate('');
     setStaffQty(1);
@@ -879,7 +894,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
 
   const handleStaffSelect = (empId: string) => {
     setSelectedStaffId(empId);
-    const emp = employees.find(e => e.id === empId);
+    const emp = activeEmployees.find(e => e.id === empId);
     if (emp) {
       setStaffTask(emp.role);
       setStaffRate(emp.baseRate ? emp.baseRate.toString() : '');
@@ -1883,13 +1898,22 @@ export const EventManager: React.FC<EventManagerProps> = ({
                 <div className="space-y-6">
                    <div className="bg-white p-5 rounded-xl border border-blue-100 shadow-sm space-y-4">
                     <h4 className="font-bold text-gray-700 text-xs uppercase flex items-center gap-2"><UserCheck size={16} className="text-blue-500"/> Phân công nhân sự sự kiện</h4>
-                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                     <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      <input
+                        className="border border-slate-200 rounded-lg p-2 text-sm"
+                        placeholder="Tìm nhanh tên nhân sự..."
+                        value={staffSearchTerm}
+                        onChange={e => setStaffSearchTerm(e.target.value)}
+                      />
                       <select className="border border-slate-200 rounded-lg p-2 text-sm bg-white" value={selectedStaffId} onChange={e => handleStaffSelect(e.target.value)}>
                         <option value="">-- Chọn nhân viên --</option>
-                        {employees.map(e => <option key={e.id} value={e.id}>{e.name} ({e.role})</option>)}
+                        {assignableEmployees.map(e => <option key={e.id} value={e.id}>{e.name} ({e.role})</option>)}
                       </select>
                       <input className="border border-slate-200 rounded-lg p-2 text-sm" placeholder="Nhiệm vụ..." value={staffTask} onChange={e => setStaffTask(e.target.value)} />
                     </div>
+                    {staffSearchTerm && assignableEmployees.length === 0 && (
+                      <p className="text-xs text-amber-600">Không tìm thấy nhân sự đang làm phù hợp.</p>
+                    )}
                       {/* Shift picker: show dates between start and end and allow picking Sáng/Chiều/Tối */}
                       {selectedEvent && (
                         <div className="mt-3">
@@ -2085,7 +2109,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
                           disabled={!canEdit}
                         >
                           <option value="">-- Chọn từ danh sách nhân sự --</option>
-                          {employees.map(emp => (
+                          {activeEmployees.map(emp => (
                             <option key={emp.id} value={emp.id}>{emp.name} ({emp.role})</option>
                           ))}
                         </select>
