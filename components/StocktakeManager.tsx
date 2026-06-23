@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, Barcode, CheckCircle2, ClipboardCheck, Download, History, PackageCheck, RotateCcw, Save, Search, XCircle } from 'lucide-react';
+import { AlertTriangle, Barcode, CheckCircle2, ClipboardCheck, Download, FileText, History, PackageCheck, Printer, RotateCcw, Save, Search, X, XCircle } from 'lucide-react';
 import { InventoryAuditBaseline, InventoryAuditItem, InventoryAuditSession, InventoryItem } from '../types';
 import { findItemByBarcode, normalizeBarcode } from '../services/barcodeService';
 
@@ -37,6 +37,21 @@ const buildSnapshot = (item: InventoryItem): InventoryAuditItem['snapshot'] => (
 
 const formatNumber = (value: number) => value.toLocaleString('vi-VN');
 
+const escapeHtml = (value: unknown) =>
+  String(value ?? '').replace(/[&<>"']/g, char => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  }[char] || char));
+
+const loadPdfLib = async () => {
+  if ((window as any).html2pdf) return (window as any).html2pdf;
+  const mod: any = await import('html2pdf.js');
+  return (window as any).html2pdf || mod?.default || mod;
+};
+
 export const StocktakeManager: React.FC<StocktakeManagerProps> = ({
   inventory,
   audits,
@@ -54,6 +69,7 @@ export const StocktakeManager: React.FC<StocktakeManagerProps> = ({
   const [unknownBarcodes, setUnknownBarcodes] = useState<string[]>([]);
   const [sessionTitle, setSessionTitle] = useState(() => `Kiểm kho ${new Date().toLocaleDateString('vi-VN')}`);
   const [sessionNote, setSessionNote] = useState('');
+  const [viewingAudit, setViewingAudit] = useState<InventoryAuditSession | null>(null);
   const scanInputRef = useRef<HTMLInputElement | null>(null);
   const quantityInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -234,6 +250,187 @@ export const StocktakeManager: React.FC<StocktakeManagerProps> = ({
     link.download = `kiem-kho-${new Date().toISOString().slice(0, 10)}.csv`;
     link.click();
     URL.revokeObjectURL(url);
+  };
+
+  const buildAuditHtml = (audit: InventoryAuditSession) => {
+    const countedRows = (audit.items || []).filter(row => row.countedQuantity !== null);
+    const varianceRows = countedRows.filter(row => (row.variance || 0) !== 0);
+    const rows = (audit.items || []).map((row, idx) => {
+      const variance = row.variance || 0;
+      const varianceLabel = row.variance === null ? '' : `${variance > 0 ? '+' : ''}${formatNumber(variance)}`;
+      const varianceClass = variance === 0 ? 'ok' : variance > 0 ? 'surplus' : 'shortage';
+      return `
+        <tr>
+          <td class="center">${idx + 1}</td>
+          <td>
+            <strong>${escapeHtml(row.name)}</strong>
+            <div class="muted">${escapeHtml(row.category)}${row.location ? ` • ${escapeHtml(row.location)}` : ''}</div>
+            <div class="mono">${escapeHtml(row.barcode || row.itemId)}</div>
+          </td>
+          <td class="center">${row.barcodeAttached ? 'Có' : 'Không'}</td>
+          <td class="num">${formatNumber(row.snapshot.totalQuantity)}</td>
+          <td class="num">${formatNumber(row.snapshot.availableQuantity)}</td>
+          <td class="num">${formatNumber(row.snapshot.inUseQuantity)}</td>
+          <td class="num">${formatNumber(row.systemQuantity)}</td>
+          <td class="num">${row.countedQuantity === null ? '' : formatNumber(row.countedQuantity)}</td>
+          <td class="num ${row.variance === null ? '' : varianceClass}">${varianceLabel}</td>
+          <td>${escapeHtml(row.note || '')}</td>
+        </tr>
+      `;
+    }).join('');
+
+    const unknownRows = (audit.unknownBarcodes || []).map(code => `<span class="tag">${escapeHtml(code)}</span>`).join('');
+    const createdAt = audit.createdAt ? new Date(audit.createdAt).toLocaleString('vi-VN') : '';
+    const baselineLabel = audit.baseline === 'TOTAL' ? 'Tổng kho' : 'Sẵn kho';
+
+    return `
+      <div class="audit-doc">
+        <style>
+          .audit-doc { font-family: Arial, sans-serif; color: #0f172a; padding: 20px; background: #fff; }
+          .audit-doc h1 { margin: 0 0 6px; font-size: 24px; text-transform: uppercase; }
+          .audit-doc h2 { margin: 22px 0 10px; font-size: 15px; text-transform: uppercase; }
+          .audit-doc .top { display: flex; justify-content: space-between; gap: 20px; border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 14px; }
+          .audit-doc .meta { font-size: 12px; line-height: 1.55; color: #475569; }
+          .audit-doc .summary { display: grid; grid-template-columns: repeat(8, 1fr); gap: 8px; margin: 14px 0; }
+          .audit-doc .metric { border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px; background: #f8fafc; }
+          .audit-doc .metric span { display: block; font-size: 9px; font-weight: 700; color: #64748b; text-transform: uppercase; }
+          .audit-doc .metric strong { display: block; font-size: 18px; margin-top: 3px; }
+          .audit-doc table { width: 100%; border-collapse: collapse; font-size: 10.5px; }
+          .audit-doc th { background: #f1f5f9; color: #334155; text-align: left; border: 1px solid #cbd5e1; padding: 6px; text-transform: uppercase; font-size: 9px; }
+          .audit-doc td { border: 1px solid #e2e8f0; padding: 6px; vertical-align: top; }
+          .audit-doc .num { text-align: right; font-weight: 700; }
+          .audit-doc .center { text-align: center; }
+          .audit-doc .muted { color: #64748b; font-size: 9.5px; margin-top: 2px; }
+          .audit-doc .mono { color: #475569; font-family: monospace; font-size: 9.5px; margin-top: 2px; }
+          .audit-doc .ok { color: #047857; }
+          .audit-doc .surplus { color: #0369a1; }
+          .audit-doc .shortage { color: #dc2626; }
+          .audit-doc .tag { display: inline-block; border: 1px solid #fed7aa; background: #fff7ed; color: #c2410c; padding: 5px 8px; border-radius: 8px; margin: 0 6px 6px 0; font-family: monospace; font-size: 10px; }
+          .audit-doc .signatures { display: flex; justify-content: space-between; margin-top: 34px; page-break-inside: avoid; }
+          .audit-doc .signature { width: 42%; text-align: center; font-size: 11px; }
+          .audit-doc .signature .line { border-top: 1px solid #0f172a; margin-top: 58px; padding-top: 6px; color: #475569; }
+          @media print {
+            body { margin: 0; background: #fff; }
+            .audit-doc { padding: 12mm; }
+            .no-print { display: none !important; }
+          }
+        </style>
+        <div class="top">
+          <div>
+            <h1>Biên bản kiểm kho</h1>
+            <div class="meta">
+              <strong>${escapeHtml(audit.code)}</strong><br/>
+              ${escapeHtml(audit.title)}<br/>
+              Thời gian: ${escapeHtml(createdAt)}
+            </div>
+          </div>
+          <div class="meta">
+            Người kiểm: <strong>${escapeHtml(audit.createdBy?.name || 'Chưa rõ')}</strong><br/>
+            Vai trò: ${escapeHtml(audit.createdBy?.role || '')}<br/>
+            Đối chiếu theo: <strong>${baselineLabel}</strong>
+          </div>
+        </div>
+
+        ${audit.note ? `<p class="meta"><strong>Ghi chú:</strong> ${escapeHtml(audit.note)}</p>` : ''}
+
+        <div class="summary">
+          <div class="metric"><span>Tổng mã</span><strong>${formatNumber(audit.summary.totalItems)}</strong></div>
+          <div class="metric"><span>Đã kiểm</span><strong>${formatNumber(audit.summary.countedItems)}</strong></div>
+          <div class="metric"><span>Khớp</span><strong>${formatNumber(audit.summary.matchedItems)}</strong></div>
+          <div class="metric"><span>Mã lệch</span><strong>${formatNumber(audit.summary.varianceItems)}</strong></div>
+          <div class="metric"><span>Mã thiếu</span><strong>${formatNumber(audit.summary.shortageItems)}</strong></div>
+          <div class="metric"><span>Mã dư</span><strong>${formatNumber(audit.summary.surplusItems)}</strong></div>
+          <div class="metric"><span>SL thiếu</span><strong>${formatNumber(audit.summary.shortageUnits)}</strong></div>
+          <div class="metric"><span>SL dư</span><strong>${formatNumber(audit.summary.surplusUnits)}</strong></div>
+        </div>
+
+        <h2>Chi tiết đối chiếu</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>STT</th>
+              <th>Thiết bị</th>
+              <th>Đã dán barcode</th>
+              <th>Tổng</th>
+              <th>Sẵn</th>
+              <th>Đang dùng</th>
+              <th>Hệ thống</th>
+              <th>Thực đếm</th>
+              <th>Lệch</th>
+              <th>Ghi chú</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+
+        ${varianceRows.length > 0 ? `<p class="meta"><strong>Lưu ý:</strong> Có ${varianceRows.length} mã lệch cần đối soát xử lý sau kiểm kho.</p>` : ''}
+
+        <h2>Barcode lạ</h2>
+        ${unknownRows || '<p class="meta">Không ghi nhận barcode lạ trong phiên này.</p>'}
+
+        <div class="signatures">
+          <div class="signature">
+            <strong>Người kiểm kho</strong>
+            <div class="line">Ký và ghi rõ họ tên</div>
+          </div>
+          <div class="signature">
+            <strong>Quản lý kho</strong>
+            <div class="line">Ký và ghi rõ họ tên</div>
+          </div>
+        </div>
+      </div>
+    `;
+  };
+
+  const openAuditWindow = (audit: InventoryAuditSession, autoPrint = false) => {
+    const printWindow = window.open('', '_blank', 'width=1120,height=780');
+    if (!printWindow) return;
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>${escapeHtml(audit.code)} - Kiểm kho</title>
+        </head>
+        <body>
+          <div class="no-print" style="position: sticky; top: 0; display: flex; justify-content: flex-end; gap: 8px; padding: 10px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; font-family: Arial, sans-serif;">
+            <button onclick="window.print()" style="padding: 8px 12px; border: 0; border-radius: 8px; background: #2563eb; color: white; font-weight: 700;">In / lưu PDF</button>
+            <button onclick="window.close()" style="padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 8px; background: white; font-weight: 700;">Đóng</button>
+          </div>
+          ${buildAuditHtml(audit)}
+          ${autoPrint ? '<script>setTimeout(() => window.print(), 350);</script>' : ''}
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.focus();
+  };
+
+  const exportAuditPdf = async (audit: InventoryAuditSession) => {
+    const container = document.createElement('div');
+    container.style.position = 'absolute';
+    container.style.left = '-99999px';
+    container.style.top = '0';
+    container.style.width = '297mm';
+    container.style.backgroundColor = '#ffffff';
+    container.innerHTML = buildAuditHtml(audit);
+    document.body.appendChild(container);
+
+    try {
+      const html2pdf = await loadPdfLib();
+      await html2pdf().set({
+        margin: 6,
+        filename: `${audit.code}-kiem-kho.pdf`,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true, logging: false },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' },
+        pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
+      }).from(container).save();
+    } catch (err) {
+      console.error('Export stocktake PDF error', err);
+      alert('Không thể xuất PDF lúc này. Mở cửa sổ xem để in/lưu PDF thay thế.');
+      openAuditWindow(audit, true);
+    } finally {
+      document.body.removeChild(container);
+    }
   };
 
   const recentAudits = audits.slice(0, 5);
@@ -442,7 +639,19 @@ export const StocktakeManager: React.FC<StocktakeManagerProps> = ({
             ) : (
               <div className="space-y-2">
                 {recentAudits.map(audit => (
-                  <div key={audit.id} className="border border-slate-100 rounded-xl p-3 bg-slate-50">
+                  <div
+                    key={audit.id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setViewingAudit(audit)}
+                    onKeyDown={event => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        setViewingAudit(audit);
+                      }
+                    }}
+                    className="border border-slate-100 rounded-xl p-3 bg-slate-50 hover:bg-blue-50 hover:border-blue-100 cursor-pointer transition"
+                  >
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <p className="text-[11px] font-black text-slate-500 uppercase tracking-widest">{audit.code}</p>
@@ -452,6 +661,28 @@ export const StocktakeManager: React.FC<StocktakeManagerProps> = ({
                       <span className={`px-2 py-1 rounded-full text-[10px] font-black ${audit.summary.varianceItems > 0 ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
                         {audit.summary.varianceItems} lệch
                       </span>
+                    </div>
+                    <div className="mt-3 flex gap-2">
+                      <button
+                        type="button"
+                        onClick={event => {
+                          event.stopPropagation();
+                          openAuditWindow(audit);
+                        }}
+                        className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-white border border-slate-200 text-[10px] font-black uppercase tracking-widest text-slate-700 hover:bg-slate-100"
+                      >
+                        <Printer size={13} /> Cửa sổ
+                      </button>
+                      <button
+                        type="button"
+                        onClick={event => {
+                          event.stopPropagation();
+                          void exportAuditPdf(audit);
+                        }}
+                        className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-blue-600 text-white text-[10px] font-black uppercase tracking-widest hover:bg-blue-700"
+                      >
+                        <FileText size={13} /> PDF
+                      </button>
                     </div>
                   </div>
                 ))}
@@ -611,6 +842,138 @@ export const StocktakeManager: React.FC<StocktakeManagerProps> = ({
           </div>
         </div>
       </div>
+
+      {viewingAudit && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-[120] flex items-center justify-center p-3 md:p-6">
+          <div className="bg-white w-full max-w-6xl max-h-[92vh] rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden">
+            <div className="p-4 md:p-5 border-b border-slate-200 bg-slate-50 flex flex-col md:flex-row md:items-start justify-between gap-3">
+              <div>
+                <p className="text-[11px] font-black text-blue-600 uppercase tracking-widest">{viewingAudit.code}</p>
+                <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight">{viewingAudit.title}</h3>
+                <p className="text-sm text-slate-500">
+                  {new Date(viewingAudit.createdAt).toLocaleString('vi-VN')} • Người kiểm: {viewingAudit.createdBy?.name || 'Chưa rõ'} • So theo {viewingAudit.baseline === 'TOTAL' ? 'tổng kho' : 'sẵn kho'}
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => openAuditWindow(viewingAudit)}
+                  className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-white border border-slate-200 text-slate-700 text-[11px] font-black uppercase tracking-widest hover:bg-slate-100"
+                >
+                  <Printer size={15} /> Cửa sổ
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void exportAuditPdf(viewingAudit)}
+                  className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 text-white text-[11px] font-black uppercase tracking-widest hover:bg-blue-700"
+                >
+                  <FileText size={15} /> Xuất PDF
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewingAudit(null)}
+                  className="p-2.5 rounded-xl bg-white border border-slate-200 text-slate-500 hover:text-slate-900 hover:bg-slate-100"
+                  title="Đóng"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+
+            <div className="p-4 md:p-5 overflow-y-auto space-y-4">
+              <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-2">
+                {[
+                  ['Tổng mã', viewingAudit.summary.totalItems],
+                  ['Đã kiểm', viewingAudit.summary.countedItems],
+                  ['Khớp', viewingAudit.summary.matchedItems],
+                  ['Mã lệch', viewingAudit.summary.varianceItems],
+                  ['Mã thiếu', viewingAudit.summary.shortageItems],
+                  ['Mã dư', viewingAudit.summary.surplusItems],
+                  ['SL thiếu', viewingAudit.summary.shortageUnits],
+                  ['SL dư', viewingAudit.summary.surplusUnits]
+                ].map(([label, value]) => (
+                  <div key={label} className="rounded-xl border border-slate-100 bg-slate-50 p-3">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{label}</p>
+                    <p className="text-xl font-black text-slate-900">{formatNumber(Number(value) || 0)}</p>
+                  </div>
+                ))}
+              </div>
+
+              {viewingAudit.note && (
+                <div className="rounded-xl border border-blue-100 bg-blue-50 p-3 text-sm text-blue-800">
+                  <span className="font-black">Ghi chú: </span>{viewingAudit.note}
+                </div>
+              )}
+
+              <div className="overflow-auto border border-slate-100 rounded-xl max-h-[54vh]">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-slate-50 sticky top-0 z-10">
+                    <tr className="text-left text-[10px] font-black uppercase tracking-widest text-slate-500">
+                      <th className="px-3 py-3">Thiết bị</th>
+                      <th className="px-3 py-3 text-center">Đã dán barcode</th>
+                      <th className="px-3 py-3 text-right">Tổng</th>
+                      <th className="px-3 py-3 text-right">Sẵn</th>
+                      <th className="px-3 py-3 text-right">Đang dùng</th>
+                      <th className="px-3 py-3 text-right">Hệ thống</th>
+                      <th className="px-3 py-3 text-right">Thực đếm</th>
+                      <th className="px-3 py-3 text-right">Lệch</th>
+                      <th className="px-3 py-3">Ghi chú</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {(viewingAudit.items || []).map(row => {
+                      const variance = row.variance || 0;
+                      const isCounted = row.countedQuantity !== null;
+                      return (
+                        <tr key={row.itemId} className="bg-white">
+                          <td className="px-3 py-3 min-w-[240px]">
+                            <p className="font-bold text-slate-800">{row.name}</p>
+                            <p className="text-[11px] text-slate-500">{row.category} {row.location ? `• ${row.location}` : ''}</p>
+                            <p className="text-[11px] font-mono text-slate-400">{row.barcode || row.itemId}</p>
+                          </td>
+                          <td className="px-3 py-3 text-center">
+                            <span className={`px-2 py-1 rounded-lg text-[11px] font-black ${row.barcodeAttached ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                              {row.barcodeAttached ? 'Có' : 'Không'}
+                            </span>
+                          </td>
+                          <td className="px-3 py-3 text-right font-bold text-slate-700">{formatNumber(row.snapshot.totalQuantity)}</td>
+                          <td className="px-3 py-3 text-right font-bold text-blue-600">{formatNumber(row.snapshot.availableQuantity)}</td>
+                          <td className="px-3 py-3 text-right font-bold text-amber-600">{formatNumber(row.snapshot.inUseQuantity)}</td>
+                          <td className="px-3 py-3 text-right font-black text-slate-800">{formatNumber(row.systemQuantity)}</td>
+                          <td className="px-3 py-3 text-right font-black text-slate-800">{isCounted ? formatNumber(row.countedQuantity || 0) : '-'}</td>
+                          <td className="px-3 py-3 text-right">
+                            {isCounted ? (
+                              <span className={`inline-flex justify-end min-w-16 px-2 py-1 rounded-lg text-xs font-black ${variance === 0 ? 'bg-emerald-50 text-emerald-700' : variance > 0 ? 'bg-cyan-50 text-cyan-700' : 'bg-red-50 text-red-700'}`}>
+                                {variance > 0 ? '+' : ''}{formatNumber(variance)}
+                              </span>
+                            ) : '-'}
+                          </td>
+                          <td className="px-3 py-3 text-slate-600 min-w-[180px]">{row.note || ''}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="rounded-xl border border-orange-100 bg-orange-50 p-3">
+                <p className="text-[10px] font-black uppercase tracking-widest text-orange-700 mb-2">Barcode lạ</p>
+                {viewingAudit.unknownBarcodes?.length ? (
+                  <div className="flex flex-wrap gap-2">
+                    {viewingAudit.unknownBarcodes.map(code => (
+                      <span key={code} className="px-3 py-2 rounded-xl bg-white border border-orange-100 text-orange-700 text-xs font-mono font-bold">
+                        {code}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-orange-700">Không ghi nhận barcode lạ trong phiên này.</p>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

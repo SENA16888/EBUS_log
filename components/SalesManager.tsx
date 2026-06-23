@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Event, SaleItem, SaleOrder } from '../types';
-import { Plus, X, Trash2, Printer } from 'lucide-react';
+import { CreditCard, ImageIcon, Plus, Printer, ScanLine, Trash2, X } from 'lucide-react';
 import OrderManager from './OrderManager';
 import { calcLineTotal } from '../services/pricing';
 
@@ -17,6 +17,13 @@ interface SalesManagerProps {
   canEdit?: boolean;
   canDelete?: boolean;
 }
+
+type PaymentLine = {
+  item: SaleItem;
+  quantity: number;
+  discount: number;
+  discountPercent: number;
+};
 
 export const SalesManager: React.FC<SalesManagerProps> = ({
   saleItems,
@@ -79,8 +86,103 @@ export const SalesManager: React.FC<SalesManagerProps> = ({
   const [orderDiscount, setOrderDiscount] = useState(0);
   const [showOrderDetail, setShowOrderDetail] = useState(false);
   const [editingOrderItems, setEditingOrderItems] = useState<Record<string, { quantity: number; discount: number; discountPercent: number }>>({});
+  const [paymentScan, setPaymentScan] = useState('');
+  const [paymentCart, setPaymentCart] = useState<Record<string, PaymentLine>>({});
+  const [paymentCode, setPaymentCode] = useState(() => `PAY-${Date.now().toString().slice(-6)}`);
+  const [paymentCustomer, setPaymentCustomer] = useState('');
+  const [paymentContact, setPaymentContact] = useState('');
   const selectedSubtotal = selectedList.reduce((acc, { item }) => acc + ((item!.price - (lineDiscounts[item!.id] || 0)) * (selection[item!.id] || 1)), 0);
   const totalAfterDiscount = Math.max(0, selectedSubtotal - orderDiscount);
+  const finalizedOrders = useMemo(() => saleOrders.filter(order => (order.type || 'SALE') !== 'RETURN' && order.status === 'FINALIZED'), [saleOrders]);
+  const paymentStats = useMemo(() => {
+    const soldQuantity = finalizedOrders.reduce((acc, order) => acc + (order.items || []).reduce((sum, item) => sum + (item.soldQuantity ?? item.quantity ?? 0), 0), 0);
+    const collected = finalizedOrders.reduce((acc, order) => acc + Math.max(0, order.total || order.subtotal || 0), 0);
+    return { soldQuantity, collected };
+  }, [finalizedOrders]);
+  const paymentLines = Object.values(paymentCart);
+  const paymentSubtotal = paymentLines.reduce((acc, line) => acc + calcLineTotal(line.item.price || 0, line.quantity || 0, line.discount || 0, line.discountPercent || 0), 0);
+
+  const findSaleItemForPayment = (code: string) => {
+    const normalized = code.trim().toLowerCase();
+    if (!normalized) return null;
+    return saleItems.find(item =>
+      item.id.toLowerCase() === normalized ||
+      (item.barcode || '').trim().toLowerCase() === normalized
+    ) || null;
+  };
+
+  const addPaymentItem = (item: SaleItem) => {
+    setPaymentCart(prev => {
+      const existing = prev[item.id];
+      return {
+        ...prev,
+        [item.id]: existing
+          ? { ...existing, quantity: existing.quantity + 1 }
+          : { item, quantity: 1, discount: 0, discountPercent: 0 }
+      };
+    });
+  };
+
+  const updatePaymentLine = (itemId: string, patch: Partial<Omit<PaymentLine, 'item'>>) => {
+    setPaymentCart(prev => {
+      const line = prev[itemId];
+      if (!line) return prev;
+      return { ...prev, [itemId]: { ...line, ...patch } };
+    });
+  };
+
+  const removePaymentLine = (itemId: string) => {
+    setPaymentCart(prev => {
+      const next = { ...prev };
+      delete next[itemId];
+      return next;
+    });
+  };
+
+  const finalizePayment = () => {
+    if (!canEdit) return;
+    if (paymentLines.length === 0) { alert('Chưa có sản phẩm trong thanh toán.'); return; }
+    const orderItems = paymentLines
+      .filter(line => line.quantity > 0)
+      .map(line => {
+        const lineTotal = Math.max(0, calcLineTotal(line.item.price || 0, line.quantity, line.discount || 0, line.discountPercent || 0));
+        return {
+          itemId: line.item.id,
+          barcode: line.item.barcode,
+          name: line.item.name,
+          price: line.item.price,
+          quantity: line.quantity,
+          soldQuantity: line.quantity,
+          discount: line.discount || 0,
+          discountPercent: line.discountPercent || 0,
+          lineTotal
+        };
+      });
+    if (orderItems.length === 0) { alert('Vui lòng nhập số lượng bán hợp lệ.'); return; }
+    const total = orderItems.reduce((acc, item) => acc + (item.lineTotal || 0), 0);
+    const order: SaleOrder = {
+      id: paymentCode || `PAY-${Date.now()}`,
+      date: new Date().toISOString(),
+      customerName: paymentCustomer.trim() || 'Khách lẻ',
+      customerContact: paymentContact.trim(),
+      items: orderItems,
+      subtotal: total,
+      total,
+      note: `Thanh toán nhanh ${paymentCode}`,
+      type: 'SALE',
+      groupType: 'CUSTOMER',
+      groupId: paymentCustomer.trim() || 'Khách lẻ',
+      groupName: paymentCustomer.trim() || 'Khách lẻ',
+      status: 'FINALIZED'
+    };
+    onCreateSaleOrder(order);
+    setPaymentCart({});
+    setPaymentCustomer('');
+    setPaymentContact('');
+    setPaymentScan('');
+    setPaymentCode(`PAY-${Date.now().toString().slice(-6)}`);
+    alert('Đã ghi nhận thanh toán.');
+  };
 
   return (
     <div className="space-y-6">
@@ -97,6 +199,113 @@ export const SalesManager: React.FC<SalesManagerProps> = ({
           )}
         </div>
       </div>
+
+      <section className="bg-white border border-slate-200 rounded-lg p-4 shadow-sm">
+        <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+          <div className="flex-1 space-y-4">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-black flex items-center gap-2"><CreditCard size={20} /> Thanh toán nhanh</h3>
+                <p className="text-sm text-slate-500">Quét barcode, chỉnh chiết khấu và chốt hàng đã bán.</p>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <div className="bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">
+                  <div className="text-xs text-slate-500">Đã bán</div>
+                  <div className="font-black">{paymentStats.soldQuantity.toLocaleString()}</div>
+                </div>
+                <div className="bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">
+                  <div className="text-xs text-slate-500">Đã thu</div>
+                  <div className="font-black text-blue-700">{paymentStats.collected.toLocaleString()}đ</div>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-5 gap-3">
+              <div className="lg:col-span-2">
+                <label className="text-xs font-black text-slate-500">Quét barcode / mã hàng</label>
+                <div className="relative">
+                  <ScanLine className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                  <input
+                    value={paymentScan}
+                    onChange={e => setPaymentScan(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key !== 'Enter') return;
+                      const item = findSaleItemForPayment(paymentScan);
+                      if (!item) { alert('Không tìm thấy sản phẩm theo barcode hoặc mã hàng.'); return; }
+                      addPaymentItem(item);
+                      setPaymentScan('');
+                    }}
+                    placeholder="Quét rồi nhấn Enter"
+                    className="w-full border rounded-lg py-2 pl-9 pr-3"
+                    disabled={!canEdit}
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-black text-slate-500">Mã thanh toán</label>
+                <input className="w-full border rounded-lg p-2" value={paymentCode} onChange={e => setPaymentCode(e.target.value)} disabled={!canEdit} />
+              </div>
+              <div>
+                <label className="text-xs font-black text-slate-500">Khách hàng</label>
+                <input className="w-full border rounded-lg p-2" value={paymentCustomer} onChange={e => setPaymentCustomer(e.target.value)} placeholder="Khách lẻ" disabled={!canEdit} />
+              </div>
+              <div>
+                <label className="text-xs font-black text-slate-500">Liên hệ</label>
+                <input className="w-full border rounded-lg p-2" value={paymentContact} onChange={e => setPaymentContact(e.target.value)} disabled={!canEdit} />
+              </div>
+            </div>
+
+            {paymentLines.length === 0 ? (
+              <div className="border border-dashed border-slate-200 rounded-lg p-4 text-sm text-slate-400">Chưa có sản phẩm trong thanh toán.</div>
+            ) : (
+              <div className="space-y-2">
+                {paymentLines.map(line => {
+                  const image = line.item.images?.[0];
+                  const lineTotal = calcLineTotal(line.item.price || 0, line.quantity || 0, line.discount || 0, line.discountPercent || 0);
+                  return (
+                    <div key={line.item.id} className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-center border border-slate-100 rounded-lg p-3">
+                      <div className="lg:col-span-4 flex items-center gap-3 min-w-0">
+                        <div className="w-14 h-14 rounded-lg bg-slate-100 border border-slate-100 overflow-hidden flex items-center justify-center flex-shrink-0">
+                          {image ? <img src={image} alt={line.item.name} className="w-full h-full object-cover" /> : <ImageIcon size={20} className="text-slate-400" />}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="font-bold truncate">{line.item.name}</div>
+                          <div className="text-xs text-slate-500 font-mono truncate">{line.item.barcode || line.item.id}</div>
+                          <div className="text-sm font-black">{line.item.price.toLocaleString()}đ</div>
+                        </div>
+                      </div>
+                      <div className="lg:col-span-2">
+                        <label className="text-xs text-slate-500">Số lượng</label>
+                        <input type="number" min={1} value={line.quantity} onChange={e => updatePaymentLine(line.item.id, { quantity: Number(e.target.value) })} className="w-full border rounded p-2" disabled={!canEdit} />
+                      </div>
+                      <div className="lg:col-span-2">
+                        <label className="text-xs text-slate-500">CK tiền mặt</label>
+                        <input type="number" min={0} value={line.discount} onChange={e => updatePaymentLine(line.item.id, { discount: Number(e.target.value) })} className="w-full border rounded p-2" disabled={!canEdit} />
+                      </div>
+                      <div className="lg:col-span-2">
+                        <label className="text-xs text-slate-500">% CK</label>
+                        <input type="number" min={0} max={100} value={line.discountPercent} onChange={e => updatePaymentLine(line.item.id, { discountPercent: Number(e.target.value) })} className="w-full border rounded p-2" disabled={!canEdit} />
+                      </div>
+                      <div className="lg:col-span-2 flex items-center justify-between gap-2">
+                        <div className="font-black text-blue-700">{lineTotal.toLocaleString()}đ</div>
+                        {canEdit && <button onClick={() => removePaymentLine(line.item.id)} className="text-red-500"><Trash2 size={16} /></button>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <div className="lg:w-64 border border-slate-200 rounded-lg p-4 bg-slate-50">
+            <div className="text-xs text-slate-500">Tổng thanh toán</div>
+            <div className="text-2xl font-black text-blue-700 mt-1">{paymentSubtotal.toLocaleString()}đ</div>
+            <button onClick={finalizePayment} disabled={!canEdit || paymentLines.length === 0} className="mt-4 w-full bg-blue-600 text-white px-4 py-3 rounded-lg font-bold disabled:opacity-50">
+              Đã bán
+            </button>
+          </div>
+        </div>
+      </section>
 
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-3">
         <div className="text-sm text-slate-500">Chọn nhiều mặt hàng bằng checkbox, chỉnh số lượng ngay tại chỗ.</div>

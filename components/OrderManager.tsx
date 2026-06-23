@@ -29,6 +29,7 @@ export const OrderManager: React.FC<OrderManagerProps> = ({
   const [editingItems, setEditingItems] = useState<Record<string, { quantity: number; discount: number; discountPercent: number }>>({});
   const [showReturnModal, setShowReturnModal] = useState(false);
   const [returnSelection, setReturnSelection] = useState<Record<string, number>>({});
+  const [returnDiscounts, setReturnDiscounts] = useState<Record<string, { discount: number; discountPercent: number }>>({});
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   const [printMenuOrderId, setPrintMenuOrderId] = useState<string | null>(null);
   const [scanSold, setScanSold] = useState('');
@@ -607,6 +608,7 @@ export const OrderManager: React.FC<OrderManagerProps> = ({
                                       map[item.itemId] = 0;
                                     });
                                     setReturnSelection(map);
+                                    setReturnDiscounts({});
                                   }}
                                   className="px-3 py-1 bg-yellow-100 rounded"
                                 >
@@ -864,7 +866,7 @@ export const OrderManager: React.FC<OrderManagerProps> = ({
             <div className="bg-white rounded-xl w-full max-w-2xl p-6 max-h-[85vh] flex flex-col shadow-2xl">
               <div className="flex justify-between items-center mb-4">
                 <h3 className="font-bold">Tạo trả hàng cho {openOrder.id}</h3>
-                <button onClick={() => { setShowReturnModal(false); setOpenOrder(null); }}><X size={18}/></button>
+                <button onClick={() => { setShowReturnModal(false); setOpenOrder(null); setReturnDiscounts({}); }}><X size={18}/></button>
               </div>
               <div className="space-y-3 flex-1 overflow-y-auto pr-1">
                 <div className="grid grid-cols-1 gap-2">
@@ -873,12 +875,14 @@ export const OrderManager: React.FC<OrderManagerProps> = ({
                     const alreadyReturnedQty = orderReturns.reduce((a, r) => a + ((r.items || []).reduce((s: number, ri: any) => s + (ri.itemId === it.itemId ? (ri.quantity || 0) : 0), 0)), 0);
                     const soldQty = it.soldQuantity ?? 0;
                     const maxAllowed = Math.max(0, (it.quantity || 0) - soldQty - alreadyReturnedQty);
-                    const discountPercent = it.discountPercent || 0;
-                    const discountLabel = `${(it.discount || 0).toLocaleString()}đ${discountPercent ? ` (${discountPercent}%)` : ''}`;
-                    const lineTotal = calcLineTotal(it.price || 0, returnSelection[it.itemId] || 0, it.discount || 0, discountPercent);
+                    const returnDiscount = returnDiscounts[it.itemId]?.discount || 0;
+                    const returnDiscountPercent = returnDiscounts[it.itemId]?.discountPercent || 0;
+                    const oldDiscountPercent = it.discountPercent || 0;
+                    const oldDiscountLabel = `${(it.discount || 0).toLocaleString()}đ${oldDiscountPercent ? ` (${oldDiscountPercent}%)` : ''}`;
+                    const lineTotal = calcLineTotal(it.price || 0, returnSelection[it.itemId] || 0, returnDiscount, returnDiscountPercent);
                     return (
-                      <div key={idx} className="grid grid-cols-6 gap-2 items-center border-b py-2">
-                        <div className="col-span-3">
+                      <div key={idx} className="grid grid-cols-8 gap-2 items-center border-b py-2">
+                        <div className="col-span-2">
                           <div className="font-bold">{it.name}</div>
                           <div className="text-xs text-slate-500">{it.itemId}</div>
                         </div>
@@ -894,7 +898,30 @@ export const OrderManager: React.FC<OrderManagerProps> = ({
                           disabled={maxAllowed === 0 || !canEdit}
                         />
                         </div>
-                        <div className="text-xs text-slate-400">Còn trả tối đa: {maxAllowed} • Chiết khấu cũ: {discountLabel}</div>
+                        <div>
+                          <label className="text-xs">CK trả</label>
+                          <input
+                            type="number"
+                            min={0}
+                            value={returnDiscount}
+                            onChange={e => setReturnDiscounts(prev => ({ ...prev, [it.itemId]: { ...(prev[it.itemId] || { discount: 0, discountPercent: 0 }), discount: Number(e.target.value) } }))}
+                            className="w-24 border p-1 rounded"
+                            disabled={maxAllowed === 0 || !canEdit}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs">% CK trả</label>
+                          <input
+                            type="number"
+                            min={0}
+                            max={100}
+                            value={returnDiscountPercent}
+                            onChange={e => setReturnDiscounts(prev => ({ ...prev, [it.itemId]: { ...(prev[it.itemId] || { discount: 0, discountPercent: 0 }), discountPercent: Number(e.target.value) } }))}
+                            className="w-20 border p-1 rounded"
+                            disabled={maxAllowed === 0 || !canEdit}
+                          />
+                        </div>
+                        <div className="text-xs text-slate-400">Còn trả tối đa: {maxAllowed} • CK bán cũ: {oldDiscountLabel}</div>
                         <div className="text-right font-black">{lineTotal.toLocaleString()}đ</div>
                       </div>
                     );
@@ -942,7 +969,7 @@ export const OrderManager: React.FC<OrderManagerProps> = ({
                   );
                 })()}
                 <div className="flex gap-2 flex-shrink-0">
-                <button onClick={() => { setShowReturnModal(false); setOpenOrder(null); }} className="px-4 py-2">Hủy</button>
+                <button onClick={() => { setShowReturnModal(false); setOpenOrder(null); setReturnDiscounts({}); }} className="px-4 py-2">Hủy</button>
                 <div className="relative">
                   <button
                     onClick={() => setPrintMenuOrderId(prev => prev === 'RETURN' ? null : 'RETURN')}
@@ -984,8 +1011,8 @@ export const OrderManager: React.FC<OrderManagerProps> = ({
                       const qty = returnSelection[it.itemId] || 0;
                       if (qty > 0) {
                         if (qty > maxAllowed) { alert(`Số lượng trả cho "${it.name}" vượt quá số đã xuất còn lại (${maxAllowed}).`); return; }
-                        const discount = it.discount || 0;
-                        const discountPercent = it.discountPercent || 0;
+                        const discount = returnDiscounts[it.itemId]?.discount || 0;
+                        const discountPercent = returnDiscounts[it.itemId]?.discountPercent || 0;
                         const lineTotal = -Math.max(0, calcLineTotal(it.price || 0, qty, discount, discountPercent));
                         built.push({ itemId: it.itemId, barcode: it.barcode, name: it.name, price: it.price, quantity: qty, discount, discountPercent, lineTotal });
                       }
@@ -998,7 +1025,7 @@ export const OrderManager: React.FC<OrderManagerProps> = ({
                     if (built.length === 0 && !canComplete) { alert('Chưa chọn sản phẩm trả.'); return; }
                     if (built.length === 0 && canComplete) {
                       if (onCreateSaleOrder) onCreateSaleOrder({ ...openOrder });
-                      setShowReturnModal(false); setOpenOrder(null); setReturnSelection({});
+                      setShowReturnModal(false); setOpenOrder(null); setReturnSelection({}); setReturnDiscounts({});
                       alert('Đã hoàn tất đơn hàng.');
                       return;
                     }
@@ -1021,7 +1048,7 @@ export const OrderManager: React.FC<OrderManagerProps> = ({
                       eventName: openOrder.eventName
                     };
                     if (onCreateSaleReturn) onCreateSaleReturn(order);
-                    setShowReturnModal(false); setOpenOrder(null); setReturnSelection({});
+                    setShowReturnModal(false); setOpenOrder(null); setReturnSelection({}); setReturnDiscounts({});
                     alert('Đã tạo đơn trả hàng.');
                   }} className="px-4 py-2 bg-yellow-600 text-white rounded">Tạo trả hàng</button>
                 )}
