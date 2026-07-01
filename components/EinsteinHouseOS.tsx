@@ -2,32 +2,41 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   BarChart3,
+  Beaker,
   Bot,
   Box,
+  BookOpen,
+  Brain,
   Building2,
   Camera,
   CheckCircle2,
   Circle,
   ClipboardCheck,
   Clock3,
+  Cpu,
   FileText,
   GripVertical,
   Library,
   MapPin,
   MessageSquareText,
+  Microscope,
+  Palette,
   PackageCheck,
   PlayCircle,
   Plus,
   Radio,
   RefreshCw,
   Route,
+  Rocket,
   Save,
   Siren,
   Sparkles,
+  Telescope,
   TimerReset,
   Trash2,
   UserRoundCheck,
   Users,
+  Wrench,
   Wand2
 } from 'lucide-react';
 import {
@@ -136,6 +145,22 @@ const STATUS_LABELS: Record<HouseOperationTaskStatus, string> = {
 };
 
 const GROUP_COLORS = ['#0f766e', '#2563eb', '#c2410c', '#7c3aed', '#be123c', '#047857'];
+
+const GROUP_LOGOS = [
+  { id: 'maker', label: 'Chế tạo', icon: Wrench },
+  { id: 'lab', label: 'Thí nghiệm', icon: Beaker },
+  { id: 'books', label: 'Sách', icon: BookOpen },
+  { id: 'robot', label: 'Robot', icon: Bot },
+  { id: 'rocket', label: 'Tên lửa', icon: Rocket },
+  { id: 'micro', label: 'Kính hiển vi', icon: Microscope },
+  { id: 'tech', label: 'Công nghệ', icon: Cpu },
+  { id: 'brain', label: 'Tư duy', icon: Brain },
+  { id: 'art', label: 'Sáng tạo', icon: Palette },
+  { id: 'space', label: 'Vũ trụ', icon: Telescope }
+];
+
+const getGroupLogo = (group: Pick<HouseOperationRotationGroup, 'logoId'>, index: number) =>
+  GROUP_LOGOS.find(logo => logo.id === group.logoId) || GROUP_LOGOS[index % GROUP_LOGOS.length];
 
 const formatDate = (value?: string) => {
   if (!value) return 'Chưa có ngày';
@@ -316,6 +341,7 @@ const buildRotations = (studentCount: number, stations: HouseOperationStation[],
     name: `Lớp/Nhóm ${String.fromCharCode(65 + index)}`,
     studentCount: Math.ceil(studentCount / groupCount),
     color: GROUP_COLORS[index % GROUP_COLORS.length],
+    logoId: GROUP_LOGOS[index % GROUP_LOGOS.length].id,
     route: stationIds.map((_, routeIndex) => stationIds[(routeIndex + index) % stationIds.length]).filter(Boolean)
   }));
 };
@@ -1006,6 +1032,17 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
     }));
   };
 
+  const updateRotationGroup = (groupId: string, patch: Partial<HouseOperationRotationGroup>) => {
+    saveOperation(current => ({
+      ...current,
+      rotations: current.rotations.map((group, index) =>
+        group.id === groupId
+          ? { ...group, logoId: group.logoId || GROUP_LOGOS[index % GROUP_LOGOS.length].id, ...patch }
+          : group
+      )
+    }));
+  };
+
   const addIncident = () => {
     if (!newIncidentTitle.trim()) return;
     saveOperation(current => ({
@@ -1160,6 +1197,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
   const selectedRoomTimeline = roomTimelines.find(item => item.room === operation.live?.selectedRoom) || roomTimelines[0];
   const activeRoomBlock = selectedRoomTimeline?.blocks.find(block => getBlockState(block, liveNow) === 'NOW');
   const nextRoomBlock = selectedRoomTimeline?.blocks.find(block => getBlockState(block, liveNow) === 'UPCOMING');
+  const focusRoomBlock = activeRoomBlock || nextRoomBlock;
   const scheduledArrival = operation.timeline.find(block => block.kind === 'OPENING')?.startTime || getProgramStart(selectedEvent);
   const actualArrival = operation.live?.actualArrivalTime || scheduledArrival;
   const liveDelta = timeToMinutes(actualArrival) - timeToMinutes(scheduledArrival);
@@ -1576,20 +1614,51 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                   </div>
                 )}
                 <div className="mt-4 space-y-3">
-                  {operation.rotations.map((group, groupIndex) => (
-                    <div key={group.id} className="border border-slate-100 bg-slate-50 rounded-lg p-3" style={{ borderLeft: `5px solid ${group.color || GROUP_COLORS[groupIndex % GROUP_COLORS.length]}` }}>
-                      <div className="flex items-center justify-between">
-                        <p className="font-black text-slate-800">{group.name}</p>
-                        <span className="text-xs font-bold text-slate-500">{group.studentCount} HS</span>
+                  {operation.rotations.map((group, groupIndex) => {
+                    const color = group.color || GROUP_COLORS[groupIndex % GROUP_COLORS.length];
+                    const logo = getGroupLogo(group, groupIndex);
+                    const LogoIcon = logo.icon;
+                    return (
+                      <div key={group.id} className="border border-slate-100 bg-slate-50 rounded-lg p-3" style={{ borderLeft: `5px solid ${color}` }}>
+                        <div className="flex items-start gap-3">
+                          <div className="h-12 w-12 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: `${color}18`, color }}>
+                            <LogoIcon size={24} />
+                          </div>
+                          <div className="flex-1 min-w-0 space-y-2">
+                            <input
+                              value={group.name}
+                              disabled={!canEdit}
+                              onChange={event => updateRotationGroup(group.id, { name: event.target.value })}
+                              className="w-full border rounded-lg px-3 py-2 text-sm font-black bg-white"
+                              placeholder="Tên nhóm"
+                            />
+                            <div className="grid grid-cols-[minmax(0,1fr)_72px] gap-2">
+                              <label className="flex items-center gap-2 border rounded-lg bg-white px-2 py-2">
+                                <span className="text-[11px] font-black text-slate-500">HS</span>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  value={group.studentCount}
+                                  disabled={!canEdit}
+                                  onChange={event => updateRotationGroup(group.id, { studentCount: Math.max(0, Number(event.target.value) || 0) })}
+                                  className="min-w-0 flex-1 text-sm font-black outline-none"
+                                />
+                              </label>
+                              <input
+                                type="color"
+                                value={color}
+                                disabled={!canEdit}
+                                onChange={event => updateRotationGroup(group.id, { color: event.target.value })}
+                                className="h-10 w-full rounded-lg border border-slate-200 bg-white p-1"
+                                title="Màu nhóm"
+                              />
+                            </div>
+                            <p className="text-[11px] font-bold text-slate-500">Logo tự động: {logo.label}</p>
+                          </div>
+                        </div>
                       </div>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {group.route.map((stationId, index) => {
-                          const station = operation.stations.find(s => s.id === stationId);
-                          return <span key={`${group.id}-${stationId}-${index}`} className="px-2 py-1 bg-white border border-slate-200 rounded-md text-xs font-bold">{index + 1}. {station?.name || stationId}</span>;
-                        })}
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </section>
 
@@ -1859,6 +1928,13 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                       <p className="mt-1 text-lg font-black text-violet-950">{nextRoomBlock ? nextRoomBlock.groupName : 'Không còn nhóm'}</p>
                       <p className="text-xs text-violet-700">{nextRoomBlock ? `${nextRoomBlock.startTime}-${nextRoomBlock.endTime} • ${nextRoomBlock.title}` : 'Không có lượt tiếp theo'}</p>
                     </div>
+                  </div>
+                  <div className="mt-3 rounded-lg bg-white/90 border border-violet-100 p-4 text-center">
+                    <p className="text-xs font-black uppercase text-violet-600">{activeRoomBlock ? 'Thời gian còn lại của lượt hiện tại' : 'Thời gian tới lượt tiếp theo'}</p>
+                    <p className="mt-1 text-3xl font-black text-violet-950">{getCountdownLabel(focusRoomBlock, liveNow)}</p>
+                    {focusRoomBlock && (
+                      <p className="mt-1 text-xs font-bold text-violet-700">{focusRoomBlock.groupName} • {focusRoomBlock.startTime}-{focusRoomBlock.endTime}</p>
+                    )}
                   </div>
                 </div>
                 <div className="mt-4 space-y-2">

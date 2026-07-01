@@ -433,6 +433,7 @@ export interface HouseOperationRotationGroup {
   studentCount: number;
   route: string[];
   color?: string;
+  logoId?: string;
 }
 
 export interface HouseOperationTask {
