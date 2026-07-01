@@ -401,6 +401,7 @@ export interface HouseOperationStation {
   packageId?: string;
   packageIds?: string[];
   packageName?: string;
+  areaDescription?: string;
   category: 'SHOW' | 'VR' | 'WORKSHOP' | 'ROBOT' | 'STEM' | 'MEDIA' | 'OTHER';
   durationMinutes: number;
   room?: string;

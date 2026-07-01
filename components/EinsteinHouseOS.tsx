@@ -323,6 +323,7 @@ const createStationFromPackage = (pkg: ComboPackage, inventory: InventoryItem[],
     packageId: pkg.id,
     packageIds: [pkg.id],
     packageName: pkg.name,
+    areaDescription: pkg.description || '',
     category,
     durationMinutes: getPackageStationDuration(pkg),
     room: `Khu ${index + 1}`,
@@ -334,6 +335,23 @@ const createStationFromPackage = (pkg: ComboPackage, inventory: InventoryItem[],
     status: 'TODO'
   };
 };
+
+const createEmptyAreaStation = (index: number): HouseOperationStation => ({
+  id: makeId('eh-area'),
+  name: `Khu vực ${index + 1}`,
+  packageIds: [],
+  packageName: '',
+  areaDescription: '',
+  category: 'OTHER',
+  durationMinutes: 30,
+  room: `Khu ${index + 1}`,
+  objective: 'Khu vực vận hành gồm một hoặc nhiều trạm/gói thiết bị.',
+  sopVersion: 'CUSTOM-AREA',
+  checklist: ['Chốt vị trí khu vực', 'Gán trạm/gói thiết bị', 'Kiểm tra lối di chuyển', 'Chốt người phụ trách'],
+  equipment: [],
+  script: '',
+  status: 'TODO'
+});
 
 const createPackageStationInstances = (packages: ComboPackage[], inventory: InventoryItem[]) =>
   packages.map((pkg, index) => createStationFromPackage(pkg, inventory, index));
@@ -523,6 +541,30 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
     });
   };
 
+  const addEmptyArea = () => {
+    saveOperation(current => {
+      const stations = [...current.stations, createEmptyAreaStation(current.stations.length)];
+      return {
+        ...current,
+        stations,
+        timeline: buildTimeline(selectedEvent!, stations),
+        rotations: buildRotations(current.studentCount || getStudentCount(selectedEvent!), stations)
+      };
+    });
+  };
+
+  const updateStation = (stationId: string, patch: Partial<HouseOperationStation>) => {
+    saveOperation(current => {
+      const stations = current.stations.map(station => station.id === stationId ? { ...station, ...patch } : station);
+      return {
+        ...current,
+        stations,
+        timeline: buildTimeline(selectedEvent!, stations),
+        rotations: buildRotations(current.studentCount || getStudentCount(selectedEvent!), stations)
+      };
+    });
+  };
+
   const reorderStation = (sourceId: string, targetId: string) => {
     if (sourceId === targetId) return;
     saveOperation(current => {
@@ -555,6 +597,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
           packageId: nextPackageIds[0],
           packageIds: nextPackageIds,
           packageName: getPackageNames(nextPackageIds, packages),
+          category: station.category === 'OTHER' ? getPackageStationCategory(pkg) : station.category,
           equipment: mergeEquipment(station.equipment || [], buildEquipmentFromPackage(pkg, inventory)),
           checklist: Array.from(new Set([...(station.checklist || []), 'Kiểm tra đủ thiết bị các gói đã gộp'])),
           objective: station.objective || pkg.description || `Tổ chức trạm từ nhiều gói thiết bị.`
@@ -917,7 +960,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                   </Field>
                 </div>
                 <div className="mt-4">
-                  <p className="text-xs font-black uppercase text-slate-500 mb-2">Trạm từ gói thiết bị</p>
+                  <p className="text-xs font-black uppercase text-slate-500 mb-2">Tạo nhanh khu vực từ gói thiết bị</p>
                   <div className="flex flex-wrap gap-2">
                     {packages.map(pkg => {
                       const alreadyAdded = operation.stations.some(station => getStationPackageIds(station).includes(pkg.id));
@@ -951,7 +994,13 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
               </section>
 
               <section className="bg-white border border-slate-200 rounded-lg p-4">
-                <h3 className="font-black text-slate-900 flex items-center gap-2"><Route size={18} />Program Canvas</h3>
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="font-black text-slate-900 flex items-center gap-2"><Route size={18} />Program Canvas</h3>
+                  <button onClick={addEmptyArea} disabled={!canEdit} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-teal-600 text-white text-xs font-black disabled:bg-slate-300">
+                    <Plus size={15} />
+                    Khu vực mới
+                  </button>
+                </div>
                 <div className="mt-4 space-y-2">
                   {operation.stations.map((station, index) => {
                     const stationPackageIds = getStationPackageIds(station);
@@ -974,12 +1023,38 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                             <GripVertical size={18} />
                           </button>
                           <div className="h-9 w-9 rounded-lg bg-teal-100 text-teal-800 flex items-center justify-center font-black shrink-0">{index + 1}</div>
-                          <div className="flex-1 min-w-0">
-                            <p className="font-black text-slate-800 leading-snug break-words">{station.name}</p>
-                            <p className="mt-1 text-xs text-slate-500 leading-relaxed break-words">{station.durationMinutes} phút • {station.room}{station.packageName ? ` • Gói: ${station.packageName}` : ''}</p>
+                          <div className="flex-1 min-w-0 space-y-2">
+                            <input
+                              value={station.name}
+                              disabled={!canEdit}
+                              onChange={event => updateStation(station.id, { name: event.target.value })}
+                              className="w-full min-w-0 border border-slate-200 rounded-lg px-3 py-2 text-sm font-black text-slate-800 bg-white"
+                              placeholder="Tên khu vực"
+                            />
+                            <input
+                              value={station.areaDescription ?? station.room ?? ''}
+                              disabled={!canEdit}
+                              onChange={event => updateStation(station.id, { areaDescription: event.target.value, room: event.target.value })}
+                              className="w-full min-w-0 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-600 bg-white"
+                              placeholder="Mô tả nhỏ: tầng, vị trí, gần cửa..."
+                            />
+                            <p className="text-xs text-slate-500 leading-relaxed break-words">
+                              {station.packageName ? `Gói/trạm trong khu vực: ${station.packageName}` : 'Chưa chọn gói/trạm cho khu vực này'}
+                            </p>
                           </div>
                         </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_120px_32px] gap-2 items-center w-full pl-0 sm:pl-12">
+                        <div className="grid grid-cols-1 sm:grid-cols-[92px_minmax(0,1fr)_120px_32px] gap-2 items-center w-full pl-0 sm:pl-12">
+                          <label className="flex items-center gap-1 border rounded-lg bg-white px-2 py-2">
+                            <input
+                              type="number"
+                              min={1}
+                              value={station.durationMinutes}
+                              disabled={!canEdit}
+                              onChange={event => updateStation(station.id, { durationMinutes: Math.max(1, Number(event.target.value) || 1) })}
+                              className="w-full min-w-0 text-xs font-bold outline-none"
+                            />
+                            <span className="text-[11px] font-bold text-slate-400">phút</span>
+                          </label>
                           <select
                             value=""
                             disabled={!canEdit || mergeablePackages.length === 0}
@@ -990,7 +1065,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                             }}
                             className="w-full min-w-0 border rounded-lg px-2 py-2 text-xs font-bold bg-white"
                           >
-                            <option value="">Gộp gói vào trạm</option>
+                            <option value="">Chọn/gộp gói vào khu vực</option>
                             {mergeablePackages.map(pkg => <option key={pkg.id} value={pkg.id}>{pkg.name} ({pkg.items.length})</option>)}
                           </select>
                           <select value={station.status || 'TODO'} disabled={!canEdit} onChange={e => saveOperation(cur => ({ ...cur, stations: cur.stations.map(s => s.id === station.id ? { ...s, status: e.target.value as HouseOperationTaskStatus } : s) }))} className="w-full min-w-0 border rounded-lg px-2 py-2 text-xs font-bold bg-white">
