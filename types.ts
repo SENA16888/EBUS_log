@@ -478,6 +478,7 @@ export interface HouseOperationLiveState {
   currentBlockId?: string;
   actualArrivalTime?: string;
   selectedGroupId?: string;
+  selectedRoom?: string;
   statusNote?: string;
   lastUpdatedAt?: string;
 }

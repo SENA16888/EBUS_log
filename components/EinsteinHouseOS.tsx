@@ -56,6 +56,7 @@ interface EinsteinHouseOSProps {
 }
 
 type ModuleTab = 'CONTROL' | 'DESIGN' | 'TIMELINE' | 'TASKS' | 'KNOWLEDGE' | 'LIVE' | 'REPORT';
+type LiveViewMode = 'CONTROL' | 'GUIDE' | 'ROOM';
 
 const STATION_TEMPLATES: Omit<HouseOperationStation, 'id' | 'room' | 'status'>[] = [
   {
@@ -671,6 +672,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
   const [feedbackScore, setFeedbackScore] = useState(5);
   const [draggedStationId, setDraggedStationId] = useState<string | null>(null);
   const [liveNow, setLiveNow] = useState(new Date());
+  const [liveViewMode, setLiveViewMode] = useState<LiveViewMode>('CONTROL');
 
   const selectedEvent = events.find(event => event.id === selectedEventId) || events[0];
   const operation = useMemo(
@@ -720,6 +722,24 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
     () => selectedEvent && operation ? buildLiveGroupTimelines(groupActivityTimelines, operation, selectedEvent) : [],
     [groupActivityTimelines, operation, selectedEvent]
   );
+
+  const roomTimelines = useMemo(() => {
+    const map = new Map<string, Array<GroupTimelineBlock & { groupName: string; groupColor?: string; groupId: string }>>();
+    liveGroupTimelines.forEach(group => {
+      group.blocks.forEach(block => {
+        const room = block.room || 'Chưa gán vị trí';
+        const rows = map.get(room) || [];
+        rows.push({ ...block, groupName: group.name, groupColor: group.color, groupId: group.id });
+        map.set(room, rows);
+      });
+    });
+    return Array.from(map.entries())
+      .map(([room, blocks]) => ({
+        room,
+        blocks: blocks.sort((a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime))
+      }))
+      .sort((a, b) => a.room.localeCompare(b.room));
+  }, [liveGroupTimelines]);
 
   const hasGroupStationConflict = operation ? (operation.groupCount || operation.rotations.length || 1) > Math.max(1, operation.stations.length) : false;
 
@@ -1137,6 +1157,9 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
   const activeGroupBlock = selectedLiveBlocks.find(block => getBlockState(block, liveNow) === 'NOW');
   const nextGroupBlock = selectedLiveBlocks.find(block => getBlockState(block, liveNow) === 'UPCOMING');
   const focusGroupBlock = activeGroupBlock || nextGroupBlock || selectedLiveBlocks[selectedLiveBlocks.length - 1];
+  const selectedRoomTimeline = roomTimelines.find(item => item.room === operation.live?.selectedRoom) || roomTimelines[0];
+  const activeRoomBlock = selectedRoomTimeline?.blocks.find(block => getBlockState(block, liveNow) === 'NOW');
+  const nextRoomBlock = selectedRoomTimeline?.blocks.find(block => getBlockState(block, liveNow) === 'UPCOMING');
   const scheduledArrival = operation.timeline.find(block => block.kind === 'OPENING')?.startTime || getProgramStart(selectedEvent);
   const actualArrival = operation.live?.actualArrivalTime || scheduledArrival;
   const liveDelta = timeToMinutes(actualArrival) - timeToMinutes(scheduledArrival);
@@ -1711,7 +1734,27 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
           )}
 
           {activeTab === 'LIVE' && (
-            <div className="grid grid-cols-1 xl:grid-cols-[1.25fr_0.75fr] gap-4">
+            <div className="space-y-4">
+              <section className="bg-white border border-slate-200 rounded-lg p-3">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                  {[
+                    ['CONTROL', 'Dành cho Điều phối chung', Radio],
+                    ['GUIDE', 'Dành cho giáo viên dẫn đoàn', Users],
+                    ['ROOM', 'Dành cho nhân viên tại phòng', Building2]
+                  ].map(([mode, label, Icon]) => (
+                    <button
+                      key={mode as string}
+                      onClick={() => setLiveViewMode(mode as LiveViewMode)}
+                      className={`flex items-center justify-center gap-2 rounded-lg border px-3 py-3 text-sm font-black transition ${liveViewMode === mode ? 'border-teal-500 bg-teal-50 text-teal-800' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+                    >
+                      <Icon size={17} />
+                      {label as string}
+                    </button>
+                  ))}
+                </div>
+              </section>
+
+              {liveViewMode === 'CONTROL' && (
               <section className="bg-white border border-slate-200 rounded-lg p-4">
                 <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3">
                   <div>
@@ -1763,7 +1806,9 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                   })}
                 </div>
               </section>
+              )}
 
+              {liveViewMode === 'GUIDE' && (
               <section className="bg-white border border-slate-200 rounded-lg p-4">
                 <h3 className="font-black text-slate-900 flex items-center gap-2"><Users size={18} />Màn hình đội dẫn đoàn</h3>
                 <select
@@ -1786,7 +1831,58 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                 </div>
                 <textarea value={operation.live?.statusNote || ''} disabled={!canEdit} onChange={e => saveOperation(cur => ({ ...cur, live: { ...cur.live, statusNote: e.target.value, lastUpdatedAt: new Date().toISOString() } }))} className="mt-4 w-full min-h-[90px] border rounded-lg p-3 text-sm" placeholder="Ghi chú live cho điều phối..." />
               </section>
+              )}
 
+              {liveViewMode === 'ROOM' && (
+              <section className="bg-white border border-slate-200 rounded-lg p-4">
+                <h3 className="font-black text-slate-900 flex items-center gap-2"><Building2 size={18} />Màn hình nhân viên tại phòng</h3>
+                <p className="mt-1 text-xs text-slate-500">Chọn khu vực/phòng để xem lần lượt nhóm nào sẽ đến, đang đến hoặc đã xong.</p>
+                <select
+                  value={selectedRoomTimeline?.room || ''}
+                  disabled={!canEdit}
+                  onChange={event => saveOperation(cur => ({ ...cur, live: { ...cur.live, selectedRoom: event.target.value, lastUpdatedAt: new Date().toISOString() } }))}
+                  className="mt-4 w-full border rounded-lg px-3 py-2 text-sm font-black"
+                >
+                  {roomTimelines.map(item => <option key={item.room} value={item.room}>{item.room}</option>)}
+                </select>
+                <div className="mt-4 rounded-lg border border-violet-100 bg-violet-50 p-4">
+                  <p className="text-xs font-black uppercase text-violet-700">Đang theo dõi khu vực</p>
+                  <h4 className="mt-2 text-2xl font-black text-violet-950">{selectedRoomTimeline?.room || 'Chưa có khu vực'}</h4>
+                  <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="rounded-lg bg-white/80 border border-violet-100 p-3">
+                      <p className="text-xs font-black uppercase text-violet-600">Đang đón</p>
+                      <p className="mt-1 text-lg font-black text-violet-950">{activeRoomBlock ? activeRoomBlock.groupName : 'Chưa có nhóm'}</p>
+                      <p className="text-xs text-violet-700">{activeRoomBlock ? `${activeRoomBlock.startTime}-${activeRoomBlock.endTime} • ${activeRoomBlock.title}` : 'Không có nhóm đang ở phòng'}</p>
+                    </div>
+                    <div className="rounded-lg bg-white/80 border border-violet-100 p-3">
+                      <p className="text-xs font-black uppercase text-violet-600">Tiếp theo</p>
+                      <p className="mt-1 text-lg font-black text-violet-950">{nextRoomBlock ? nextRoomBlock.groupName : 'Không còn nhóm'}</p>
+                      <p className="text-xs text-violet-700">{nextRoomBlock ? `${nextRoomBlock.startTime}-${nextRoomBlock.endTime} • ${nextRoomBlock.title}` : 'Không có lượt tiếp theo'}</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-4 space-y-2">
+                  {(selectedRoomTimeline?.blocks || []).map(block => {
+                    const state = getBlockState(block, liveNow);
+                    return (
+                      <div key={`${block.groupId}-${block.id}`} className={`rounded-lg border p-3 flex items-center justify-between gap-3 ${state === 'NOW' ? 'border-emerald-200 bg-emerald-50' : state === 'UPCOMING' ? 'border-amber-100 bg-amber-50' : 'border-slate-100 bg-slate-50'}`}>
+                        <div>
+                          <p className="font-black text-slate-900">{block.groupName}</p>
+                          <p className="text-xs text-slate-500">{block.title}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-black text-slate-700">{block.startTime}-{block.endTime}</p>
+                          <p className="text-[11px] font-bold text-slate-500">{state === 'NOW' ? 'Đang ở phòng' : state === 'UPCOMING' ? getCountdownLabel(block, liveNow) : 'Đã xong'}</p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {!selectedRoomTimeline && <p className="text-sm text-slate-500">Chưa có lịch phòng.</p>}
+                </div>
+              </section>
+              )}
+
+              {liveViewMode === 'CONTROL' && (
               <section className="bg-white border border-slate-200 rounded-lg p-4">
                 <h3 className="font-black text-slate-900 flex items-center gap-2"><Siren size={18} />Incident Center</h3>
                 <div className="mt-4 flex gap-2">
@@ -1808,6 +1904,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                   {operation.incidents.length === 0 && <p className="text-sm text-slate-500">Chưa có incident.</p>}
                 </div>
               </section>
+              )}
             </div>
           )}
 
