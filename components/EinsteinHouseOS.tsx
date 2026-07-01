@@ -61,6 +61,9 @@ interface EinsteinHouseOSProps {
   employees: Employee[];
   packages: ComboPackage[];
   canEdit?: boolean;
+  liveOnly?: boolean;
+  publicMode?: boolean;
+  initialEventId?: string;
   onUpdateEvent: (eventId: string, updates: Partial<Event>) => void;
 }
 
@@ -688,10 +691,13 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
   employees,
   packages,
   canEdit = true,
+  liveOnly = false,
+  publicMode = false,
+  initialEventId,
   onUpdateEvent
 }) => {
-  const [selectedEventId, setSelectedEventId] = useState(events[0]?.id || '');
-  const [activeTab, setActiveTab] = useState<ModuleTab>('CONTROL');
+  const [selectedEventId, setSelectedEventId] = useState(initialEventId || events[0]?.id || '');
+  const [activeTab, setActiveTab] = useState<ModuleTab>(liveOnly ? 'LIVE' : 'CONTROL');
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newIncidentTitle, setNewIncidentTitle] = useState('');
   const [feedbackNote, setFeedbackNote] = useState('');
@@ -705,6 +711,12 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
     () => selectedEvent ? ensureOperation(selectedEvent, inventory, employees, packages) : null,
     [selectedEvent, inventory, employees, packages]
   );
+
+  useEffect(() => {
+    if (initialEventId && initialEventId !== selectedEventId) {
+      setSelectedEventId(initialEventId);
+    }
+  }, [initialEventId, selectedEventId]);
 
   const eventCards = useMemo(() => {
     const today = new Date().toISOString().slice(0, 10);
@@ -1214,6 +1226,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
 
   return (
     <div className="space-y-4">
+      {!liveOnly && (
       <section className="bg-white border border-slate-200 rounded-lg p-4">
         <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
           <div>
@@ -1240,6 +1253,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
           </div>
         </div>
       </section>
+      )}
 
       <div>
         <main className="space-y-4">
@@ -1252,6 +1266,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                   <span className="inline-flex items-center gap-1"><Users size={16} />{operation.studentCount} HS / {operation.teacherCount} GV</span>
                   <span className="inline-flex items-center gap-1"><Clock3 size={16} />{getProgramStart(selectedEvent)}</span>
                 </div>
+                {!publicMode && (
                 <div className="mt-3 max-w-xl">
                   <select
                     value={selectedEvent.id}
@@ -1265,7 +1280,9 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                     ))}
                   </select>
                 </div>
+                )}
               </div>
+              {!publicMode && (
               <div className="flex flex-col sm:flex-row gap-2">
                 <button
                   onClick={initializeOperation}
@@ -1284,6 +1301,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                   Lưu instance
                 </button>
               </div>
+              )}
             </div>
             <div className="mt-4">
               <div className="flex items-center justify-between text-xs font-bold text-slate-500 mb-1">
@@ -1296,6 +1314,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
             </div>
           </section>
 
+          {!liveOnly && (
           <div className="bg-white border border-slate-200 rounded-lg p-2">
             <div className="flex overflow-x-auto gap-2">
               {[
@@ -1318,6 +1337,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
               ))}
             </div>
           </div>
+          )}
 
           {activeTab === 'CONTROL' && (
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -1850,6 +1870,17 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                 <div className={`mt-4 rounded-lg border p-3 text-sm font-bold ${liveDelta > 0 ? 'border-amber-100 bg-amber-50 text-amber-800' : liveDelta < 0 ? 'border-emerald-100 bg-emerald-50 text-emerald-800' : 'border-slate-100 bg-slate-50 text-slate-600'}`}>
                   {liveDelta === 0 ? 'LIVE đang khớp timeline chuẩn.' : `Buổi sáng đang ${liveDelta > 0 ? 'trễ' : 'sớm'} ${Math.abs(liveDelta)} phút. Nghỉ trưa sẽ tự co/giãn, buổi chiều giữ nguyên.`}
                 </div>
+                {!publicMode && (
+                  <div className="mt-3 rounded-lg border border-blue-100 bg-blue-50 p-3">
+                    <p className="text-xs font-black uppercase text-blue-700">Link xem LIVE không cần đăng nhập</p>
+                    <input
+                      readOnly
+                      value={`${window.location.origin}${window.location.pathname}?ehLive=${selectedEvent.id}`}
+                      className="mt-2 w-full border border-blue-100 rounded-lg px-3 py-2 text-xs font-bold text-blue-900 bg-white"
+                      onFocus={event => event.currentTarget.select()}
+                    />
+                  </div>
+                )}
 
                 <div className="mt-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
                   {liveGroupTimelines.map((group, groupIndex) => {

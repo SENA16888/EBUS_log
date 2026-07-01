@@ -149,6 +149,10 @@ const App: React.FC = () => {
   const [learningLeaderboardProfiles, setLearningLeaderboardProfiles] = useState<LearningProfile[]>([]);
   const [elearningOpenRequest, setElearningOpenRequest] = useState<{ trackId: string; lessonId: string; nonce: number } | undefined>(undefined);
   const [activeSessions, setActiveSessions] = useState<ActiveSession[]>([]);
+  const publicLiveEventId = typeof window !== 'undefined'
+    ? new URLSearchParams(window.location.search).get('ehLive') || ''
+    : '';
+  const isPublicLiveMode = !!publicLiveEventId;
   const isApplyingRemoteRef = useRef(false);
   const lastPersistedStateRef = useRef<AppState>(stripLearningUserData(createInitialAppState()));
   const lastConflictNoticeRef = useRef<string>('');
@@ -1950,6 +1954,36 @@ const App: React.FC = () => {
     }));
     addLog(`Đã chốt đơn và tạo phiếu xuất kho cho sự kiện "${event.name}".`, 'SUCCESS');
   };
+
+  if (isPublicLiveMode) {
+    const publicEvent = appState.events.find(event => event.id === publicLiveEventId);
+    return (
+      <div className="min-h-screen bg-slate-50 p-3 md:p-4">
+        {isLoading ? (
+          <div className="min-h-[70vh] flex items-center justify-center text-slate-600 font-bold">Đang tải LIVE...</div>
+        ) : publicEvent ? (
+          <EinsteinHouseOS
+            events={[publicEvent]}
+            inventory={appState.inventory}
+            employees={appState.employees}
+            packages={appState.packages}
+            canEdit={false}
+            liveOnly
+            publicMode
+            initialEventId={publicLiveEventId}
+            onUpdateEvent={() => undefined}
+          />
+        ) : (
+          <div className="min-h-[70vh] flex items-center justify-center">
+            <div className="bg-white border border-slate-200 rounded-lg p-6 text-center">
+              <h1 className="text-xl font-black text-slate-900">Không tìm thấy LIVE</h1>
+              <p className="mt-2 text-sm text-slate-500">Link sự kiện không tồn tại hoặc dữ liệu chưa được cấp quyền xem.</p>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <>
