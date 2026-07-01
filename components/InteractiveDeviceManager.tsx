@@ -11,7 +11,6 @@ import {
   PlayCircle,
   Plus,
   Radio,
-  Save,
   Trash2,
   Upload,
   Volume2,
@@ -22,6 +21,7 @@ import {
   BroadcastEventRule,
   BroadcastPlaybackLog,
   BroadcastSchedule,
+  BroadcastYoutubeTrack,
   Event,
   HouseOperationTimelineBlock,
   InteractiveDeviceProfile
@@ -127,6 +127,36 @@ const withYoutubeApiParams = (embedUrl: string) => {
   }
 };
 
+const extractYoutubeVideoId = (url?: string) => {
+  if (!url) return '';
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname.includes('youtu.be')) return parsed.pathname.replace('/', '').split('/')[0] || '';
+    if (parsed.pathname.includes('/embed/')) return parsed.pathname.split('/embed/')[1]?.split(/[/?#]/)[0] || '';
+    if (parsed.pathname.includes('/shorts/')) return parsed.pathname.split('/shorts/')[1]?.split(/[/?#]/)[0] || '';
+    return parsed.searchParams.get('v') || '';
+  } catch {
+    return '';
+  }
+};
+
+const getYoutubeTrackEmbed = (track?: BroadcastYoutubeTrack) => {
+  if (!track?.url) return '';
+  const videoId = extractYoutubeVideoId(track.url);
+  if (videoId) return withYoutubeApiParams(`https://www.youtube.com/embed/${encodeURIComponent(videoId)}`);
+  return normalizeYoutubeEmbed(track.url);
+};
+
+const getYoutubePlaylistEmbed = (tracks: BroadcastYoutubeTrack[]) => {
+  const videoIds = tracks.map(track => extractYoutubeVideoId(track.url)).filter(Boolean);
+  if (videoIds.length > 0) {
+    const [firstVideoId] = videoIds;
+    const playlist = videoIds.join(',');
+    return withYoutubeApiParams(`https://www.youtube.com/embed/${encodeURIComponent(firstVideoId)}?playlist=${encodeURIComponent(playlist)}&loop=1`);
+  }
+  return normalizeYoutubeEmbed(tracks[0]?.url);
+};
+
 const normalizeYoutubeEmbed = (url?: string) => {
   if (!url) return '';
   try {
@@ -153,7 +183,23 @@ const createDefaultDevice = (): InteractiveDeviceProfile => ({
   volume: 0.82,
   preAnnouncementAssetId: '',
   voiceURI: '',
+  backgroundMode: 'LOOP_ALL',
+  backgroundTrackId: '',
   youtubeFallbackUrl: 'https://www.youtube.com/embed/videoseries?list=PLFgquLnL59alCl_2TQvOiD5Vgm1hCaGSI',
+  youtubePlaylist: [
+    {
+      id: 'yt-default-chill',
+      title: 'Nhạc nền Einstein House',
+      url: 'https://www.youtube.com/embed/videoseries?list=PLFgquLnL59alCl_2TQvOiD5Vgm1hCaGSI'
+    }
+  ],
+  operatingHours: [
+    { id: 'oh-weekday', title: 'Thứ 2 - Thứ 5', daysOfWeek: [1, 2, 3, 4], openTime: '08:00', closeTime: '19:00', enabled: true },
+    { id: 'oh-weekend', title: 'Thứ 6 - Chủ nhật', daysOfWeek: [5, 6, 0], openTime: '08:00', closeTime: '21:00', enabled: true }
+  ],
+  silenceWindows: [
+    { id: 'silent-center-lunch', title: 'Nghỉ trưa trung tâm', startTime: '12:00', endTime: '13:00', enabled: true }
+  ],
   audioAssets: [],
   schedules: [],
   eventRules: [],
@@ -210,6 +256,41 @@ const buildEventAnnouncements = (device: InteractiveDeviceProfile, events: Event
   }));
 };
 
+const normalizeBroadcastDevice = (input?: InteractiveDeviceProfile): InteractiveDeviceProfile => {
+  const defaults = createDefaultDevice();
+  if (!input) return defaults;
+
+  const existingSchedules = input.schedules || [];
+  const hasUpdatedClosingSchedules = existingSchedules.some(schedule =>
+    ['bc-end-shift-weekday', 'bc-closing-weekday', 'bc-end-shift-weekend', 'bc-closing-weekend'].includes(schedule.id)
+  );
+  const schedules = hasUpdatedClosingSchedules
+    ? existingSchedules
+    : [
+        ...existingSchedules.filter(schedule => !['bc-end-shift', 'bc-closing'].includes(schedule.id)),
+        ...defaults.schedules.filter(defaultSchedule =>
+          !existingSchedules.some(schedule => schedule.id === defaultSchedule.id) &&
+          ['bc-end-shift-weekday', 'bc-closing-weekday', 'bc-end-shift-weekend', 'bc-closing-weekend'].includes(defaultSchedule.id)
+        )
+      ];
+
+  return {
+    ...defaults,
+    ...input,
+    backgroundMode: input.backgroundMode || defaults.backgroundMode,
+    backgroundTrackId: input.backgroundTrackId || defaults.backgroundTrackId,
+    youtubePlaylist: input.youtubePlaylist && input.youtubePlaylist.length > 0
+      ? input.youtubePlaylist
+      : (input.youtubeFallbackUrl ? [{ id: 'yt-legacy-fallback', title: 'Nhạc nền đang lưu', url: input.youtubeFallbackUrl }] : defaults.youtubePlaylist),
+    operatingHours: input.operatingHours && input.operatingHours.length > 0 ? input.operatingHours : defaults.operatingHours,
+    silenceWindows: input.silenceWindows && input.silenceWindows.length > 0 ? input.silenceWindows : defaults.silenceWindows,
+    schedules: schedules.length > 0 ? schedules : defaults.schedules,
+    audioAssets: input.audioAssets || [],
+    eventRules: input.eventRules && input.eventRules.length > 0 ? input.eventRules : defaults.eventRules,
+    playbackLogs: input.playbackLogs || []
+  };
+};
+
 export const InteractiveDeviceManager: React.FC<InteractiveDeviceManagerProps> = ({
   devices,
   events,
@@ -227,12 +308,23 @@ export const InteractiveDeviceManager: React.FC<InteractiveDeviceManagerProps> =
   const [selectedAssetId, setSelectedAssetId] = useState('');
   const [assetTitle, setAssetTitle] = useState('');
   const [assetUrl, setAssetUrl] = useState('');
+  const [youtubeTitle, setYoutubeTitle] = useState('');
+  const [youtubeUrl, setYoutubeUrl] = useState('');
   const [voiceTitle, setVoiceTitle] = useState('Voice AI thông báo');
   const [voiceText, setVoiceText] = useState('');
   const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
 
-  const device = devices.find(item => item.type === 'BROADCAST_CENTER') || devices[0] || createDefaultDevice();
+  const storedDevice = devices.find(item => item.type === 'BROADCAST_CENTER') || devices[0];
+  const device = normalizeBroadcastDevice(storedDevice);
   const todayKey = getLocalDateKey(now);
+  const backgroundTracks = useMemo<BroadcastYoutubeTrack[]>(() => {
+    if (device.youtubePlaylist && device.youtubePlaylist.length > 0) return device.youtubePlaylist;
+    if (device.youtubeFallbackUrl) {
+      return [{ id: 'yt-legacy-fallback', title: 'Nhạc nền đang lưu', url: device.youtubeFallbackUrl }];
+    }
+    return [];
+  }, [device.youtubeFallbackUrl, device.youtubePlaylist]);
+  const activeBackgroundTrack = backgroundTracks.find(track => track.id === device.backgroundTrackId) || backgroundTracks[0];
 
   const todayEvents = useMemo(
     () => events.filter(event => isEventActiveOnDate(event, todayKey)),
@@ -252,7 +344,9 @@ export const InteractiveDeviceManager: React.FC<InteractiveDeviceManagerProps> =
     [announcements, now]
   );
 
-  const youtubeEmbed = normalizeYoutubeEmbed(device.youtubeFallbackUrl);
+  const youtubeEmbed = device.backgroundMode === 'SINGLE'
+    ? getYoutubeTrackEmbed(activeBackgroundTrack)
+    : getYoutubePlaylistEmbed(backgroundTracks);
   const preAnnouncementAsset = useMemo(
     () => (device.audioAssets || []).find(asset => asset.id === device.preAnnouncementAssetId),
     [device.audioAssets, device.preAnnouncementAssetId]
@@ -265,6 +359,59 @@ export const InteractiveDeviceManager: React.FC<InteractiveDeviceManagerProps> =
     }),
     [availableVoices]
   );
+  const broadcastState = useMemo(() => {
+    const today = now.getDay();
+    const minuteNow = now.getHours() * 60 + now.getMinutes();
+    const operatingRule = (device.operatingHours || []).find(rule =>
+      rule.enabled && rule.daysOfWeek.includes(today)
+    );
+    const isOpen = operatingRule
+      ? minuteNow >= timeToMinutes(operatingRule.openTime) && minuteNow < timeToMinutes(operatingRule.closeTime)
+      : true;
+
+    const eventLunchWindows = todayEvents.flatMap(event =>
+      (event.houseOperation?.timeline || [])
+        .filter(block => block.kind === 'LUNCH')
+        .map(block => ({
+          title: `${event.name} - nghỉ trưa đoàn`,
+          startTime: block.startTime,
+          endTime: block.endTime
+        }))
+    );
+    const centerSilenceWindows = (device.silenceWindows || [])
+      .filter(windowItem => windowItem.enabled)
+      .filter(windowItem => !windowItem.daysOfWeek?.length || windowItem.daysOfWeek.includes(today))
+      .map(windowItem => ({
+        title: windowItem.title,
+        startTime: windowItem.startTime,
+        endTime: windowItem.endTime
+      }));
+    const silenceWindows = eventLunchWindows.length > 0 ? eventLunchWindows : centerSilenceWindows;
+    const activeSilence = silenceWindows.find(windowItem =>
+      minuteNow >= timeToMinutes(windowItem.startTime) && minuteNow < timeToMinutes(windowItem.endTime)
+    );
+
+    if (!isOpen) {
+      return {
+        shouldPlayBackground: false,
+        label: operatingRule
+          ? `Ngoài giờ hoạt động (${operatingRule.openTime} - ${operatingRule.closeTime})`
+          : 'Ngoài giờ hoạt động'
+      };
+    }
+    if (activeSilence) {
+      return {
+        shouldPlayBackground: false,
+        label: `Tạm ngưng: ${activeSilence.title} (${activeSilence.startTime} - ${activeSilence.endTime})`
+      };
+    }
+    return {
+      shouldPlayBackground: true,
+      label: operatingRule
+        ? `Đang phát nền trong giờ mở cửa (${operatingRule.openTime} - ${operatingRule.closeTime})`
+        : 'Đang phát nền'
+    };
+  }, [device.operatingHours, device.silenceWindows, now, todayEvents]);
 
   const sendYoutubeCommand = (func: string, args: unknown[] = []) => {
     youtubeIframeRef.current?.contentWindow?.postMessage(JSON.stringify({
@@ -282,6 +429,10 @@ export const InteractiveDeviceManager: React.FC<InteractiveDeviceManagerProps> =
   const duckBackgroundMusic = () => setYoutubeBackgroundVolume(12);
 
   const restoreBackgroundMusic = () => setYoutubeBackgroundVolume(65);
+
+  const pauseBackgroundMusic = () => sendYoutubeCommand('pauseVideo');
+
+  const playBackgroundMusic = () => sendYoutubeCommand('playVideo');
 
   const commitDevice = (patch: Partial<InteractiveDeviceProfile>) => {
     if (!canEdit) return;
@@ -422,6 +573,16 @@ export const InteractiveDeviceManager: React.FC<InteractiveDeviceManagerProps> =
   }, []);
 
   useEffect(() => {
+    if (!youtubeEmbed) return;
+    if (broadcastState.shouldPlayBackground && isRunning) {
+      playBackgroundMusic();
+      restoreBackgroundMusic();
+    } else {
+      pauseBackgroundMusic();
+    }
+  }, [broadcastState.shouldPlayBackground, isRunning, youtubeEmbed]);
+
+  useEffect(() => {
     if (!isRunning || !device.isAutomationEnabled) return;
     const dueWindowMs = 60 * 1000;
     const due = announcements
@@ -522,6 +683,33 @@ export const InteractiveDeviceManager: React.FC<InteractiveDeviceManagerProps> =
     });
   };
 
+  const addYoutubeTrack = () => {
+    const url = youtubeUrl.trim();
+    if (!url) return;
+    const track: BroadcastYoutubeTrack = {
+      id: makeId('yt'),
+      title: youtubeTitle.trim() || `Nhạc nền ${backgroundTracks.length + 1}`,
+      url
+    };
+    const nextTracks = [...backgroundTracks.filter(trackItem => trackItem.id !== 'yt-legacy-fallback'), track];
+    commitDevice({
+      youtubePlaylist: nextTracks,
+      youtubeFallbackUrl: nextTracks[0]?.url || '',
+      backgroundTrackId: device.backgroundTrackId || track.id
+    });
+    setYoutubeTitle('');
+    setYoutubeUrl('');
+  };
+
+  const removeYoutubeTrack = (trackId: string) => {
+    const nextTracks = backgroundTracks.filter(track => track.id !== trackId && track.id !== 'yt-legacy-fallback');
+    commitDevice({
+      youtubePlaylist: nextTracks,
+      youtubeFallbackUrl: nextTracks[0]?.url || '',
+      backgroundTrackId: device.backgroundTrackId === trackId ? nextTracks[0]?.id || '' : device.backgroundTrackId
+    });
+  };
+
   return (
     <div className="space-y-4">
       <audio ref={audioRef} className="hidden" />
@@ -615,20 +803,74 @@ export const InteractiveDeviceManager: React.FC<InteractiveDeviceManagerProps> =
               <div className="aspect-video bg-slate-100 flex items-center justify-center text-sm text-slate-500">Chưa có playlist</div>
             )}
             <div className="p-3 space-y-2">
-              <label className="text-xs font-bold text-slate-500 uppercase">URL playlist/video</label>
-              <div className="flex gap-2">
+              <div className={`text-xs font-bold px-3 py-2 rounded-lg ${
+                broadcastState.shouldPlayBackground ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
+              }`}>
+                {broadcastState.label}
+              </div>
+              <label className="text-xs font-bold text-slate-500 uppercase">Chế độ phát nền</label>
+              <select
+                value={device.backgroundMode || 'LOOP_ALL'}
+                onChange={e => commitDevice({ backgroundMode: e.target.value as InteractiveDeviceProfile['backgroundMode'] })}
+                disabled={!canEdit}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+              >
+                <option value="SINGLE">Chỉ phát 1 video đang chọn</option>
+                <option value="LOOP_ALL">Phát liên tục, lặp lại toàn bộ playlist</option>
+              </select>
+              <div className="grid grid-cols-[1fr_auto] gap-2">
                 <input
-                  value={device.youtubeFallbackUrl || ''}
-                  onChange={e => commitDevice({ youtubeFallbackUrl: e.target.value })}
+                  value={youtubeTitle}
+                  onChange={e => setYoutubeTitle(e.target.value)}
                   disabled={!canEdit}
-                  className="min-w-0 flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm"
-                  placeholder="https://www.youtube.com/playlist?list=..."
+                  className="min-w-0 border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                  placeholder="Tên video/playlist"
                 />
-                <button className="px-3 py-2 rounded-lg border border-slate-200 text-slate-600" title="Lưu URL">
-                  <Save size={17} />
+                <button
+                  onClick={addYoutubeTrack}
+                  disabled={!canEdit || !youtubeUrl.trim()}
+                  className="px-3 py-2 rounded-lg bg-slate-900 text-white disabled:opacity-50"
+                  title="Thêm link"
+                >
+                  <Plus size={17} />
                 </button>
               </div>
-              <p className="text-xs text-slate-500">Khi không có thông báo đến giờ, tablet tiếp tục chạy playlist này.</p>
+              <input
+                value={youtubeUrl}
+                onChange={e => setYoutubeUrl(e.target.value)}
+                disabled={!canEdit}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                placeholder="https://www.youtube.com/watch?v=..."
+              />
+              <div className="space-y-2 max-h-48 overflow-auto pr-1">
+                {backgroundTracks.map(track => (
+                  <div key={track.id} className="border border-slate-200 rounded-lg p-2 flex items-center gap-2">
+                    <button
+                      onClick={() => commitDevice({ backgroundTrackId: track.id, backgroundMode: 'SINGLE' })}
+                      disabled={!canEdit}
+                      className={`p-1.5 rounded-lg border ${
+                        activeBackgroundTrack?.id === track.id ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-500'
+                      }`}
+                      title="Chọn làm video phát đơn"
+                    >
+                      <PlayCircle size={15} />
+                    </button>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-bold text-slate-800 truncate">{track.title}</p>
+                      <p className="text-[11px] text-slate-500 truncate">{track.url}</p>
+                    </div>
+                    <button
+                      onClick={() => removeYoutubeTrack(track.id)}
+                      disabled={!canEdit || track.id === 'yt-legacy-fallback'}
+                      className="p-1.5 rounded-lg text-rose-600 disabled:opacity-30"
+                      title="Xóa link"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-slate-500">Có thể thêm 4-5 link video. Nhạc nền tự dừng khi trung tâm nghỉ trưa, ngoài giờ hoạt động, hoặc theo giờ nghỉ trưa của đoàn trong timeline sự kiện.</p>
             </div>
           </div>
         </div>

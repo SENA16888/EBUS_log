@@ -18,7 +18,43 @@ export const MOCK_INTERACTIVE_DEVICES: InteractiveDeviceProfile[] = [
     volume: 0.82,
     preAnnouncementAssetId: '',
     voiceURI: '',
+    backgroundMode: 'LOOP_ALL',
+    backgroundTrackId: '',
     youtubeFallbackUrl: 'https://www.youtube.com/embed/videoseries?list=PLFgquLnL59alCl_2TQvOiD5Vgm1hCaGSI',
+    youtubePlaylist: [
+      {
+        id: 'yt-default-chill',
+        title: 'Nhạc nền Einstein House',
+        url: 'https://www.youtube.com/embed/videoseries?list=PLFgquLnL59alCl_2TQvOiD5Vgm1hCaGSI'
+      }
+    ],
+    operatingHours: [
+      {
+        id: 'oh-weekday',
+        title: 'Thứ 2 - Thứ 5',
+        daysOfWeek: [1, 2, 3, 4],
+        openTime: '08:00',
+        closeTime: '19:00',
+        enabled: true
+      },
+      {
+        id: 'oh-weekend',
+        title: 'Thứ 6 - Chủ nhật',
+        daysOfWeek: [5, 6, 0],
+        openTime: '08:00',
+        closeTime: '21:00',
+        enabled: true
+      }
+    ],
+    silenceWindows: [
+      {
+        id: 'silent-center-lunch',
+        title: 'Nghỉ trưa trung tâm',
+        startTime: '12:00',
+        endTime: '13:00',
+        enabled: true
+      }
+    ],
     audioAssets: [],
     schedules: [
       {
@@ -32,24 +68,44 @@ export const MOCK_INTERACTIVE_DEVICES: InteractiveDeviceProfile[] = [
       {
         id: 'bc-lunch',
         title: 'Thông báo nghỉ trưa',
-        time: '11:30',
+        time: '12:00',
         enabled: true,
         voiceText: 'Đã đến giờ nghỉ trưa. Các khu trải nghiệm tạm dừng hoạt động và sẽ tiếp tục theo lịch sau giờ nghỉ.',
         priority: 9
       },
       {
-        id: 'bc-end-shift',
-        title: 'Thông báo kết thúc ca làm',
-        time: '17:30',
+        id: 'bc-end-shift-weekday',
+        title: 'Thông báo kết thúc ca làm Thứ 2 - Thứ 5',
+        time: '18:50',
         enabled: true,
+        daysOfWeek: [1, 2, 3, 4],
         voiceText: 'Ca vận hành hôm nay đã kết thúc. Vui lòng kiểm tra thiết bị, tắt nguồn và bàn giao khu vực theo checklist.',
         priority: 9
       },
       {
-        id: 'bc-closing',
-        title: 'Thông báo đóng cửa',
+        id: 'bc-closing-weekday',
+        title: 'Thông báo đóng cửa Thứ 2 - Thứ 5',
+        time: '19:00',
+        enabled: true,
+        daysOfWeek: [1, 2, 3, 4],
+        voiceText: 'Einstein House chuẩn bị đóng cửa. Cảm ơn quý khách và hẹn gặp lại trong những trải nghiệm tiếp theo.',
+        priority: 8
+      },
+      {
+        id: 'bc-end-shift-weekend',
+        title: 'Thông báo kết thúc ca làm Thứ 6 - Chủ nhật',
+        time: '20:50',
+        enabled: true,
+        daysOfWeek: [5, 6, 0],
+        voiceText: 'Ca vận hành hôm nay đã kết thúc. Vui lòng kiểm tra thiết bị, tắt nguồn và bàn giao khu vực theo checklist.',
+        priority: 9
+      },
+      {
+        id: 'bc-closing-weekend',
+        title: 'Thông báo đóng cửa Thứ 6 - Chủ nhật',
         time: '21:00',
         enabled: true,
+        daysOfWeek: [5, 6, 0],
         voiceText: 'Einstein House chuẩn bị đóng cửa. Cảm ơn quý khách và hẹn gặp lại trong những trải nghiệm tiếp theo.',
         priority: 8
       }

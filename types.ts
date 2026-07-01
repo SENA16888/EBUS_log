@@ -834,6 +834,32 @@ export interface BroadcastPlaybackLog {
   detail?: string;
 }
 
+export interface BroadcastYoutubeTrack {
+  id: string;
+  title: string;
+  url: string;
+}
+
+export type BroadcastBackgroundMode = 'SINGLE' | 'LOOP_ALL';
+
+export interface BroadcastOperatingHours {
+  id: string;
+  title: string;
+  daysOfWeek: number[];
+  openTime: string;
+  closeTime: string;
+  enabled: boolean;
+}
+
+export interface BroadcastSilenceWindow {
+  id: string;
+  title: string;
+  startTime: string;
+  endTime: string;
+  daysOfWeek?: number[];
+  enabled: boolean;
+}
+
 export interface InteractiveDeviceProfile {
   id: string;
   name: string;
@@ -843,7 +869,12 @@ export interface InteractiveDeviceProfile {
   volume: number;
   preAnnouncementAssetId?: string;
   voiceURI?: string;
+  backgroundMode?: BroadcastBackgroundMode;
+  backgroundTrackId?: string;
   youtubeFallbackUrl?: string;
+  youtubePlaylist?: BroadcastYoutubeTrack[];
+  operatingHours?: BroadcastOperatingHours[];
+  silenceWindows?: BroadcastSilenceWindow[];
   audioAssets: BroadcastAudioAsset[];
   schedules: BroadcastSchedule[];
   eventRules: BroadcastEventRule[];
