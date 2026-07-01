@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   BarChart3,
@@ -349,6 +349,18 @@ const getActivityStartTime = (timeline: HouseOperationTimelineBlock[], event: Ev
   return timeline[0]?.endTime || addMinutes(getProgramStart(event), 15);
 };
 
+type GroupTimelineBlock = {
+  id: string;
+  title: string;
+  startTime: string;
+  endTime: string;
+  stationId?: string;
+  room?: string;
+  note?: string;
+};
+
+type GroupTimelineView = HouseOperationRotationGroup & { blocks: GroupTimelineBlock[] };
+
 const buildGroupActivityTimelines = (
   event: Event,
   timeline: HouseOperationTimelineBlock[],
@@ -411,6 +423,58 @@ const buildGroupActivityTimelines = (
     ].sort((a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime));
     return { ...group, blocks };
   });
+};
+
+const shiftTime = (time: string, deltaMinutes: number) => minutesToTime(timeToMinutes(time) + deltaMinutes);
+
+const buildLiveGroupTimelines = (
+  standardGroups: GroupTimelineView[],
+  operation: HouseOperationInstance,
+  event: Event
+): GroupTimelineView[] => {
+  const scheduledArrival = operation.timeline.find(block => block.kind === 'OPENING')?.startTime || getProgramStart(event);
+  const actualArrival = operation.live?.actualArrivalTime || scheduledArrival;
+  const delta = timeToMinutes(actualArrival) - timeToMinutes(scheduledArrival);
+  if (!delta) return standardGroups;
+
+  const lunchBlock = operation.timeline.find(block => block.kind === 'LUNCH');
+  const lunchEnd = lunchBlock?.endTime;
+  const lunchEndMinutes = lunchEnd ? timeToMinutes(lunchEnd) : Number.POSITIVE_INFINITY;
+
+  return standardGroups.map(group => ({
+    ...group,
+    blocks: group.blocks.map(block => {
+      const start = timeToMinutes(block.startTime);
+      const isLunch = /nghỉ trưa|nghi trua/i.test(block.title);
+      const isMorning = start < lunchEndMinutes;
+      if (!isMorning) return block;
+      return {
+        ...block,
+        startTime: shiftTime(block.startTime, delta),
+        endTime: isLunch && lunchEnd ? lunchEnd : shiftTime(block.endTime, delta),
+        note: delta > 0 ? `${block.note || ''}${block.note ? ' • ' : ''}Live +${delta}p` : `${block.note || ''}${block.note ? ' • ' : ''}Live ${delta}p`
+      };
+    })
+  }));
+};
+
+const getBlockState = (block: GroupTimelineBlock, now: Date) => {
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  const start = timeToMinutes(block.startTime);
+  const end = timeToMinutes(block.endTime);
+  if (nowMinutes < start) return 'UPCOMING';
+  if (nowMinutes >= end) return 'DONE';
+  return 'NOW';
+};
+
+const getCountdownLabel = (block: GroupTimelineBlock | undefined, now: Date) => {
+  if (!block) return 'Không có mốc tiếp theo';
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  const start = timeToMinutes(block.startTime);
+  const end = timeToMinutes(block.endTime);
+  if (nowMinutes < start) return `Bắt đầu sau ${start - nowMinutes} phút`;
+  if (nowMinutes < end) return `Còn ${end - nowMinutes} phút`;
+  return 'Đã kết thúc';
 };
 
 const createStationInstances = (inventory: InventoryItem[]) =>
@@ -630,6 +694,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
   const [feedbackNote, setFeedbackNote] = useState('');
   const [feedbackScore, setFeedbackScore] = useState(5);
   const [draggedStationId, setDraggedStationId] = useState<string | null>(null);
+  const [liveNow, setLiveNow] = useState(new Date());
 
   const selectedEvent = events.find(event => event.id === selectedEventId) || events[0];
   const operation = useMemo(
@@ -675,7 +740,17 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
     [selectedEvent, operation]
   );
 
+  const liveGroupTimelines = useMemo(
+    () => selectedEvent && operation ? buildLiveGroupTimelines(groupActivityTimelines, operation, selectedEvent) : [],
+    [groupActivityTimelines, operation, selectedEvent]
+  );
+
   const hasGroupStationConflict = operation ? (operation.groupCount || operation.rotations.length || 1) > Math.max(1, operation.stations.length) : false;
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setLiveNow(new Date()), 30000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const saveOperation = (updater: (current: HouseOperationInstance) => HouseOperationInstance) => {
     if (!selectedEvent || !canEdit) return;
@@ -1081,6 +1156,14 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
   }
 
   const currentBlock = operation.timeline.find(block => block.id === operation.live?.currentBlockId);
+  const selectedLiveGroup = liveGroupTimelines.find(group => group.id === operation.live?.selectedGroupId) || liveGroupTimelines[0];
+  const selectedLiveBlocks = selectedLiveGroup?.blocks || [];
+  const activeGroupBlock = selectedLiveBlocks.find(block => getBlockState(block, liveNow) === 'NOW');
+  const nextGroupBlock = selectedLiveBlocks.find(block => getBlockState(block, liveNow) === 'UPCOMING');
+  const focusGroupBlock = activeGroupBlock || nextGroupBlock || selectedLiveBlocks[selectedLiveBlocks.length - 1];
+  const scheduledArrival = operation.timeline.find(block => block.kind === 'OPENING')?.startTime || getProgramStart(selectedEvent);
+  const actualArrival = operation.live?.actualArrivalTime || scheduledArrival;
+  const liveDelta = timeToMinutes(actualArrival) - timeToMinutes(scheduledArrival);
   const reportSummary = [
     `Đoàn: ${selectedEvent.name}`,
     `Trường/đơn vị: ${selectedEvent.client}`,
@@ -1690,19 +1773,80 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
           )}
 
           {activeTab === 'LIVE' && (
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 xl:grid-cols-[1.25fr_0.75fr] gap-4">
               <section className="bg-white border border-slate-200 rounded-lg p-4">
-                <h3 className="font-black text-slate-900 flex items-center gap-2"><PlayCircle size={18} />Live Command Center</h3>
-                <div className="mt-4 rounded-lg border border-teal-100 bg-teal-50 p-4">
-                  <p className="text-xs font-black uppercase text-teal-700">Đang chạy</p>
-                  <select value={operation.live?.currentBlockId || ''} disabled={!canEdit} onChange={e => saveOperation(cur => ({ ...cur, live: { ...cur.live, currentBlockId: e.target.value, lastUpdatedAt: new Date().toISOString() } }))} className="mt-2 w-full border rounded-lg px-3 py-2 font-bold">
-                    <option value="">Chưa chọn block</option>
-                    {operation.timeline.map(block => <option key={block.id} value={block.id}>{block.startTime} - {block.title}</option>)}
-                  </select>
-                  <div className="mt-4 text-3xl font-black text-teal-950">{currentBlock ? currentBlock.title : 'Standby'}</div>
-                  <p className="mt-1 text-sm text-teal-800">{currentBlock ? `${currentBlock.startTime} - ${currentBlock.endTime} • ${currentBlock.room || 'Không gian chung'}` : 'Chọn block khi bắt đầu vận hành.'}</p>
-                  <textarea value={operation.live?.statusNote || ''} disabled={!canEdit} onChange={e => saveOperation(cur => ({ ...cur, live: { ...cur.live, statusNote: e.target.value, lastUpdatedAt: new Date().toISOString() } }))} className="mt-4 w-full min-h-[90px] border rounded-lg p-3 text-sm" placeholder="Ghi chú live: VR chậm 5 phút, cần hỗ trợ..." />
+                <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3">
+                  <div>
+                    <h3 className="font-black text-slate-900 flex items-center gap-2"><PlayCircle size={18} />Timing Center</h3>
+                    <p className="mt-1 text-xs text-slate-500">Bản LIVE lấy từ timeline chuẩn. Nhập giờ đoàn đến thực tế để tự đẩy lịch buổi sáng; buổi chiều giữ nguyên.</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 min-w-full lg:min-w-[300px]">
+                    <label className="block">
+                      <span className="text-[11px] font-black uppercase text-slate-500">Giờ chuẩn</span>
+                      <input readOnly value={scheduledArrival} className="mt-1 w-full border rounded-lg px-3 py-2 text-sm font-black bg-slate-50" />
+                    </label>
+                    <label className="block">
+                      <span className="text-[11px] font-black uppercase text-slate-500">Đoàn đến thực tế</span>
+                      <input
+                        type="time"
+                        value={actualArrival}
+                        disabled={!canEdit}
+                        onChange={event => saveOperation(cur => ({ ...cur, live: { ...cur.live, actualArrivalTime: event.target.value, lastUpdatedAt: new Date().toISOString() } }))}
+                        className="mt-1 w-full border rounded-lg px-3 py-2 text-sm font-black"
+                      />
+                    </label>
+                  </div>
                 </div>
+                <div className={`mt-4 rounded-lg border p-3 text-sm font-bold ${liveDelta > 0 ? 'border-amber-100 bg-amber-50 text-amber-800' : liveDelta < 0 ? 'border-emerald-100 bg-emerald-50 text-emerald-800' : 'border-slate-100 bg-slate-50 text-slate-600'}`}>
+                  {liveDelta === 0 ? 'LIVE đang khớp timeline chuẩn.' : `Buổi sáng đang ${liveDelta > 0 ? 'trễ' : 'sớm'} ${Math.abs(liveDelta)} phút. Nghỉ trưa sẽ tự co/giãn, buổi chiều giữ nguyên.`}
+                </div>
+
+                <div className="mt-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                  {liveGroupTimelines.map((group, groupIndex) => {
+                    const active = group.blocks.find(block => getBlockState(block, liveNow) === 'NOW');
+                    const next = group.blocks.find(block => getBlockState(block, liveNow) === 'UPCOMING');
+                    const focus = active || next || group.blocks[group.blocks.length - 1];
+                    return (
+                      <div key={group.id} className="rounded-lg border border-slate-100 bg-slate-50 p-3" style={{ borderTop: `5px solid ${group.color || GROUP_COLORS[groupIndex % GROUP_COLORS.length]}` }}>
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="font-black text-slate-900">{group.name}</p>
+                          <span className={`px-2 py-1 rounded-full text-[11px] font-black ${active ? 'bg-emerald-100 text-emerald-700' : next ? 'bg-amber-100 text-amber-700' : 'bg-slate-200 text-slate-600'}`}>
+                            {active ? 'Đang chạy' : next ? 'Sắp tới' : 'Xong'}
+                          </span>
+                        </div>
+                        <p className="mt-3 text-lg font-black text-slate-900">{focus?.title || 'Standby'}</p>
+                        <p className="mt-1 text-xs text-slate-500">{focus ? `${focus.startTime}-${focus.endTime} • ${focus.room || 'Chưa gán vị trí'}` : 'Không có lịch live'}</p>
+                        <div className="mt-3 rounded-lg bg-white border border-slate-200 p-3 text-center">
+                          <p className="text-xs font-black uppercase text-slate-500">{active ? 'Countdown' : 'Chuẩn bị'}</p>
+                          <p className="mt-1 text-xl font-black text-teal-700">{getCountdownLabel(focus, liveNow)}</p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+
+              <section className="bg-white border border-slate-200 rounded-lg p-4">
+                <h3 className="font-black text-slate-900 flex items-center gap-2"><Users size={18} />Màn hình đội dẫn đoàn</h3>
+                <select
+                  value={selectedLiveGroup?.id || ''}
+                  disabled={!canEdit}
+                  onChange={event => saveOperation(cur => ({ ...cur, live: { ...cur.live, selectedGroupId: event.target.value, lastUpdatedAt: new Date().toISOString() } }))}
+                  className="mt-4 w-full border rounded-lg px-3 py-2 text-sm font-black"
+                >
+                  {liveGroupTimelines.map(group => <option key={group.id} value={group.id}>{group.name}</option>)}
+                </select>
+                <div className="mt-4 rounded-lg border border-blue-100 bg-blue-50 p-4">
+                  <p className="text-xs font-black uppercase text-blue-700">{selectedLiveGroup?.name || 'Chưa chọn nhóm'}</p>
+                  <h4 className="mt-2 text-2xl font-black text-blue-950">{focusGroupBlock?.title || 'Standby'}</h4>
+                  <p className="mt-1 text-sm font-bold text-blue-800">{focusGroupBlock ? `${focusGroupBlock.startTime}-${focusGroupBlock.endTime} • ${focusGroupBlock.room || 'Chưa gán vị trí'}` : 'Không có lịch'}</p>
+                  <div className="mt-4 rounded-lg bg-white/80 border border-blue-100 p-4 text-center">
+                    <p className="text-xs font-black uppercase text-blue-600">Đếm ngược</p>
+                    <p className="mt-1 text-3xl font-black text-blue-950">{getCountdownLabel(focusGroupBlock, liveNow)}</p>
+                  </div>
+                  <p className="mt-3 text-sm text-blue-800">{nextGroupBlock && activeGroupBlock ? `Trạm tiếp theo: ${nextGroupBlock.title} lúc ${nextGroupBlock.startTime}` : nextGroupBlock ? `Chuẩn bị di chuyển đến: ${nextGroupBlock.title}` : 'Không còn trạm tiếp theo.'}</p>
+                </div>
+                <textarea value={operation.live?.statusNote || ''} disabled={!canEdit} onChange={e => saveOperation(cur => ({ ...cur, live: { ...cur.live, statusNote: e.target.value, lastUpdatedAt: new Date().toISOString() } }))} className="mt-4 w-full min-h-[90px] border rounded-lg p-3 text-sm" placeholder="Ghi chú live cho điều phối..." />
               </section>
 
               <section className="bg-white border border-slate-200 rounded-lg p-4">

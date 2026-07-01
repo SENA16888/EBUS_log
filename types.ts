@@ -476,6 +476,8 @@ export interface HouseOperationFeedback {
 
 export interface HouseOperationLiveState {
   currentBlockId?: string;
+  actualArrivalTime?: string;
+  selectedGroupId?: string;
   statusNote?: string;
   lastUpdatedAt?: string;
 }
