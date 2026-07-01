@@ -12,6 +12,7 @@ import {
   ClipboardCheck,
   Clock3,
   FileText,
+  GripVertical,
   Library,
   MapPin,
   MessageSquareText,
@@ -275,9 +276,8 @@ const getPackageStationDuration = (pkg: ComboPackage) => {
   return 25;
 };
 
-const createStationFromPackage = (pkg: ComboPackage, inventory: InventoryItem[], index: number): HouseOperationStation => {
-  const category = getPackageStationCategory(pkg);
-  const equipment = (pkg.items || []).map(pkgItem => {
+const buildEquipmentFromPackage = (pkg: ComboPackage, inventory: InventoryItem[]): HouseOperationStation['equipment'] =>
+  (pkg.items || []).map(pkgItem => {
     const inv = inventory.find(item => item.id === pkgItem.itemId);
     return {
       itemId: pkgItem.itemId,
@@ -288,10 +288,40 @@ const createStationFromPackage = (pkg: ComboPackage, inventory: InventoryItem[],
     };
   });
 
+const mergeEquipment = (
+  currentEquipment: HouseOperationStation['equipment'],
+  addedEquipment: HouseOperationStation['equipment']
+): HouseOperationStation['equipment'] => {
+  const map = new Map<string, HouseOperationStation['equipment'][number]>();
+  [...currentEquipment, ...addedEquipment].forEach(item => {
+    const key = item.itemId || item.name;
+    const existing = map.get(key);
+    map.set(key, existing ? { ...existing, quantity: existing.quantity + item.quantity } : { ...item });
+  });
+  return Array.from(map.values());
+};
+
+const getStationPackageIds = (station: HouseOperationStation) =>
+  station.packageIds && station.packageIds.length > 0
+    ? station.packageIds
+    : station.packageId
+      ? [station.packageId]
+      : [];
+
+const getPackageNames = (packageIds: string[], packages: ComboPackage[]) =>
+  packageIds
+    .map(id => packages.find(pkg => pkg.id === id)?.name || id)
+    .join(' + ');
+
+const createStationFromPackage = (pkg: ComboPackage, inventory: InventoryItem[], index: number): HouseOperationStation => {
+  const category = getPackageStationCategory(pkg);
+  const equipment = buildEquipmentFromPackage(pkg, inventory);
+
   return {
     id: `eh-station-pkg-${pkg.id}-${index + 1}`,
     name: pkg.name,
     packageId: pkg.id,
+    packageIds: [pkg.id],
     packageName: pkg.name,
     category,
     durationMinutes: getPackageStationDuration(pkg),
@@ -363,12 +393,12 @@ const ensureOperation = (event: Event, inventory: InventoryItem[], employees: Em
   return {
     ...fallback,
     ...current,
-    stations: current.stations?.length ? current.stations : fallback.stations,
-    timeline: current.timeline?.length ? current.timeline : fallback.timeline,
-    rotations: current.rotations?.length ? current.rotations : fallback.rotations,
-    tasks: current.tasks?.length ? current.tasks : fallback.tasks,
+    stations: Array.isArray(current.stations) ? current.stations : fallback.stations,
+    timeline: Array.isArray(current.timeline) ? current.timeline : fallback.timeline,
+    rotations: Array.isArray(current.rotations) ? current.rotations : fallback.rotations,
+    tasks: Array.isArray(current.tasks) ? current.tasks : fallback.tasks,
     incidents: current.incidents || [],
-    mediaTasks: current.mediaTasks?.length ? current.mediaTasks : fallback.mediaTasks,
+    mediaTasks: Array.isArray(current.mediaTasks) ? current.mediaTasks : fallback.mediaTasks,
     feedback: current.feedback || [],
     live: current.live || fallback.live
   };
@@ -408,6 +438,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
   const [newIncidentTitle, setNewIncidentTitle] = useState('');
   const [feedbackNote, setFeedbackNote] = useState('');
   const [feedbackScore, setFeedbackScore] = useState(5);
+  const [draggedStationId, setDraggedStationId] = useState<string | null>(null);
 
   const selectedEvent = events.find(event => event.id === selectedEventId) || events[0];
   const operation = useMemo(
@@ -483,6 +514,52 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
         id: makeId('eh-station')
       };
       const stations = [...current.stations, station];
+      return {
+        ...current,
+        stations,
+        timeline: buildTimeline(selectedEvent!, stations),
+        rotations: buildRotations(current.studentCount || getStudentCount(selectedEvent!), stations)
+      };
+    });
+  };
+
+  const reorderStation = (sourceId: string, targetId: string) => {
+    if (sourceId === targetId) return;
+    saveOperation(current => {
+      const sourceIndex = current.stations.findIndex(station => station.id === sourceId);
+      const targetIndex = current.stations.findIndex(station => station.id === targetId);
+      if (sourceIndex < 0 || targetIndex < 0) return current;
+      const stations = [...current.stations];
+      const [moving] = stations.splice(sourceIndex, 1);
+      stations.splice(targetIndex, 0, moving);
+      return {
+        ...current,
+        stations,
+        timeline: buildTimeline(selectedEvent!, stations),
+        rotations: buildRotations(current.studentCount || getStudentCount(selectedEvent!), stations)
+      };
+    });
+  };
+
+  const mergePackageIntoStation = (stationId: string, packageId: string) => {
+    const pkg = packages.find(item => item.id === packageId);
+    if (!pkg) return;
+    saveOperation(current => {
+      const stations = current.stations.map(station => {
+        if (station.id !== stationId) return station;
+        const packageIds = getStationPackageIds(station);
+        if (packageIds.includes(pkg.id)) return station;
+        const nextPackageIds = [...packageIds, pkg.id];
+        return {
+          ...station,
+          packageId: nextPackageIds[0],
+          packageIds: nextPackageIds,
+          packageName: getPackageNames(nextPackageIds, packages),
+          equipment: mergeEquipment(station.equipment || [], buildEquipmentFromPackage(pkg, inventory)),
+          checklist: Array.from(new Set([...(station.checklist || []), 'Kiểm tra đủ thiết bị các gói đã gộp'])),
+          objective: station.objective || pkg.description || `Tổ chức trạm từ nhiều gói thiết bị.`
+        };
+      });
       return {
         ...current,
         stations,
@@ -843,7 +920,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                   <p className="text-xs font-black uppercase text-slate-500 mb-2">Trạm từ gói thiết bị</p>
                   <div className="flex flex-wrap gap-2">
                     {packages.map(pkg => {
-                      const alreadyAdded = operation.stations.some(station => station.packageId === pkg.id);
+                      const alreadyAdded = operation.stations.some(station => getStationPackageIds(station).includes(pkg.id));
                       return (
                         <button
                           key={pkg.id}
@@ -876,19 +953,59 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
               <section className="bg-white border border-slate-200 rounded-lg p-4">
                 <h3 className="font-black text-slate-900 flex items-center gap-2"><Route size={18} />Program Canvas</h3>
                 <div className="mt-4 space-y-2">
-                  {operation.stations.map((station, index) => (
-                    <div key={station.id} className="flex items-center gap-3 border border-slate-100 bg-slate-50 rounded-lg p-3">
-                      <div className="h-9 w-9 rounded-lg bg-teal-100 text-teal-800 flex items-center justify-center font-black">{index + 1}</div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-black text-slate-800">{station.name}</p>
-                        <p className="text-xs text-slate-500">{station.durationMinutes} phút • {station.room}{station.packageName ? ` • Gói: ${station.packageName}` : ''}</p>
+                  {operation.stations.map((station, index) => {
+                    const stationPackageIds = getStationPackageIds(station);
+                    const mergeablePackages = packages.filter(pkg => !stationPackageIds.includes(pkg.id));
+                    return (
+                      <div
+                        key={station.id}
+                        draggable={canEdit}
+                        onDragStart={() => setDraggedStationId(station.id)}
+                        onDragOver={event => event.preventDefault()}
+                        onDrop={() => {
+                          if (draggedStationId) reorderStation(draggedStationId, station.id);
+                          setDraggedStationId(null);
+                        }}
+                        onDragEnd={() => setDraggedStationId(null)}
+                        className={`flex flex-col xl:flex-row xl:items-center gap-3 border rounded-lg p-3 transition ${draggedStationId === station.id ? 'border-teal-300 bg-teal-50' : 'border-slate-100 bg-slate-50'}`}
+                      >
+                        <div className="flex items-center gap-3 flex-1 min-w-0">
+                          <button type="button" disabled={!canEdit} className="text-slate-300 cursor-grab active:cursor-grabbing disabled:cursor-default" title="Kéo để đổi thứ tự">
+                            <GripVertical size={18} />
+                          </button>
+                          <div className="h-9 w-9 rounded-lg bg-teal-100 text-teal-800 flex items-center justify-center font-black shrink-0">{index + 1}</div>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-black text-slate-800">{station.name}</p>
+                            <p className="text-xs text-slate-500">{station.durationMinutes} phút • {station.room}{station.packageName ? ` • Gói: ${station.packageName}` : ''}</p>
+                          </div>
+                        </div>
+                        <div className="flex flex-col sm:flex-row gap-2 xl:items-center">
+                          <select
+                            value=""
+                            disabled={!canEdit || mergeablePackages.length === 0}
+                            onChange={event => {
+                              if (!event.target.value) return;
+                              mergePackageIntoStation(station.id, event.target.value);
+                              event.currentTarget.value = '';
+                            }}
+                            className="border rounded-lg px-2 py-1 text-xs font-bold bg-white min-w-[170px]"
+                          >
+                            <option value="">Gộp gói vào trạm</option>
+                            {mergeablePackages.map(pkg => <option key={pkg.id} value={pkg.id}>{pkg.name} ({pkg.items.length})</option>)}
+                          </select>
+                          <select value={station.status || 'TODO'} disabled={!canEdit} onChange={e => saveOperation(cur => ({ ...cur, stations: cur.stations.map(s => s.id === station.id ? { ...s, status: e.target.value as HouseOperationTaskStatus } : s) }))} className="border rounded-lg px-2 py-1 text-xs font-bold bg-white">
+                            {Object.entries(STATUS_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                          </select>
+                          <button onClick={() => removeStation(station.id)} disabled={!canEdit} className="text-slate-300 hover:text-rose-600 disabled:hover:text-slate-300 self-start sm:self-auto"><Trash2 size={17} /></button>
+                        </div>
                       </div>
-                      <select value={station.status || 'TODO'} disabled={!canEdit} onChange={e => saveOperation(cur => ({ ...cur, stations: cur.stations.map(s => s.id === station.id ? { ...s, status: e.target.value as HouseOperationTaskStatus } : s) }))} className="border rounded-lg px-2 py-1 text-xs font-bold">
-                        {Object.entries(STATUS_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-                      </select>
-                      <button onClick={() => removeStation(station.id)} disabled={!canEdit} className="text-slate-300 hover:text-rose-600 disabled:hover:text-slate-300"><Trash2 size={17} /></button>
+                    );
+                  })}
+                  {operation.stations.length === 0 && (
+                    <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-5 text-center text-sm text-slate-500">
+                      Canvas đang trống. Chọn gói thiết bị bên trái để thêm lại trạm theo thứ tự mong muốn.
                     </div>
-                  ))}
+                  )}
                 </div>
               </section>
             </div>

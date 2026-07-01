@@ -399,6 +399,7 @@ export interface HouseOperationStation {
   id: string;
   name: string;
   packageId?: string;
+  packageIds?: string[];
   packageName?: string;
   category: 'SHOW' | 'VR' | 'WORKSHOP' | 'ROBOT' | 'STEM' | 'MEDIA' | 'OTHER';
   durationMinutes: number;
