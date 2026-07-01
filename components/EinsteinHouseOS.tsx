@@ -241,7 +241,7 @@ const buildTimeline = (event: Event, stations: HouseOperationStation[]): HouseOp
     cursor += commonShow.durationMinutes;
   }
 
-  const amDuration = amStationCount * roundDuration + Math.max(0, amStationCount - 1) * 5;
+  const amDuration = amStationCount * roundDuration;
   blocks.push({
     id: makeId('eh-time'),
     sectionCode: 'C',
@@ -266,7 +266,7 @@ const buildTimeline = (event: Event, stations: HouseOperationStation[]): HouseOp
   cursor = Math.max(timeToMinutes('13:30'), cursor);
 
   if (pmStationCount > 0) {
-    const pmDuration = pmStationCount * roundDuration + Math.max(0, pmStationCount - 1) * 5;
+    const pmDuration = pmStationCount * roundDuration;
     blocks.push({
       id: makeId('eh-time'),
       sectionCode: 'F',
@@ -305,7 +305,7 @@ const recalcStructuredTimeline = (event: Event, stations: HouseOperationStation[
 
     if (next.kind === 'EXPERIENCE_AM' || next.kind === 'EXPERIENCE_PM') {
       const stationCount = Math.max(0, next.stationCount || 0);
-      const duration = stationCount > 0 ? stationCount * roundDuration + Math.max(0, stationCount - 1) * 5 : 0;
+      const duration = stationCount > 0 ? stationCount * roundDuration : 0;
       next.endTime = minutesToTime(cursor + duration);
       cursor += duration;
       return next;
@@ -357,6 +357,7 @@ const buildGroupActivityTimelines = (
 ) => {
   const stationMap = new Map(stations.map(station => [station.id, station]));
   const experienceStationIds = getExperienceStations(stations, timeline).map(station => station.id);
+  const experienceSlotDuration = getDefaultRoundDuration(getExperienceStations(stations, timeline));
   const commonBlocks = timeline.filter(block => block.kind === 'COMMON');
   const experienceBlocks = timeline.filter(block => block.kind === 'EXPERIENCE_AM' || block.kind === 'EXPERIENCE_PM');
 
@@ -383,7 +384,7 @@ const buildGroupActivityTimelines = (
           const stationId = groupRoute[routeCursor % Math.max(1, groupRoute.length)];
           routeCursor += 1;
           const station = stationId ? stationMap.get(stationId) : undefined;
-          const duration = station?.durationMinutes || getDefaultRoundDuration(stations);
+          const duration = experienceSlotDuration;
           const item = {
             id: `${group.id}-${block.id}-${roundIndex}`,
             title: station?.name || 'Nghỉ/chờ lượt',
