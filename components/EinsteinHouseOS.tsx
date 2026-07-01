@@ -5,7 +5,6 @@ import {
   Bot,
   Box,
   Building2,
-  CalendarDays,
   Camera,
   CheckCircle2,
   Circle,
@@ -57,29 +56,6 @@ interface EinsteinHouseOSProps {
 }
 
 type ModuleTab = 'CONTROL' | 'DESIGN' | 'TIMELINE' | 'TASKS' | 'KNOWLEDGE' | 'LIVE' | 'REPORT';
-
-const MODULES = [
-  'Event Dashboard',
-  'Event Designer',
-  'Timeline Builder',
-  'Rotation Planner',
-  'Action Plan',
-  'Human Assignment',
-  'SOP Center',
-  'Script Builder',
-  'Station Library',
-  'Equipment Order',
-  'Setup Checklist',
-  'Rehearsal',
-  'Live Command',
-  'Incident',
-  'Media Center',
-  'Feedback',
-  'Report',
-  'Knowledge Base',
-  'AI Assistant',
-  'Analytics'
-];
 
 const STATION_TEMPLATES: Omit<HouseOperationStation, 'id' | 'room' | 'status'>[] = [
   {
@@ -1204,58 +1180,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
         </div>
       </section>
 
-      <div className="grid grid-cols-1 xl:grid-cols-[300px_1fr] gap-4">
-        <aside className="space-y-3">
-          <div className="bg-white border border-slate-200 rounded-lg p-3">
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="font-black text-slate-800">Đoàn trường</h2>
-              <CalendarDays size={18} className="text-slate-400" />
-            </div>
-            <div className="space-y-2 max-h-[430px] overflow-auto pr-1">
-              {sidebarEvents.map(event => {
-                const op = ensureOperation(event, inventory, employees, packages);
-                const taskTotal = op.tasks.length || 1;
-                const taskDone = op.tasks.filter(task => task.status === 'DONE').length;
-                const pct = Math.round((taskDone / taskTotal) * 100);
-                const active = event.id === selectedEvent.id;
-                return (
-                  <button
-                    key={event.id}
-                    onClick={() => setSelectedEventId(event.id)}
-                    className={`w-full text-left border rounded-lg p-3 transition ${active ? 'border-teal-400 bg-teal-50' : 'border-slate-100 hover:border-slate-300 bg-white'}`}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <p className="font-black text-slate-800 leading-snug">{event.name}</p>
-                        <p className="text-xs text-slate-500 mt-1">{event.client}</p>
-                      </div>
-                      <span className={`text-[11px] px-2 py-1 rounded-full border ${pct >= 80 ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : pct >= 45 ? 'bg-amber-50 text-amber-700 border-amber-100' : 'bg-rose-50 text-rose-700 border-rose-100'}`}>
-                        {pct}%
-                      </span>
-                    </div>
-                    <div className="mt-3 flex items-center gap-2 text-xs text-slate-500">
-                      <Clock3 size={14} />
-                      {formatDate(getPrimaryDate(event))}
-                    </div>
-                  </button>
-                );
-              })}
-              {events.length === 0 && <p className="text-sm text-slate-500">Chưa có sự kiện.</p>}
-            </div>
-          </div>
-
-          <div className="bg-white border border-slate-200 rounded-lg p-3">
-            <h2 className="font-black text-slate-800 mb-3">OS Modules</h2>
-            <div className="grid grid-cols-2 gap-2">
-              {MODULES.map((module, index) => (
-                <div key={module} className="border border-slate-100 rounded-md px-2 py-2 bg-slate-50 text-[11px] font-bold text-slate-600">
-                  {index + 1}. {module}
-                </div>
-              ))}
-            </div>
-          </div>
-        </aside>
-
+      <div>
         <main className="space-y-4">
           <section className="bg-white border border-slate-200 rounded-lg p-4">
             <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
@@ -1265,6 +1190,19 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                   <span className="inline-flex items-center gap-1"><MapPin size={16} />{selectedEvent.location || 'Chưa có địa điểm'}</span>
                   <span className="inline-flex items-center gap-1"><Users size={16} />{operation.studentCount} HS / {operation.teacherCount} GV</span>
                   <span className="inline-flex items-center gap-1"><Clock3 size={16} />{getProgramStart(selectedEvent)}</span>
+                </div>
+                <div className="mt-3 max-w-xl">
+                  <select
+                    value={selectedEvent.id}
+                    onChange={event => setSelectedEventId(event.target.value)}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-bold bg-white"
+                  >
+                    {sidebarEvents.map(event => (
+                      <option key={event.id} value={event.id}>
+                        {event.name} • {formatDate(getPrimaryDate(event))}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
               <div className="flex flex-col sm:flex-row gap-2">
