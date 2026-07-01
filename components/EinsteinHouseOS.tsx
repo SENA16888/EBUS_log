@@ -967,19 +967,19 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                           setDraggedStationId(null);
                         }}
                         onDragEnd={() => setDraggedStationId(null)}
-                        className={`flex flex-col xl:flex-row xl:items-center gap-3 border rounded-lg p-3 transition ${draggedStationId === station.id ? 'border-teal-300 bg-teal-50' : 'border-slate-100 bg-slate-50'}`}
+                        className={`flex flex-col gap-3 border rounded-lg p-3 transition overflow-hidden ${draggedStationId === station.id ? 'border-teal-300 bg-teal-50' : 'border-slate-100 bg-slate-50'}`}
                       >
-                        <div className="flex items-center gap-3 flex-1 min-w-0">
-                          <button type="button" disabled={!canEdit} className="text-slate-300 cursor-grab active:cursor-grabbing disabled:cursor-default" title="Kéo để đổi thứ tự">
+                        <div className="flex items-start gap-3 min-w-0">
+                          <button type="button" disabled={!canEdit} className="mt-2 text-slate-300 cursor-grab active:cursor-grabbing disabled:cursor-default shrink-0" title="Kéo để đổi thứ tự">
                             <GripVertical size={18} />
                           </button>
                           <div className="h-9 w-9 rounded-lg bg-teal-100 text-teal-800 flex items-center justify-center font-black shrink-0">{index + 1}</div>
                           <div className="flex-1 min-w-0">
-                            <p className="font-black text-slate-800">{station.name}</p>
-                            <p className="text-xs text-slate-500">{station.durationMinutes} phút • {station.room}{station.packageName ? ` • Gói: ${station.packageName}` : ''}</p>
+                            <p className="font-black text-slate-800 leading-snug break-words">{station.name}</p>
+                            <p className="mt-1 text-xs text-slate-500 leading-relaxed break-words">{station.durationMinutes} phút • {station.room}{station.packageName ? ` • Gói: ${station.packageName}` : ''}</p>
                           </div>
                         </div>
-                        <div className="flex flex-col sm:flex-row gap-2 xl:items-center">
+                        <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_120px_32px] gap-2 items-center w-full pl-0 sm:pl-12">
                           <select
                             value=""
                             disabled={!canEdit || mergeablePackages.length === 0}
@@ -988,15 +988,15 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                               mergePackageIntoStation(station.id, event.target.value);
                               event.currentTarget.value = '';
                             }}
-                            className="border rounded-lg px-2 py-1 text-xs font-bold bg-white min-w-[170px]"
+                            className="w-full min-w-0 border rounded-lg px-2 py-2 text-xs font-bold bg-white"
                           >
                             <option value="">Gộp gói vào trạm</option>
                             {mergeablePackages.map(pkg => <option key={pkg.id} value={pkg.id}>{pkg.name} ({pkg.items.length})</option>)}
                           </select>
-                          <select value={station.status || 'TODO'} disabled={!canEdit} onChange={e => saveOperation(cur => ({ ...cur, stations: cur.stations.map(s => s.id === station.id ? { ...s, status: e.target.value as HouseOperationTaskStatus } : s) }))} className="border rounded-lg px-2 py-1 text-xs font-bold bg-white">
+                          <select value={station.status || 'TODO'} disabled={!canEdit} onChange={e => saveOperation(cur => ({ ...cur, stations: cur.stations.map(s => s.id === station.id ? { ...s, status: e.target.value as HouseOperationTaskStatus } : s) }))} className="w-full min-w-0 border rounded-lg px-2 py-2 text-xs font-bold bg-white">
                             {Object.entries(STATUS_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                           </select>
-                          <button onClick={() => removeStation(station.id)} disabled={!canEdit} className="text-slate-300 hover:text-rose-600 disabled:hover:text-slate-300 self-start sm:self-auto"><Trash2 size={17} /></button>
+                          <button onClick={() => removeStation(station.id)} disabled={!canEdit} className="h-8 w-8 inline-flex items-center justify-center text-slate-300 hover:text-rose-600 disabled:hover:text-slate-300"><Trash2 size={17} /></button>
                         </div>
                       </div>
                     );
