@@ -384,6 +384,114 @@ export interface EventTimelineEntry {
   note: string;
 }
 
+export type HouseOperationTaskStatus = 'TODO' | 'DOING' | 'DONE' | 'BLOCKED';
+export type HouseOperationSeverity = 'LOW' | 'MEDIUM' | 'HIGH';
+
+export interface HouseOperationEquipment {
+  itemId?: string;
+  name: string;
+  quantity: number;
+  unit?: string;
+  source?: 'INVENTORY' | 'CONSUMABLE' | 'MANUAL';
+}
+
+export interface HouseOperationStation {
+  id: string;
+  name: string;
+  category: 'SHOW' | 'VR' | 'WORKSHOP' | 'ROBOT' | 'STEM' | 'MEDIA' | 'OTHER';
+  durationMinutes: number;
+  room?: string;
+  objective: string;
+  sopVersion?: string;
+  checklist: string[];
+  equipment: HouseOperationEquipment[];
+  script?: string;
+  status?: HouseOperationTaskStatus;
+}
+
+export interface HouseOperationTimelineBlock {
+  id: string;
+  title: string;
+  startTime: string;
+  endTime: string;
+  stationId?: string;
+  room?: string;
+  note?: string;
+  warning?: string;
+}
+
+export interface HouseOperationRotationGroup {
+  id: string;
+  name: string;
+  studentCount: number;
+  route: string[];
+}
+
+export interface HouseOperationTask {
+  id: string;
+  title: string;
+  scope: 'EVENT' | 'STATION' | 'ASSET' | 'STAFF' | 'MEDIA' | 'QUALITY';
+  status: HouseOperationTaskStatus;
+  ownerId?: string;
+  ownerName?: string;
+  stationId?: string;
+  deadline?: string;
+  note?: string;
+}
+
+export interface HouseOperationIncident {
+  id: string;
+  title: string;
+  severity: HouseOperationSeverity;
+  status: 'OPEN' | 'RESOLVED';
+  ownerId?: string;
+  ownerName?: string;
+  createdAt: string;
+  resolvedAt?: string;
+  note?: string;
+}
+
+export interface HouseOperationMediaTask {
+  id: string;
+  title: string;
+  checked: boolean;
+  uploadUrl?: string;
+}
+
+export interface HouseOperationFeedback {
+  id: string;
+  source: 'GUIDE' | 'TEACHER' | 'INTERNAL';
+  score?: number;
+  note: string;
+  createdAt: string;
+}
+
+export interface HouseOperationLiveState {
+  currentBlockId?: string;
+  statusNote?: string;
+  lastUpdatedAt?: string;
+}
+
+export interface HouseOperationInstance {
+  templateVersion: number;
+  createdAt: string;
+  updatedAt?: string;
+  grade?: string;
+  theme?: string;
+  programType?: string;
+  studentCount?: number;
+  teacherCount?: number;
+  stations: HouseOperationStation[];
+  timeline: HouseOperationTimelineBlock[];
+  rotations: HouseOperationRotationGroup[];
+  tasks: HouseOperationTask[];
+  incidents: HouseOperationIncident[];
+  mediaTasks: HouseOperationMediaTask[];
+  feedback: HouseOperationFeedback[];
+  live?: HouseOperationLiveState;
+  reportNote?: string;
+}
+
 export interface Event {
   id: string;
   name: string;
@@ -413,6 +521,7 @@ export interface Event {
   saleOrderIds?: string[];
   checklist?: EventChecklist;
   timeline?: EventTimelineEntry[];
+  houseOperation?: HouseOperationInstance;
 }
 
 export interface Transaction {

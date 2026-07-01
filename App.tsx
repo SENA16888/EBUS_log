@@ -12,6 +12,7 @@ import { QuotationManager } from './components/QuotationManager';
 import { AIChat } from './components/AIChat';
 import { Elearning } from './components/Elearning';
 import { AdminLogPage } from './components/AdminLogPage';
+import { EinsteinHouseOS } from './components/EinsteinHouseOS';
 import { AppState, InventoryItem, Event, EventStatus, Transaction, TransactionType, ComboPackage, Employee, Quotation, EventStaffAllocation, EventExpense, EventAdvanceRequest, LogEntry, ChecklistDirection, ChecklistStatus, ChecklistSignature, EventChecklist, LearningAttempt, LearningProfile, AccessPermission, UserAccount, LearningTrack, InventoryReceipt, InventoryReceiptItem, ActiveSession, PayrollAdjustment, InventoryAuditSession, InventoryAuditItem, InventoryAuditBaseline } from './types';
 import { MOCK_INVENTORY, MOCK_EVENTS, MOCK_TRANSACTIONS, MOCK_PACKAGES, MOCK_EMPLOYEES, MOCK_LEARNING_TRACKS, MOCK_CAREER_RANKS, DEFAULT_USER_ACCOUNTS, MOCK_INVENTORY_RECEIPTS } from './constants';
 import { MessageSquare } from 'lucide-react';
@@ -24,7 +25,7 @@ import { LoginModal } from './components/LoginModal';
 
 const generateId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-type AppTab = 'dashboard' | 'inventory' | 'stocktake' | 'events' | 'packages' | 'employees' | 'quotations' | 'sales' | 'elearning' | 'logs';
+type AppTab = 'dashboard' | 'inventory' | 'stocktake' | 'events' | 'house' | 'packages' | 'employees' | 'quotations' | 'sales' | 'elearning' | 'logs';
 
 const getSessionId = () => {
   try {
@@ -217,12 +218,14 @@ const App: React.FC = () => {
   const canViewQuotations = can('QUOTATIONS_VIEW');
   const canViewSales = can('SALES_VIEW');
   const canViewEvents = can('EVENTS_VIEW');
+  const canViewHouseOS = canViewEvents;
   const canViewElearning = can('ELEARNING_VIEW');
   const canViewEmployees = can('EMPLOYEES_VIEW');
   const isElearningAdmin = currentUser?.role === 'ADMIN' || currentUser?.role === 'MANAGER';
   const firstAccessibleTab: AppTab =
     (canViewDashboard && 'dashboard') ||
     (canViewEvents && 'events') ||
+    (canViewHouseOS && 'house') ||
     (canViewInventory && 'inventory') ||
     (canViewStocktake && 'stocktake') ||
     (canViewPackages && 'packages') ||
@@ -321,6 +324,7 @@ const App: React.FC = () => {
       inventory: canViewInventory,
       stocktake: canViewStocktake,
       events: canViewEvents,
+      house: canViewHouseOS,
       packages: canViewPackages,
       employees: canViewEmployees,
       quotations: canViewQuotations,
@@ -339,6 +343,7 @@ const App: React.FC = () => {
     canViewInventory,
     canViewStocktake,
     canViewEvents,
+    canViewHouseOS,
     canViewPackages,
     canViewQuotations,
     canViewSales,
@@ -1932,6 +1937,7 @@ const App: React.FC = () => {
       canViewQuotations={canViewQuotations}
       canViewSales={canViewSales}
       canViewEvents={canViewEvents}
+      canViewHouseOS={canViewHouseOS}
       canViewElearning={canViewElearning}
       canViewEmployees={canViewEmployees}
       onOpenAccess={() => setIsAccessOpen(true)}
@@ -2041,6 +2047,16 @@ const App: React.FC = () => {
       )}
       {activeTab === 'logs' && canViewLogs && (
         <AdminLogPage logs={appState.logs} accounts={appState.userAccounts || []} activeSessions={activeSessions} />
+      )}
+      {activeTab === 'house' && canViewHouseOS && (
+        <EinsteinHouseOS
+          events={appState.events}
+          inventory={appState.inventory}
+          employees={appState.employees}
+          packages={appState.packages}
+          canEdit={can('EVENTS_EDIT')}
+          onUpdateEvent={guard('EVENTS_EDIT', handleUpdateEvent)}
+        />
       )}
       {activeTab === 'events' && canViewEvents && (
         <EventManager 

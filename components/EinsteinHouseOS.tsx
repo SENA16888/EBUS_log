@@ -1,0 +1,1081 @@
+import React, { useMemo, useState } from 'react';
+import {
+  AlertTriangle,
+  BarChart3,
+  Bot,
+  Box,
+  Building2,
+  CalendarDays,
+  Camera,
+  CheckCircle2,
+  Circle,
+  ClipboardCheck,
+  Clock3,
+  FileText,
+  Library,
+  MapPin,
+  MessageSquareText,
+  PackageCheck,
+  PlayCircle,
+  Plus,
+  Radio,
+  RefreshCw,
+  Route,
+  Save,
+  Siren,
+  Sparkles,
+  TimerReset,
+  Trash2,
+  UserRoundCheck,
+  Users,
+  Wand2
+} from 'lucide-react';
+import {
+  ComboPackage,
+  Employee,
+  Event,
+  HouseOperationFeedback,
+  HouseOperationIncident,
+  HouseOperationInstance,
+  HouseOperationMediaTask,
+  HouseOperationRotationGroup,
+  HouseOperationStation,
+  HouseOperationTask,
+  HouseOperationTaskStatus,
+  HouseOperationTimelineBlock,
+  InventoryItem
+} from '../types';
+
+interface EinsteinHouseOSProps {
+  events: Event[];
+  inventory: InventoryItem[];
+  employees: Employee[];
+  packages: ComboPackage[];
+  canEdit?: boolean;
+  onUpdateEvent: (eventId: string, updates: Partial<Event>) => void;
+}
+
+type ModuleTab = 'CONTROL' | 'DESIGN' | 'TIMELINE' | 'TASKS' | 'KNOWLEDGE' | 'LIVE' | 'REPORT';
+
+const MODULES = [
+  'Event Dashboard',
+  'Event Designer',
+  'Timeline Builder',
+  'Rotation Planner',
+  'Action Plan',
+  'Human Assignment',
+  'SOP Center',
+  'Script Builder',
+  'Station Library',
+  'Equipment Order',
+  'Setup Checklist',
+  'Rehearsal',
+  'Live Command',
+  'Incident',
+  'Media Center',
+  'Feedback',
+  'Report',
+  'Knowledge Base',
+  'AI Assistant',
+  'Analytics'
+];
+
+const STATION_TEMPLATES: Omit<HouseOperationStation, 'id' | 'room' | 'status'>[] = [
+  {
+    name: 'Science Show',
+    category: 'SHOW',
+    durationMinutes: 25,
+    objective: 'Tạo điểm mở đầu hứng thú, kích hoạt tò mò khoa học và thống nhất luật an toàn.',
+    sopVersion: 'EH-SOP-SHOW-v1',
+    checklist: ['Test loa micro', 'Đánh dấu vùng an toàn', 'Chuẩn bị đạo cụ demo', 'Chốt cue mở màn'],
+    equipment: [
+      { name: 'Loa kéo', quantity: 1, source: 'MANUAL' },
+      { name: 'Micro không dây', quantity: 2, source: 'MANUAL' }
+    ],
+    script: 'Xin chào thầy cô và các bạn học sinh {{school}}. Hôm nay Einstein House sẽ biến khoa học thành một trải nghiệm có thể chạm, thử và khám phá.'
+  },
+  {
+    name: 'VR Lab',
+    category: 'VR',
+    durationMinutes: 30,
+    objective: 'Cho học sinh trải nghiệm môi trường ảo có hướng dẫn, đảm bảo vệ sinh kính và nhịp luân chuyển đều.',
+    sopVersion: 'EH-SOP-VR-v1',
+    checklist: ['Lau kính', 'Test game', 'Test wifi', 'Chia lượt đeo kính', 'Có người hỗ trợ tháo kính'],
+    equipment: [
+      { name: 'Kính VR', quantity: 8, source: 'MANUAL' },
+      { name: 'Khăn lau kính', quantity: 20, unit: 'cái', source: 'CONSUMABLE' }
+    ],
+    script: 'Trạm VR giúp các bạn quan sát những điều bình thường mắt mình khó nhìn thấy. Mỗi lượt trải nghiệm cần nghe hiệu lệnh của HDV trước khi đeo kính.'
+  },
+  {
+    name: 'Robot Mission',
+    category: 'ROBOT',
+    durationMinutes: 30,
+    objective: 'Học sinh điều khiển robot theo nhiệm vụ ngắn, rèn tư duy thuật toán và phối hợp nhóm.',
+    sopVersion: 'EH-SOP-ROBOT-v1',
+    checklist: ['Sạc pin robot', 'Test đường chạy', 'Chuẩn bị nhiệm vụ', 'Kiểm tra remote/tablet'],
+    equipment: [
+      { name: 'Robot giáo dục', quantity: 6, source: 'MANUAL' },
+      { name: 'Pin dự phòng', quantity: 6, source: 'MANUAL' }
+    ],
+    script: 'Robot chỉ làm đúng những gì con người hướng dẫn. Nhiệm vụ của đội mình là biến ý tưởng thành chuỗi lệnh thật rõ ràng.'
+  },
+  {
+    name: 'STEM Workshop',
+    category: 'WORKSHOP',
+    durationMinutes: 35,
+    objective: 'Mỗi học sinh hoàn thành một sản phẩm nhỏ, có hướng dẫn theo bước và phần phản tư cuối trạm.',
+    sopVersion: 'EH-SOP-WORKSHOP-v1',
+    checklist: ['Chia kit theo bàn', 'Chuẩn bị kéo/keo', 'Mẫu sản phẩm', 'Thùng rác mini'],
+    equipment: [
+      { name: 'Giấy workshop', quantity: 80, unit: 'tờ', source: 'CONSUMABLE' },
+      { name: 'Keo dán', quantity: 15, unit: 'chai', source: 'CONSUMABLE' }
+    ],
+    script: 'Ở workshop, sản phẩm đẹp không quan trọng bằng việc các bạn thử, sai, sửa và hiểu vì sao nó hoạt động.'
+  },
+  {
+    name: 'Newton Challenge',
+    category: 'STEM',
+    durationMinutes: 25,
+    objective: 'Dùng thử thách vật lý ngắn để củng cố khái niệm lực, chuyển động và dự đoán kết quả.',
+    sopVersion: 'EH-SOP-NEWTON-v1',
+    checklist: ['Set bàn thử nghiệm', 'Đánh dấu hàng chờ', 'Test mẫu', 'Chuẩn bị bảng điểm'],
+    equipment: [
+      { name: 'Bộ thí nghiệm Newton', quantity: 4, source: 'MANUAL' },
+      { name: 'Băng dính giấy', quantity: 4, unit: 'cuộn', source: 'CONSUMABLE' }
+    ],
+    script: 'Trước khi thử, mỗi đội hãy dự đoán kết quả. Nhà khoa học giỏi luôn bắt đầu bằng một giả thuyết.'
+  }
+];
+
+const SHOT_LIST = ['Ảnh cổng đón đoàn', 'Toàn cảnh Science Show', 'VR cận cảnh', 'Workshop sản phẩm', 'Ảnh nhóm theo lớp', 'Ảnh tổng kết với giáo viên'];
+
+const STATUS_LABELS: Record<HouseOperationTaskStatus, string> = {
+  TODO: 'Cần làm',
+  DOING: 'Đang làm',
+  DONE: 'Hoàn thành',
+  BLOCKED: 'Thiếu'
+};
+
+const formatDate = (value?: string) => {
+  if (!value) return 'Chưa có ngày';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString('vi-VN', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' });
+};
+
+const timeToMinutes = (time: string) => {
+  const [hour, minute] = time.split(':').map(Number);
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return 0;
+  return hour * 60 + minute;
+};
+
+const minutesToTime = (minutes: number) => {
+  const safe = Math.max(0, minutes);
+  const hour = Math.floor(safe / 60) % 24;
+  const minute = safe % 60;
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+};
+
+const addMinutes = (time: string, minutes: number) => minutesToTime(timeToMinutes(time) + minutes);
+
+const getPrimaryDate = (event: Event) => event.schedule?.[0]?.date || event.startDate || event.endDate || '';
+
+const getProgramStart = (event: Event) => event.eventProfile?.programTimeStart || '09:00';
+
+const getStudentCount = (event: Event) =>
+  event.houseOperation?.studentCount ||
+  event.eventProfile?.attendanceMax ||
+  event.eventProfile?.attendanceMin ||
+  64;
+
+const getTeacherCount = (event: Event) => event.houseOperation?.teacherCount || Math.max(1, Math.ceil(getStudentCount(event) / 25));
+
+const makeId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+
+const buildTimeline = (event: Event, stations: HouseOperationStation[]): HouseOperationTimelineBlock[] => {
+  const start = getProgramStart(event);
+  let cursor = timeToMinutes(start);
+  const blocks: HouseOperationTimelineBlock[] = [
+    {
+      id: makeId('eh-time'),
+      title: 'Đón đoàn - check in',
+      startTime: minutesToTime(cursor),
+      endTime: minutesToTime(cursor + 15),
+      note: 'Lead HDV nhận đoàn, xác nhận sĩ số, phổ biến an toàn.'
+    }
+  ];
+  cursor += 15;
+
+  stations.forEach((station, index) => {
+    blocks.push({
+      id: makeId('eh-time'),
+      title: station.name,
+      startTime: minutesToTime(cursor),
+      endTime: minutesToTime(cursor + station.durationMinutes),
+      stationId: station.id,
+      room: station.room || `Khu ${index + 1}`
+    });
+    cursor += station.durationMinutes + 5;
+  });
+
+  blocks.push({
+    id: makeId('eh-time'),
+    title: 'Tổng kết - trả đoàn',
+    startTime: minutesToTime(cursor),
+    endTime: minutesToTime(cursor + 15),
+    note: 'Chụp ảnh tổng kết, bàn giao giáo viên, ghi nhận feedback nhanh.'
+  });
+
+  return blocks;
+};
+
+const buildRotations = (studentCount: number, stations: HouseOperationStation[]): HouseOperationRotationGroup[] => {
+  const groupCount = Math.max(1, Math.min(6, Math.ceil(studentCount / 25)));
+  const stationIds = stations.map(station => station.id);
+  return Array.from({ length: groupCount }).map((_, index) => ({
+    id: makeId('eh-rot'),
+    name: `Lớp/Nhóm ${String.fromCharCode(65 + index)}`,
+    studentCount: Math.ceil(studentCount / groupCount),
+    route: stationIds.map((_, routeIndex) => stationIds[(routeIndex + index) % stationIds.length]).filter(Boolean)
+  }));
+};
+
+const createStationInstances = (inventory: InventoryItem[]) =>
+  STATION_TEMPLATES.map((template, index) => {
+    const matchedEquipment = template.equipment.map(item => {
+      const found = inventory.find(inv => inv.name.toLowerCase().includes(item.name.toLowerCase().split(' ')[0]));
+      return found ? { ...item, itemId: found.id, name: found.name, source: 'INVENTORY' as const } : item;
+    });
+    return {
+      ...template,
+      id: `eh-station-${index + 1}`,
+      room: `Khu ${index + 1}`,
+      status: 'TODO' as HouseOperationTaskStatus,
+      equipment: matchedEquipment
+    };
+  });
+
+const createDefaultTasks = (event: Event, stations: HouseOperationStation[], employees: Employee[]): HouseOperationTask[] => {
+  const lead = employees.find(emp => /lead|hdv|leader|quản/i.test(`${emp.role} ${emp.name}`));
+  const eventDate = getPrimaryDate(event);
+  const deadline = eventDate ? `${eventDate}T08:00` : undefined;
+  const baseTasks: HouseOperationTask[] = [
+    { id: makeId('eh-task'), title: 'Chốt thông tin đoàn, sĩ số, khối, người liên hệ', scope: 'EVENT', status: 'TODO', ownerId: lead?.id, ownerName: lead?.name, deadline },
+    { id: makeId('eh-task'), title: 'Khóa timeline và sơ đồ luân chuyển', scope: 'QUALITY', status: 'TODO', ownerId: lead?.id, ownerName: lead?.name, deadline },
+    { id: makeId('eh-task'), title: 'Kiểm tra thiết bị, vật tư tiêu hao và phiếu kho', scope: 'ASSET', status: 'TODO', deadline },
+    { id: makeId('eh-task'), title: 'Brief nhân sự, rehearsal lỗi thường gặp', scope: 'STAFF', status: 'TODO', ownerId: lead?.id, ownerName: lead?.name, deadline },
+    { id: makeId('eh-task'), title: 'Chuẩn bị shot list media và người chụp', scope: 'MEDIA', status: 'TODO', deadline }
+  ];
+  return [
+    ...baseTasks,
+    ...stations.map(station => ({
+      id: makeId('eh-task'),
+      title: `Setup checklist trạm ${station.name}`,
+      scope: 'STATION' as const,
+      status: 'TODO' as HouseOperationTaskStatus,
+      stationId: station.id,
+      deadline
+    }))
+  ];
+};
+
+const createDefaultOperation = (event: Event, inventory: InventoryItem[], employees: Employee[]): HouseOperationInstance => {
+  const stations = createStationInstances(inventory);
+  const studentCount = getStudentCount(event);
+  return {
+    templateVersion: 1,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    grade: event.eventProfile?.audience?.[0] || 'Tiểu học',
+    theme: event.eventProfile?.generalGoal || 'Science Experience',
+    programType: event.eventProfile?.eventType || 'SCIENCE_DAY',
+    studentCount,
+    teacherCount: getTeacherCount(event),
+    stations,
+    timeline: buildTimeline(event, stations),
+    rotations: buildRotations(studentCount, stations),
+    tasks: createDefaultTasks(event, stations, employees),
+    incidents: [],
+    mediaTasks: SHOT_LIST.map(title => ({ id: makeId('eh-media'), title, checked: false })),
+    feedback: [],
+    live: { currentBlockId: undefined, statusNote: 'Chưa bắt đầu' },
+    reportNote: ''
+  };
+};
+
+const ensureOperation = (event: Event, inventory: InventoryItem[], employees: Employee[]): HouseOperationInstance => {
+  const fallback = createDefaultOperation(event, inventory, employees);
+  const current = event.houseOperation;
+  if (!current) return fallback;
+  return {
+    ...fallback,
+    ...current,
+    stations: current.stations?.length ? current.stations : fallback.stations,
+    timeline: current.timeline?.length ? current.timeline : fallback.timeline,
+    rotations: current.rotations?.length ? current.rotations : fallback.rotations,
+    tasks: current.tasks?.length ? current.tasks : fallback.tasks,
+    incidents: current.incidents || [],
+    mediaTasks: current.mediaTasks?.length ? current.mediaTasks : fallback.mediaTasks,
+    feedback: current.feedback || [],
+    live: current.live || fallback.live
+  };
+};
+
+const getOverlapWarnings = (timeline: HouseOperationTimelineBlock[]) => {
+  const warnings = new Set<string>();
+  const sorted = [...timeline].sort((a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime));
+  sorted.forEach((block, index) => {
+    const next = sorted[index + 1];
+    if (next && timeToMinutes(block.endTime) > timeToMinutes(next.startTime)) {
+      warnings.add(block.id);
+      warnings.add(next.id);
+    }
+  });
+  return warnings;
+};
+
+const statusColor = (status: HouseOperationTaskStatus) => {
+  if (status === 'DONE') return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+  if (status === 'DOING') return 'bg-amber-50 text-amber-700 border-amber-200';
+  if (status === 'BLOCKED') return 'bg-rose-50 text-rose-700 border-rose-200';
+  return 'bg-slate-50 text-slate-600 border-slate-200';
+};
+
+export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
+  events,
+  inventory,
+  employees,
+  packages,
+  canEdit = true,
+  onUpdateEvent
+}) => {
+  const [selectedEventId, setSelectedEventId] = useState(events[0]?.id || '');
+  const [activeTab, setActiveTab] = useState<ModuleTab>('CONTROL');
+  const [newTaskTitle, setNewTaskTitle] = useState('');
+  const [newIncidentTitle, setNewIncidentTitle] = useState('');
+  const [feedbackNote, setFeedbackNote] = useState('');
+  const [feedbackScore, setFeedbackScore] = useState(5);
+
+  const selectedEvent = events.find(event => event.id === selectedEventId) || events[0];
+  const operation = useMemo(
+    () => selectedEvent ? ensureOperation(selectedEvent, inventory, employees) : null,
+    [selectedEvent, inventory, employees]
+  );
+
+  const eventCards = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    const sorted = [...events].sort((a, b) => (getPrimaryDate(a) || '').localeCompare(getPrimaryDate(b) || ''));
+    return {
+      today: sorted.filter(event => getPrimaryDate(event) === today),
+      upcoming: sorted.filter(event => (getPrimaryDate(event) || '') > today).slice(0, 5),
+      week: sorted.filter(event => {
+        const date = new Date(getPrimaryDate(event));
+        const diff = date.getTime() - new Date(today).getTime();
+        return diff >= 0 && diff <= 7 * 24 * 60 * 60 * 1000;
+      })
+    };
+  }, [events]);
+
+  const progress = useMemo(() => {
+    if (!operation) return { done: 0, total: 0, pct: 0, missing: 0 };
+    const total = operation.tasks.length + operation.stations.length + operation.mediaTasks.length;
+    const done = operation.tasks.filter(task => task.status === 'DONE').length
+      + operation.stations.filter(station => station.status === 'DONE').length
+      + operation.mediaTasks.filter(task => task.checked).length;
+    const missing = operation.tasks.filter(task => task.status === 'BLOCKED').length + operation.incidents.filter(incident => incident.status === 'OPEN').length;
+    return { done, total, pct: total ? Math.round((done / total) * 100) : 0, missing };
+  }, [operation]);
+
+  const overlapWarnings = useMemo(() => operation ? getOverlapWarnings(operation.timeline) : new Set<string>(), [operation]);
+
+  const saveOperation = (updater: (current: HouseOperationInstance) => HouseOperationInstance) => {
+    if (!selectedEvent || !canEdit) return;
+    const current = ensureOperation(selectedEvent, inventory, employees);
+    onUpdateEvent(selectedEvent.id, {
+      houseOperation: {
+        ...updater(current),
+        updatedAt: new Date().toISOString()
+      }
+    });
+  };
+
+  const initializeOperation = () => {
+    if (!selectedEvent || !canEdit) return;
+    onUpdateEvent(selectedEvent.id, { houseOperation: createDefaultOperation(selectedEvent, inventory, employees) });
+  };
+
+  const updateTask = (taskId: string, patch: Partial<HouseOperationTask>) => {
+    saveOperation(current => ({
+      ...current,
+      tasks: current.tasks.map(task => task.id === taskId ? { ...task, ...patch } : task)
+    }));
+  };
+
+  const addTask = () => {
+    if (!newTaskTitle.trim()) return;
+    saveOperation(current => ({
+      ...current,
+      tasks: [
+        ...current.tasks,
+        { id: makeId('eh-task'), title: newTaskTitle.trim(), scope: 'EVENT', status: 'TODO' }
+      ]
+    }));
+    setNewTaskTitle('');
+  };
+
+  const addStation = (template: Omit<HouseOperationStation, 'id' | 'room' | 'status'>) => {
+    saveOperation(current => {
+      const station: HouseOperationStation = {
+        ...template,
+        id: makeId('eh-station'),
+        room: `Khu ${current.stations.length + 1}`,
+        status: 'TODO'
+      };
+      const stations = [...current.stations, station];
+      return {
+        ...current,
+        stations,
+        timeline: buildTimeline(selectedEvent!, stations),
+        rotations: buildRotations(current.studentCount || getStudentCount(selectedEvent!), stations)
+      };
+    });
+  };
+
+  const removeStation = (stationId: string) => {
+    saveOperation(current => {
+      const stations = current.stations.filter(station => station.id !== stationId);
+      return {
+        ...current,
+        stations,
+        timeline: current.timeline.filter(block => block.stationId !== stationId),
+        rotations: buildRotations(current.studentCount || getStudentCount(selectedEvent!), stations),
+        tasks: current.tasks.filter(task => task.stationId !== stationId)
+      };
+    });
+  };
+
+  const recalcTimeline = () => {
+    saveOperation(current => ({
+      ...current,
+      timeline: buildTimeline(selectedEvent!, current.stations)
+    }));
+  };
+
+  const insertBreak = () => {
+    saveOperation(current => {
+      const firstStationIndex = current.timeline.findIndex(block => block.stationId);
+      const insertAfter = firstStationIndex >= 0 ? firstStationIndex + 1 : 1;
+      const anchor = current.timeline[insertAfter - 1];
+      const breakBlock: HouseOperationTimelineBlock = {
+        id: makeId('eh-time'),
+        title: 'Nghỉ chuyển trạm',
+        startTime: anchor?.endTime || getProgramStart(selectedEvent!),
+        endTime: addMinutes(anchor?.endTime || getProgramStart(selectedEvent!), 10),
+        note: 'Khoảng đệm để di chuyển, vệ sinh thiết bị và ổn định lớp.'
+      };
+      const timeline = [...current.timeline];
+      timeline.splice(insertAfter, 0, breakBlock);
+      return { ...current, timeline };
+    });
+  };
+
+  const updateTimeline = (blockId: string, patch: Partial<HouseOperationTimelineBlock>) => {
+    saveOperation(current => ({
+      ...current,
+      timeline: current.timeline.map(block => block.id === blockId ? { ...block, ...patch } : block)
+    }));
+  };
+
+  const regenerateRotations = () => {
+    saveOperation(current => ({
+      ...current,
+      rotations: buildRotations(current.studentCount || getStudentCount(selectedEvent!), current.stations)
+    }));
+  };
+
+  const addIncident = () => {
+    if (!newIncidentTitle.trim()) return;
+    saveOperation(current => ({
+      ...current,
+      incidents: [
+        {
+          id: makeId('eh-incident'),
+          title: newIncidentTitle.trim(),
+          severity: 'MEDIUM',
+          status: 'OPEN',
+          createdAt: new Date().toISOString()
+        },
+        ...current.incidents
+      ]
+    }));
+    setNewIncidentTitle('');
+  };
+
+  const updateIncident = (incidentId: string, patch: Partial<HouseOperationIncident>) => {
+    saveOperation(current => ({
+      ...current,
+      incidents: current.incidents.map(incident => incident.id === incidentId ? { ...incident, ...patch } : incident)
+    }));
+  };
+
+  const toggleMedia = (mediaId: string, checked: boolean) => {
+    saveOperation(current => ({
+      ...current,
+      mediaTasks: current.mediaTasks.map(task => task.id === mediaId ? { ...task, checked } : task)
+    }));
+  };
+
+  const addFeedback = () => {
+    if (!feedbackNote.trim()) return;
+    const feedback: HouseOperationFeedback = {
+      id: makeId('eh-feedback'),
+      source: 'TEACHER',
+      score: feedbackScore,
+      note: feedbackNote.trim(),
+      createdAt: new Date().toISOString()
+    };
+    saveOperation(current => ({ ...current, feedback: [feedback, ...current.feedback] }));
+    setFeedbackNote('');
+  };
+
+  const equipmentOrder = useMemo(() => {
+    if (!operation || !selectedEvent) return [];
+    const map = new Map<string, { name: string; quantity: number; unit?: string; itemId?: string; available?: number }>();
+    operation.stations.forEach(station => {
+      station.equipment.forEach(item => {
+        const key = item.itemId || item.name;
+        const inv = item.itemId ? inventory.find(i => i.id === item.itemId) : undefined;
+        const existing = map.get(key);
+        map.set(key, {
+          name: item.name,
+          quantity: (existing?.quantity || 0) + item.quantity,
+          unit: item.unit,
+          itemId: item.itemId,
+          available: inv?.availableQuantity
+        });
+      });
+    });
+    selectedEvent.items.forEach(alloc => {
+      const inv = inventory.find(item => item.id === alloc.itemId);
+      if (!inv) return;
+      const existing = map.get(inv.id);
+      map.set(inv.id, {
+        name: inv.name,
+        quantity: (existing?.quantity || 0) + alloc.quantity,
+        itemId: inv.id,
+        available: inv.availableQuantity
+      });
+    });
+    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [operation, selectedEvent, inventory]);
+
+  if (!selectedEvent || !operation) {
+    return (
+      <div className="min-h-[60vh] flex items-center justify-center bg-white border border-slate-200 rounded-lg">
+        <div className="text-center">
+          <Building2 className="mx-auto text-slate-300" size={48} />
+          <h2 className="mt-4 text-xl font-black text-slate-800">Einstein House Operation OS</h2>
+          <p className="mt-2 text-sm text-slate-500">Chưa có sự kiện nào để tạo đoàn trường.</p>
+        </div>
+      </div>
+    );
+  }
+
+  const currentBlock = operation.timeline.find(block => block.id === operation.live?.currentBlockId);
+  const reportSummary = [
+    `Đoàn: ${selectedEvent.name}`,
+    `Trường/đơn vị: ${selectedEvent.client}`,
+    `Ngày: ${formatDate(getPrimaryDate(selectedEvent))}`,
+    `Quy mô: ${operation.studentCount || getStudentCount(selectedEvent)} học sinh, ${operation.teacherCount || getTeacherCount(selectedEvent)} giáo viên`,
+    `Trạm: ${operation.stations.map(station => station.name).join(', ')}`,
+    `Tiến độ chuẩn bị: ${progress.pct}%`,
+    `Incident mở: ${operation.incidents.filter(incident => incident.status === 'OPEN').length}`,
+    `Feedback trung bình: ${operation.feedback.length ? (operation.feedback.reduce((sum, item) => sum + (item.score || 0), 0) / operation.feedback.length).toFixed(1) : 'Chưa có'}`
+  ].join('\n');
+
+  return (
+    <div className="space-y-4">
+      <section className="bg-white border border-slate-200 rounded-lg p-4">
+        <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wide text-teal-700">
+              <Building2 size={16} />
+              Einstein House Operation OS
+            </div>
+            <h1 className="mt-2 text-2xl font-black text-slate-900">Hệ điều hành vận hành đón đoàn</h1>
+            <p className="mt-1 text-sm text-slate-500">Chạy song song với quản lý sự kiện, dùng chung dữ liệu đoàn, kho, gói thiết bị và nhân sự Einstein Bus.</p>
+          </div>
+          <div className="grid grid-cols-3 gap-2 min-w-full xl:min-w-[420px]">
+            <div className="border border-emerald-100 bg-emerald-50 rounded-lg p-3">
+              <p className="text-[11px] font-bold text-emerald-700">Hôm nay</p>
+              <p className="text-2xl font-black text-emerald-900">{eventCards.today.length}</p>
+            </div>
+            <div className="border border-amber-100 bg-amber-50 rounded-lg p-3">
+              <p className="text-[11px] font-bold text-amber-700">7 ngày tới</p>
+              <p className="text-2xl font-black text-amber-900">{eventCards.week.length}</p>
+            </div>
+            <div className="border border-rose-100 bg-rose-50 rounded-lg p-3">
+              <p className="text-[11px] font-bold text-rose-700">Đang thiếu</p>
+              <p className="text-2xl font-black text-rose-900">{progress.missing}</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div className="grid grid-cols-1 xl:grid-cols-[300px_1fr] gap-4">
+        <aside className="space-y-3">
+          <div className="bg-white border border-slate-200 rounded-lg p-3">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="font-black text-slate-800">Đoàn trường</h2>
+              <CalendarDays size={18} className="text-slate-400" />
+            </div>
+            <div className="space-y-2 max-h-[430px] overflow-auto pr-1">
+              {events.map(event => {
+                const op = ensureOperation(event, inventory, employees);
+                const taskTotal = op.tasks.length || 1;
+                const taskDone = op.tasks.filter(task => task.status === 'DONE').length;
+                const pct = Math.round((taskDone / taskTotal) * 100);
+                const active = event.id === selectedEvent.id;
+                return (
+                  <button
+                    key={event.id}
+                    onClick={() => setSelectedEventId(event.id)}
+                    className={`w-full text-left border rounded-lg p-3 transition ${active ? 'border-teal-400 bg-teal-50' : 'border-slate-100 hover:border-slate-300 bg-white'}`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <p className="font-black text-slate-800 leading-snug">{event.name}</p>
+                        <p className="text-xs text-slate-500 mt-1">{event.client}</p>
+                      </div>
+                      <span className={`text-[11px] px-2 py-1 rounded-full border ${pct >= 80 ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : pct >= 45 ? 'bg-amber-50 text-amber-700 border-amber-100' : 'bg-rose-50 text-rose-700 border-rose-100'}`}>
+                        {pct}%
+                      </span>
+                    </div>
+                    <div className="mt-3 flex items-center gap-2 text-xs text-slate-500">
+                      <Clock3 size={14} />
+                      {formatDate(getPrimaryDate(event))}
+                    </div>
+                  </button>
+                );
+              })}
+              {events.length === 0 && <p className="text-sm text-slate-500">Chưa có sự kiện.</p>}
+            </div>
+          </div>
+
+          <div className="bg-white border border-slate-200 rounded-lg p-3">
+            <h2 className="font-black text-slate-800 mb-3">OS Modules</h2>
+            <div className="grid grid-cols-2 gap-2">
+              {MODULES.map((module, index) => (
+                <div key={module} className="border border-slate-100 rounded-md px-2 py-2 bg-slate-50 text-[11px] font-bold text-slate-600">
+                  {index + 1}. {module}
+                </div>
+              ))}
+            </div>
+          </div>
+        </aside>
+
+        <main className="space-y-4">
+          <section className="bg-white border border-slate-200 rounded-lg p-4">
+            <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-black text-slate-900">{selectedEvent.name}</h2>
+                <div className="mt-2 flex flex-wrap gap-3 text-sm text-slate-600">
+                  <span className="inline-flex items-center gap-1"><MapPin size={16} />{selectedEvent.location || 'Chưa có địa điểm'}</span>
+                  <span className="inline-flex items-center gap-1"><Users size={16} />{operation.studentCount} HS / {operation.teacherCount} GV</span>
+                  <span className="inline-flex items-center gap-1"><Clock3 size={16} />{getProgramStart(selectedEvent)}</span>
+                </div>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <button
+                  onClick={initializeOperation}
+                  disabled={!canEdit}
+                  className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-slate-900 text-white text-sm font-bold disabled:bg-slate-300"
+                >
+                  <RefreshCw size={16} />
+                  Khởi tạo từ template
+                </button>
+                <button
+                  onClick={() => saveOperation(current => current)}
+                  disabled={!canEdit}
+                  className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-slate-200 text-slate-700 text-sm font-bold hover:bg-slate-50 disabled:text-slate-300"
+                >
+                  <Save size={16} />
+                  Lưu instance
+                </button>
+              </div>
+            </div>
+            <div className="mt-4">
+              <div className="flex items-center justify-between text-xs font-bold text-slate-500 mb-1">
+                <span>Chuẩn bị tổng thể</span>
+                <span>{progress.done}/{progress.total} hạng mục</span>
+              </div>
+              <div className="h-3 bg-slate-100 rounded-full overflow-hidden">
+                <div className={`h-full ${progress.pct >= 80 ? 'bg-emerald-500' : progress.pct >= 45 ? 'bg-amber-500' : 'bg-rose-500'}`} style={{ width: `${progress.pct}%` }} />
+              </div>
+            </div>
+          </section>
+
+          <div className="bg-white border border-slate-200 rounded-lg p-2">
+            <div className="flex overflow-x-auto gap-2">
+              {[
+                ['CONTROL', Radio],
+                ['DESIGN', Wand2],
+                ['TIMELINE', TimerReset],
+                ['TASKS', ClipboardCheck],
+                ['KNOWLEDGE', Library],
+                ['LIVE', PlayCircle],
+                ['REPORT', BarChart3]
+              ].map(([tab, Icon]) => (
+                <button
+                  key={tab as string}
+                  onClick={() => setActiveTab(tab as ModuleTab)}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-bold whitespace-nowrap ${activeTab === tab ? 'bg-teal-600 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
+                >
+                  <Icon size={16} />
+                  {tab as string}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {activeTab === 'CONTROL' && (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              <section className="lg:col-span-2 bg-white border border-slate-200 rounded-lg p-4">
+                <h3 className="font-black text-slate-900 flex items-center gap-2"><Radio size={18} />Event Dashboard</h3>
+                <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <Metric title="Stations" value={operation.stations.length} tone="teal" />
+                  <Metric title="Tasks done" value={`${operation.tasks.filter(t => t.status === 'DONE').length}/${operation.tasks.length}`} tone="emerald" />
+                  <Metric title="Incidents open" value={operation.incidents.filter(i => i.status === 'OPEN').length} tone="rose" />
+                </div>
+                <div className="mt-4 space-y-2">
+                  {operation.timeline.slice(0, 5).map(block => (
+                    <div key={block.id} className={`flex items-center justify-between gap-3 rounded-lg border p-3 ${overlapWarnings.has(block.id) ? 'border-rose-200 bg-rose-50' : 'border-slate-100 bg-slate-50'}`}>
+                      <div>
+                        <p className="font-bold text-slate-800">{block.title}</p>
+                        <p className="text-xs text-slate-500">{block.room || block.note || 'Operation block'}</p>
+                      </div>
+                      <span className="font-black text-slate-700">{block.startTime} - {block.endTime}</span>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              <section className="bg-white border border-slate-200 rounded-lg p-4">
+                <h3 className="font-black text-slate-900 flex items-center gap-2"><Sparkles size={18} />AI Assistant Prompt</h3>
+                <div className="mt-3 rounded-lg bg-cyan-50 border border-cyan-100 p-3 text-sm text-cyan-900 whitespace-pre-wrap">
+                  {`Tạo chương trình cho ${operation.studentCount} học sinh, ${operation.grade || 'Tiểu học'}, ${operation.stations.length} trạm: ${operation.stations.map(s => s.name).join(', ')}. Ưu tiên timeline không trùng, đủ thiết bị, có checklist setup và incident fallback.`}
+                </div>
+                <p className="mt-3 text-xs text-slate-500">Prompt này dùng dữ liệu thật của đoàn hiện tại để đưa vào AI Chat khi cần sinh script hoặc tối ưu kế hoạch.</p>
+              </section>
+            </div>
+          )}
+
+          {activeTab === 'DESIGN' && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <section className="bg-white border border-slate-200 rounded-lg p-4">
+                <h3 className="font-black text-slate-900 flex items-center gap-2"><Wand2 size={18} />Event Designer</h3>
+                <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <Field label="Khối">
+                    <input value={operation.grade || ''} disabled={!canEdit} onChange={e => saveOperation(cur => ({ ...cur, grade: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm" />
+                  </Field>
+                  <Field label="Chủ đề">
+                    <input value={operation.theme || ''} disabled={!canEdit} onChange={e => saveOperation(cur => ({ ...cur, theme: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm" />
+                  </Field>
+                  <Field label="Số học sinh">
+                    <input type="number" value={operation.studentCount || 0} disabled={!canEdit} onChange={e => saveOperation(cur => ({ ...cur, studentCount: Number(e.target.value), rotations: buildRotations(Number(e.target.value) || 1, cur.stations) }))} className="w-full border rounded-lg px-3 py-2 text-sm" />
+                  </Field>
+                  <Field label="Số giáo viên">
+                    <input type="number" value={operation.teacherCount || 0} disabled={!canEdit} onChange={e => saveOperation(cur => ({ ...cur, teacherCount: Number(e.target.value) }))} className="w-full border rounded-lg px-3 py-2 text-sm" />
+                  </Field>
+                </div>
+                <div className="mt-4">
+                  <p className="text-xs font-black uppercase text-slate-500 mb-2">AI gợi ý station</p>
+                  <div className="flex flex-wrap gap-2">
+                    {STATION_TEMPLATES.map(template => (
+                      <button key={template.name} onClick={() => addStation(template)} disabled={!canEdit} className="inline-flex items-center gap-1 px-3 py-2 rounded-lg border border-slate-200 text-sm font-bold hover:bg-slate-50 disabled:text-slate-300">
+                        <Plus size={15} />
+                        {template.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </section>
+
+              <section className="bg-white border border-slate-200 rounded-lg p-4">
+                <h3 className="font-black text-slate-900 flex items-center gap-2"><Route size={18} />Program Canvas</h3>
+                <div className="mt-4 space-y-2">
+                  {operation.stations.map((station, index) => (
+                    <div key={station.id} className="flex items-center gap-3 border border-slate-100 bg-slate-50 rounded-lg p-3">
+                      <div className="h-9 w-9 rounded-lg bg-teal-100 text-teal-800 flex items-center justify-center font-black">{index + 1}</div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-black text-slate-800">{station.name}</p>
+                        <p className="text-xs text-slate-500">{station.durationMinutes} phút • {station.room}</p>
+                      </div>
+                      <select value={station.status || 'TODO'} disabled={!canEdit} onChange={e => saveOperation(cur => ({ ...cur, stations: cur.stations.map(s => s.id === station.id ? { ...s, status: e.target.value as HouseOperationTaskStatus } : s) }))} className="border rounded-lg px-2 py-1 text-xs font-bold">
+                        {Object.entries(STATUS_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                      </select>
+                      <button onClick={() => removeStation(station.id)} disabled={!canEdit} className="text-slate-300 hover:text-rose-600 disabled:hover:text-slate-300"><Trash2 size={17} /></button>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            </div>
+          )}
+
+          {activeTab === 'TIMELINE' && (
+            <div className="grid grid-cols-1 xl:grid-cols-[1.2fr_0.8fr] gap-4">
+              <section className="bg-white border border-slate-200 rounded-lg p-4">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                  <h3 className="font-black text-slate-900 flex items-center gap-2"><TimerReset size={18} />Timeline Builder</h3>
+                  <div className="flex gap-2">
+                    <button onClick={insertBreak} disabled={!canEdit} className="px-3 py-2 rounded-lg border border-slate-200 text-sm font-bold disabled:text-slate-300">Thêm nghỉ 10p</button>
+                    <button onClick={recalcTimeline} disabled={!canEdit} className="px-3 py-2 rounded-lg bg-slate-900 text-white text-sm font-bold disabled:bg-slate-300">AI chia lại</button>
+                  </div>
+                </div>
+                <div className="mt-4 space-y-2">
+                  {operation.timeline.map(block => (
+                    <div key={block.id} className={`grid grid-cols-1 md:grid-cols-[110px_110px_1fr_130px] gap-2 border rounded-lg p-3 ${overlapWarnings.has(block.id) ? 'border-rose-200 bg-rose-50' : 'border-slate-100 bg-white'}`}>
+                      <input type="time" value={block.startTime} disabled={!canEdit} onChange={e => updateTimeline(block.id, { startTime: e.target.value })} className="border rounded-lg px-2 py-2 text-sm" />
+                      <input type="time" value={block.endTime} disabled={!canEdit} onChange={e => updateTimeline(block.id, { endTime: e.target.value })} className="border rounded-lg px-2 py-2 text-sm" />
+                      <input value={block.title} disabled={!canEdit} onChange={e => updateTimeline(block.id, { title: e.target.value })} className="border rounded-lg px-2 py-2 text-sm font-bold" />
+                      <input value={block.room || ''} disabled={!canEdit} onChange={e => updateTimeline(block.id, { room: e.target.value })} placeholder="Phòng/khu" className="border rounded-lg px-2 py-2 text-sm" />
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              <section className="bg-white border border-slate-200 rounded-lg p-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-black text-slate-900 flex items-center gap-2"><Route size={18} />Rotation Planner</h3>
+                  <button onClick={regenerateRotations} disabled={!canEdit} className="text-sm font-bold text-teal-700 disabled:text-slate-300">Sinh lại</button>
+                </div>
+                <div className="mt-4 space-y-3">
+                  {operation.rotations.map(group => (
+                    <div key={group.id} className="border border-slate-100 bg-slate-50 rounded-lg p-3">
+                      <div className="flex items-center justify-between">
+                        <p className="font-black text-slate-800">{group.name}</p>
+                        <span className="text-xs font-bold text-slate-500">{group.studentCount} HS</span>
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {group.route.map((stationId, index) => {
+                          const station = operation.stations.find(s => s.id === stationId);
+                          return <span key={`${group.id}-${stationId}-${index}`} className="px-2 py-1 bg-white border border-slate-200 rounded-md text-xs font-bold">{index + 1}. {station?.name || stationId}</span>;
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            </div>
+          )}
+
+          {activeTab === 'TASKS' && (
+            <section className="bg-white border border-slate-200 rounded-lg p-4">
+              <h3 className="font-black text-slate-900 flex items-center gap-2"><ClipboardCheck size={18} />Action Plan + Human Assignment</h3>
+              <div className="mt-4 flex gap-2">
+                <input value={newTaskTitle} onChange={e => setNewTaskTitle(e.target.value)} placeholder="Thêm việc cần làm..." className="flex-1 border rounded-lg px-3 py-2 text-sm" />
+                <button onClick={addTask} disabled={!canEdit} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-teal-600 text-white text-sm font-bold disabled:bg-slate-300"><Plus size={16} />Thêm</button>
+              </div>
+              <div className="mt-4 overflow-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-xs text-slate-500 border-b">
+                      <th className="py-2">Việc</th>
+                      <th>Scope</th>
+                      <th>Owner</th>
+                      <th>Deadline</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {operation.tasks.map(task => (
+                      <tr key={task.id} className="border-b border-slate-100">
+                        <td className="py-3 font-bold text-slate-800">
+                          <label className="flex items-center gap-2">
+                            <input type="checkbox" checked={task.status === 'DONE'} disabled={!canEdit} onChange={e => updateTask(task.id, { status: e.target.checked ? 'DONE' : 'TODO' })} />
+                            {task.title}
+                          </label>
+                        </td>
+                        <td className="text-slate-500">{task.scope}</td>
+                        <td>
+                          <select value={task.ownerId || ''} disabled={!canEdit} onChange={e => {
+                            const emp = employees.find(item => item.id === e.target.value);
+                            updateTask(task.id, { ownerId: emp?.id || undefined, ownerName: emp?.name || undefined });
+                          }} className="border rounded-lg px-2 py-1">
+                            <option value="">Chưa gán</option>
+                            {employees.map(emp => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
+                          </select>
+                        </td>
+                        <td><input type="datetime-local" value={task.deadline || ''} disabled={!canEdit} onChange={e => updateTask(task.id, { deadline: e.target.value })} className="border rounded-lg px-2 py-1" /></td>
+                        <td>
+                          <select value={task.status} disabled={!canEdit} onChange={e => updateTask(task.id, { status: e.target.value as HouseOperationTaskStatus })} className={`border rounded-lg px-2 py-1 font-bold ${statusColor(task.status)}`}>
+                            {Object.entries(STATUS_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                          </select>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          )}
+
+          {activeTab === 'KNOWLEDGE' && (
+            <div className="grid grid-cols-1 xl:grid-cols-[1fr_360px] gap-4">
+              <section className="bg-white border border-slate-200 rounded-lg p-4">
+                <h3 className="font-black text-slate-900 flex items-center gap-2"><Library size={18} />SOP Center + Station Library</h3>
+                <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-3">
+                  {operation.stations.map(station => (
+                    <div key={station.id} className="border border-slate-100 rounded-lg p-3 bg-slate-50">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="font-black text-slate-800">{station.name}</p>
+                          <p className="text-xs text-slate-500">{station.sopVersion} • {station.durationMinutes} phút</p>
+                        </div>
+                        <span className={`px-2 py-1 rounded-full border text-[11px] font-bold ${statusColor(station.status || 'TODO')}`}>{STATUS_LABELS[station.status || 'TODO']}</span>
+                      </div>
+                      <p className="mt-3 text-sm text-slate-600">{station.objective}</p>
+                      <div className="mt-3 space-y-1">
+                        {station.checklist.map(item => (
+                          <div key={item} className="flex items-center gap-2 text-xs text-slate-600">
+                            <CheckCircle2 size={14} className="text-emerald-600" />
+                            {item}
+                          </div>
+                        ))}
+                      </div>
+                      <textarea value={station.script || ''} disabled={!canEdit} onChange={e => saveOperation(cur => ({ ...cur, stations: cur.stations.map(s => s.id === station.id ? { ...s, script: e.target.value } : s) }))} className="mt-3 w-full min-h-[90px] border rounded-lg p-2 text-xs" />
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              <section className="bg-white border border-slate-200 rounded-lg p-4">
+                <h3 className="font-black text-slate-900 flex items-center gap-2"><PackageCheck size={18} />Equipment Order</h3>
+                <div className="mt-4 space-y-2">
+                  {equipmentOrder.map(item => (
+                    <div key={item.itemId || item.name} className="flex items-center justify-between gap-3 border border-slate-100 rounded-lg p-3">
+                      <div>
+                        <p className="font-bold text-slate-800">{item.name}</p>
+                        <p className="text-xs text-slate-500">{item.itemId ? 'Từ kho Einstein Bus' : 'Vật tư thủ công'}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-black text-slate-900">{item.quantity} {item.unit || ''}</p>
+                        {item.available !== undefined && <p className={`text-xs font-bold ${item.available >= item.quantity ? 'text-emerald-600' : 'text-rose-600'}`}>Kho: {item.available}</p>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            </div>
+          )}
+
+          {activeTab === 'LIVE' && (
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+              <section className="bg-white border border-slate-200 rounded-lg p-4">
+                <h3 className="font-black text-slate-900 flex items-center gap-2"><PlayCircle size={18} />Live Command Center</h3>
+                <div className="mt-4 rounded-lg border border-teal-100 bg-teal-50 p-4">
+                  <p className="text-xs font-black uppercase text-teal-700">Đang chạy</p>
+                  <select value={operation.live?.currentBlockId || ''} disabled={!canEdit} onChange={e => saveOperation(cur => ({ ...cur, live: { ...cur.live, currentBlockId: e.target.value, lastUpdatedAt: new Date().toISOString() } }))} className="mt-2 w-full border rounded-lg px-3 py-2 font-bold">
+                    <option value="">Chưa chọn block</option>
+                    {operation.timeline.map(block => <option key={block.id} value={block.id}>{block.startTime} - {block.title}</option>)}
+                  </select>
+                  <div className="mt-4 text-3xl font-black text-teal-950">{currentBlock ? currentBlock.title : 'Standby'}</div>
+                  <p className="mt-1 text-sm text-teal-800">{currentBlock ? `${currentBlock.startTime} - ${currentBlock.endTime} • ${currentBlock.room || 'Không gian chung'}` : 'Chọn block khi bắt đầu vận hành.'}</p>
+                  <textarea value={operation.live?.statusNote || ''} disabled={!canEdit} onChange={e => saveOperation(cur => ({ ...cur, live: { ...cur.live, statusNote: e.target.value, lastUpdatedAt: new Date().toISOString() } }))} className="mt-4 w-full min-h-[90px] border rounded-lg p-3 text-sm" placeholder="Ghi chú live: VR chậm 5 phút, cần hỗ trợ..." />
+                </div>
+              </section>
+
+              <section className="bg-white border border-slate-200 rounded-lg p-4">
+                <h3 className="font-black text-slate-900 flex items-center gap-2"><Siren size={18} />Incident Center</h3>
+                <div className="mt-4 flex gap-2">
+                  <input value={newIncidentTitle} onChange={e => setNewIncidentTitle(e.target.value)} placeholder="Robot hết pin, trẻ khóc..." className="flex-1 border rounded-lg px-3 py-2 text-sm" />
+                  <button onClick={addIncident} disabled={!canEdit} className="px-3 py-2 rounded-lg bg-rose-600 text-white text-sm font-bold disabled:bg-slate-300">Báo</button>
+                </div>
+                <div className="mt-4 space-y-2">
+                  {operation.incidents.map(incident => (
+                    <div key={incident.id} className="border border-slate-100 rounded-lg p-3 flex items-center justify-between gap-3">
+                      <div>
+                        <p className="font-bold text-slate-800">{incident.title}</p>
+                        <p className="text-xs text-slate-500">{new Date(incident.createdAt).toLocaleString('vi-VN')}</p>
+                      </div>
+                      <button onClick={() => updateIncident(incident.id, { status: incident.status === 'OPEN' ? 'RESOLVED' : 'OPEN', resolvedAt: incident.status === 'OPEN' ? new Date().toISOString() : undefined })} disabled={!canEdit} className={`px-2 py-1 rounded-full border text-xs font-bold ${incident.status === 'OPEN' ? 'bg-rose-50 text-rose-700 border-rose-100' : 'bg-emerald-50 text-emerald-700 border-emerald-100'}`}>
+                        {incident.status === 'OPEN' ? 'Đang xử lý' : 'Đã xử lý'}
+                      </button>
+                    </div>
+                  ))}
+                  {operation.incidents.length === 0 && <p className="text-sm text-slate-500">Chưa có incident.</p>}
+                </div>
+              </section>
+            </div>
+          )}
+
+          {activeTab === 'REPORT' && (
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+              <section className="bg-white border border-slate-200 rounded-lg p-4">
+                <h3 className="font-black text-slate-900 flex items-center gap-2"><Camera size={18} />Media Center</h3>
+                <div className="mt-4 space-y-2">
+                  {operation.mediaTasks.map(task => (
+                    <label key={task.id} className="flex items-center gap-2 border border-slate-100 rounded-lg p-3 text-sm font-bold text-slate-700">
+                      <input type="checkbox" checked={task.checked} disabled={!canEdit} onChange={e => toggleMedia(task.id, e.target.checked)} />
+                      {task.checked ? <CheckCircle2 size={16} className="text-emerald-600" /> : <Circle size={16} className="text-slate-300" />}
+                      {task.title}
+                    </label>
+                  ))}
+                </div>
+              </section>
+
+              <section className="bg-white border border-slate-200 rounded-lg p-4">
+                <h3 className="font-black text-slate-900 flex items-center gap-2"><MessageSquareText size={18} />Feedback</h3>
+                <div className="mt-4 space-y-2">
+                  <input type="number" min={1} max={5} value={feedbackScore} onChange={e => setFeedbackScore(Number(e.target.value))} className="w-full border rounded-lg px-3 py-2 text-sm" />
+                  <textarea value={feedbackNote} onChange={e => setFeedbackNote(e.target.value)} placeholder="Feedback giáo viên/HDV..." className="w-full min-h-[100px] border rounded-lg p-3 text-sm" />
+                  <button onClick={addFeedback} disabled={!canEdit} className="w-full px-3 py-2 rounded-lg bg-slate-900 text-white text-sm font-bold disabled:bg-slate-300">Ghi feedback</button>
+                </div>
+                <div className="mt-4 space-y-2">
+                  {operation.feedback.slice(0, 4).map(item => (
+                    <div key={item.id} className="border border-slate-100 rounded-lg p-3">
+                      <p className="font-bold text-slate-800">{item.score || '-'} ★</p>
+                      <p className="text-sm text-slate-600">{item.note}</p>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              <section className="bg-white border border-slate-200 rounded-lg p-4">
+                <h3 className="font-black text-slate-900 flex items-center gap-2"><FileText size={18} />Report Generator</h3>
+                <textarea readOnly value={reportSummary} className="mt-4 w-full min-h-[220px] border rounded-lg p-3 text-sm font-mono bg-slate-50" />
+                <div className="mt-4 grid grid-cols-2 gap-2">
+                  <Metric title="Station rating" value={operation.feedback.length ? `${(operation.feedback.reduce((s, f) => s + (f.score || 0), 0) / operation.feedback.length).toFixed(1)}★` : '-'} tone="amber" />
+                  <Metric title="Chậm/trùng" value={overlapWarnings.size} tone="rose" />
+                </div>
+              </section>
+            </div>
+          )}
+        </main>
+      </div>
+    </div>
+  );
+};
+
+const Field: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
+  <label className="block">
+    <span className="text-xs font-black uppercase text-slate-500">{label}</span>
+    <div className="mt-1">{children}</div>
+  </label>
+);
+
+const Metric: React.FC<{ title: string; value: React.ReactNode; tone: 'teal' | 'emerald' | 'amber' | 'rose' }> = ({ title, value, tone }) => {
+  const classes = {
+    teal: 'bg-teal-50 border-teal-100 text-teal-900',
+    emerald: 'bg-emerald-50 border-emerald-100 text-emerald-900',
+    amber: 'bg-amber-50 border-amber-100 text-amber-900',
+    rose: 'bg-rose-50 border-rose-100 text-rose-900'
+  };
+  return (
+    <div className={`border rounded-lg p-3 ${classes[tone]}`}>
+      <p className="text-[11px] font-black uppercase opacity-70">{title}</p>
+      <p className="mt-1 text-2xl font-black">{value}</p>
+    </div>
+  );
+};

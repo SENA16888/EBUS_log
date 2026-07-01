@@ -2,15 +2,15 @@
 import React from 'react';
 import { 
   LayoutDashboard, Package, CalendarDays, 
-  Settings, Layers, Users, FileText, BookOpen, ShoppingBag, LucideIcon, GraduationCap, LogOut, ClipboardList, ScanBarcode
+  Settings, Layers, Users, FileText, BookOpen, ShoppingBag, LucideIcon, GraduationCap, LogOut, ClipboardList, ScanBarcode, Building2
 } from 'lucide-react';
 import { ActivityLog } from './ActivityLog';
 import { LogEntry, UserAccount } from '../types';
 
 interface LayoutProps {
   children: React.ReactNode;
-  activeTab: 'dashboard' | 'inventory' | 'stocktake' | 'events' | 'packages' | 'employees' | 'quotations' | 'sales' | 'elearning' | 'logs';
-  onTabChange: (tab: 'dashboard' | 'inventory' | 'stocktake' | 'events' | 'packages' | 'employees' | 'quotations' | 'sales' | 'elearning' | 'logs') => void;
+  activeTab: 'dashboard' | 'inventory' | 'stocktake' | 'events' | 'house' | 'packages' | 'employees' | 'quotations' | 'sales' | 'elearning' | 'logs';
+  onTabChange: (tab: 'dashboard' | 'inventory' | 'stocktake' | 'events' | 'house' | 'packages' | 'employees' | 'quotations' | 'sales' | 'elearning' | 'logs') => void;
   logs: LogEntry[];
   currentUser?: UserAccount | null;
   canManageAccess?: boolean;
@@ -22,6 +22,7 @@ interface LayoutProps {
   canViewQuotations?: boolean;
   canViewSales?: boolean;
   canViewEvents?: boolean;
+  canViewHouseOS?: boolean;
   canViewElearning?: boolean;
   canViewEmployees?: boolean;
   onOpenAccess?: () => void;
@@ -43,6 +44,7 @@ export const Layout: React.FC<LayoutProps> = ({
   canViewQuotations = true,
   canViewSales = true,
   canViewEvents = true,
+  canViewHouseOS = true,
   canViewElearning = true,
   canViewEmployees = true, 
   onOpenAccess, 
@@ -56,6 +58,7 @@ export const Layout: React.FC<LayoutProps> = ({
     { key: 'quotations', label: 'Báo giá', icon: FileText },
     { key: 'sales', label: 'Hàng bán', icon: ShoppingBag },
     { key: 'events', label: 'Sự kiện', icon: CalendarDays },
+    { key: 'house', label: 'Einstein House OS', icon: Building2 },
     { key: 'employees', label: 'Nhân sự', icon: Users },
     { key: 'elearning', label: 'Elearning', icon: GraduationCap }
   ].filter(tab =>
@@ -66,6 +69,7 @@ export const Layout: React.FC<LayoutProps> = ({
     (tab.key !== 'quotations' || canViewQuotations) &&
     (tab.key !== 'sales' || canViewSales) &&
     (tab.key !== 'events' || canViewEvents) &&
+    (tab.key !== 'house' || canViewHouseOS) &&
     (tab.key !== 'elearning' || canViewElearning) &&
     (tab.key !== 'employees' || canViewEmployees)
   );
