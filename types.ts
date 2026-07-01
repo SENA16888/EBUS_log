@@ -841,6 +841,8 @@ export interface InteractiveDeviceProfile {
   location: string;
   isAutomationEnabled: boolean;
   volume: number;
+  preAnnouncementAssetId?: string;
+  voiceURI?: string;
   youtubeFallbackUrl?: string;
   audioAssets: BroadcastAudioAsset[];
   schedules: BroadcastSchedule[];

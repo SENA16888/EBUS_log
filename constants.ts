@@ -16,6 +16,8 @@ export const MOCK_INTERACTIVE_DEVICES: InteractiveDeviceProfile[] = [
     location: 'Einstein House',
     isAutomationEnabled: true,
     volume: 0.82,
+    preAnnouncementAssetId: '',
+    voiceURI: '',
     youtubeFallbackUrl: 'https://www.youtube.com/embed/videoseries?list=PLFgquLnL59alCl_2TQvOiD5Vgm1hCaGSI',
     audioAssets: [],
     schedules: [

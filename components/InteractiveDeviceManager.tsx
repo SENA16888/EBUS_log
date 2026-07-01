@@ -137,6 +137,8 @@ const createDefaultDevice = (): InteractiveDeviceProfile => ({
   location: 'Einstein House',
   isAutomationEnabled: true,
   volume: 0.82,
+  preAnnouncementAssetId: '',
+  voiceURI: '',
   youtubeFallbackUrl: 'https://www.youtube.com/embed/videoseries?list=PLFgquLnL59alCl_2TQvOiD5Vgm1hCaGSI',
   audioAssets: [],
   schedules: [],
@@ -212,6 +214,7 @@ export const InteractiveDeviceManager: React.FC<InteractiveDeviceManagerProps> =
   const [assetUrl, setAssetUrl] = useState('');
   const [voiceTitle, setVoiceTitle] = useState('Voice AI thông báo');
   const [voiceText, setVoiceText] = useState('');
+  const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
 
   const device = devices.find(item => item.type === 'BROADCAST_CENTER') || devices[0] || createDefaultDevice();
   const todayKey = getLocalDateKey(now);
@@ -235,6 +238,18 @@ export const InteractiveDeviceManager: React.FC<InteractiveDeviceManagerProps> =
   );
 
   const youtubeEmbed = normalizeYoutubeEmbed(device.youtubeFallbackUrl);
+  const preAnnouncementAsset = useMemo(
+    () => (device.audioAssets || []).find(asset => asset.id === device.preAnnouncementAssetId),
+    [device.audioAssets, device.preAnnouncementAssetId]
+  );
+  const sortedVoices = useMemo(
+    () => [...availableVoices].sort((left, right) => {
+      const leftVi = left.lang.toLowerCase().startsWith('vi') ? 0 : 1;
+      const rightVi = right.lang.toLowerCase().startsWith('vi') ? 0 : 1;
+      return leftVi - rightVi || left.name.localeCompare(right.name);
+    }),
+    [availableVoices]
+  );
 
   const commitDevice = (patch: Partial<InteractiveDeviceProfile>) => {
     if (!canEdit) return;
@@ -256,6 +271,16 @@ export const InteractiveDeviceManager: React.FC<InteractiveDeviceManagerProps> =
     commitDevice({ playbackLogs: [log, ...(device.playbackLogs || [])].slice(0, 80) });
   };
 
+  const getPreferredVoice = () => {
+    const voices = availableVoices.length > 0
+      ? availableVoices
+      : ('speechSynthesis' in window ? window.speechSynthesis.getVoices() : []);
+    return voices.find(voice => voice.voiceURI === device.voiceURI) ||
+      voices.find(voice => voice.lang.toLowerCase().startsWith('vi') && /female|woman|nữ|nu|linh|mai|hoai|an/i.test(voice.name)) ||
+      voices.find(voice => voice.lang.toLowerCase().startsWith('vi')) ||
+      voices[0];
+  };
+
   const speakText = (text: string) => {
     if (!('speechSynthesis' in window)) {
       alert('Trình duyệt này chưa hỗ trợ Voice AI miễn phí bằng Web Speech.');
@@ -263,27 +288,63 @@ export const InteractiveDeviceManager: React.FC<InteractiveDeviceManagerProps> =
     }
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
-    const voices = window.speechSynthesis.getVoices();
     utterance.lang = 'vi-VN';
     utterance.volume = Math.min(1, Math.max(0, device.volume || 0.8));
     utterance.rate = 0.95;
-    const viVoice = voices.find(voice => voice.lang.toLowerCase().startsWith('vi'));
-    if (viVoice) utterance.voice = viVoice;
+    const preferredVoice = getPreferredVoice();
+    if (preferredVoice) {
+      utterance.voice = preferredVoice;
+      utterance.lang = preferredVoice.lang || 'vi-VN';
+    }
     window.speechSynthesis.speak(utterance);
   };
 
-  const playAnnouncement = (announcement: PendingAnnouncement, manual = false) => {
+  const playAudioUrl = (url: string) => {
+    if (!audioRef.current) return Promise.resolve(false);
+    return new Promise<boolean>((resolve) => {
+      const audio = audioRef.current;
+      if (!audio) {
+        resolve(false);
+        return;
+      }
+      const cleanup = () => {
+        audio.removeEventListener('ended', handleEnded);
+        audio.removeEventListener('error', handleError);
+      };
+      const handleEnded = () => {
+        cleanup();
+        resolve(true);
+      };
+      const handleError = () => {
+        cleanup();
+        resolve(false);
+      };
+
+      audio.pause();
+      audio.src = url;
+      audio.volume = Math.min(1, Math.max(0, device.volume || 0.8));
+      audio.addEventListener('ended', handleEnded, { once: true });
+      audio.addEventListener('error', handleError, { once: true });
+      void audio.play().catch(() => {
+        cleanup();
+        alert('Trình duyệt đã chặn phát tự động. Vui lòng bấm "Bật chế độ 24/24" một lần trên tablet.');
+        resolve(false);
+      });
+    });
+  };
+
+  const playAnnouncement = async (announcement: PendingAnnouncement, manual = false) => {
     const source = manual ? 'MANUAL' : announcement.source;
     const text = announcement.text?.trim();
     const audioUrl = announcement.asset?.dataUrl || announcement.asset?.url;
+    const preUrl = preAnnouncementAsset?.dataUrl || preAnnouncementAsset?.url;
 
-    if (audioUrl && audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.src = audioUrl;
-      audioRef.current.volume = Math.min(1, Math.max(0, device.volume || 0.8));
-      void audioRef.current.play().catch(() => {
-        alert('Trình duyệt đã chặn phát tự động. Vui lòng bấm "Bật chế độ 24/24" một lần trên tablet.');
-      });
+    if (preUrl) {
+      await playAudioUrl(preUrl);
+    }
+
+    if (audioUrl) {
+      await playAudioUrl(audioUrl);
     } else if (text) {
       speakText(text);
     } else {
@@ -298,21 +359,25 @@ export const InteractiveDeviceManager: React.FC<InteractiveDeviceManagerProps> =
   };
 
   const playAsset = (asset: BroadcastAudioAsset) => {
-    playAnnouncement({
-      id: `manual-${asset.id}`,
-      title: asset.title,
-      time: new Date(),
-      source: 'MANUAL',
-      asset,
-      text: asset.transcript,
-      detail: asset.fileName || asset.url || asset.transcript,
-      priority: 0
-    }, true);
+    const audioUrl = asset.dataUrl || asset.url;
+    if (audioUrl) {
+      void playAudioUrl(audioUrl);
+    } else if (asset.transcript) {
+      speakText(asset.transcript);
+    }
   };
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 15000);
     return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!('speechSynthesis' in window)) return;
+    const refreshVoices = () => setAvailableVoices(window.speechSynthesis.getVoices());
+    refreshVoices();
+    window.speechSynthesis.addEventListener('voiceschanged', refreshVoices);
+    return () => window.speechSynthesis.removeEventListener('voiceschanged', refreshVoices);
   }, []);
 
   useEffect(() => {
@@ -411,6 +476,7 @@ export const InteractiveDeviceManager: React.FC<InteractiveDeviceManagerProps> =
   const removeAsset = (assetId: string) => {
     commitDevice({
       audioAssets: (device.audioAssets || []).filter(asset => asset.id !== assetId),
+      preAnnouncementAssetId: device.preAnnouncementAssetId === assetId ? '' : device.preAnnouncementAssetId,
       schedules: (device.schedules || []).map(schedule => schedule.assetId === assetId ? { ...schedule, assetId: undefined } : schedule)
     });
   };
@@ -546,6 +612,50 @@ export const InteractiveDeviceManager: React.FC<InteractiveDeviceManagerProps> =
             </div>
           </div>
 
+          <div className="grid md:grid-cols-2 gap-3">
+            <div className="border border-amber-200 bg-amber-50 rounded-lg p-3 space-y-2">
+              <label className="flex items-center gap-2 text-sm font-bold text-amber-800">
+                <BellRing size={17} />
+                Âm báo trước mỗi thông báo
+              </label>
+              <select
+                value={device.preAnnouncementAssetId || ''}
+                onChange={e => commitDevice({ preAnnouncementAssetId: e.target.value })}
+                disabled={!canEdit}
+                className="w-full border border-amber-200 bg-white rounded-lg px-3 py-2 text-sm"
+              >
+                <option value="">Không dùng âm báo trước</option>
+                {(device.audioAssets || []).map(asset => <option key={asset.id} value={asset.id}>{asset.title}</option>)}
+              </select>
+              <p className="text-xs text-amber-700">
+                Upload đoạn sound ngắn kiểu sân bay vào thư viện, rồi chọn tại đây. Hệ thống sẽ phát sound này trước lịch cố định và thông báo sự kiện.
+              </p>
+            </div>
+
+            <div className="border border-blue-200 bg-blue-50 rounded-lg p-3 space-y-2">
+              <label className="flex items-center gap-2 text-sm font-bold text-blue-800">
+                <Mic2 size={17} />
+                Giọng Voice AI
+              </label>
+              <select
+                value={device.voiceURI || ''}
+                onChange={e => commitDevice({ voiceURI: e.target.value })}
+                disabled={!canEdit || sortedVoices.length === 0}
+                className="w-full border border-blue-200 bg-white rounded-lg px-3 py-2 text-sm"
+              >
+                <option value="">Tự chọn giọng tiếng Việt</option>
+                {sortedVoices.map(voice => (
+                  <option key={voice.voiceURI} value={voice.voiceURI}>
+                    {voice.name} ({voice.lang}){voice.default ? ' - mặc định' : ''}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-blue-700">
+                Danh sách giọng phụ thuộc tablet/trình duyệt. Nếu có giọng nữ tiếng Việt, chọn trực tiếp ở đây.
+              </p>
+            </div>
+          </div>
+
           <div className="grid md:grid-cols-3 gap-3">
             <div className="border border-slate-200 rounded-lg p-3 space-y-2">
               <div className="flex items-center gap-2 font-bold text-sm text-slate-800"><Upload size={16} /> Upload audio</div>
@@ -588,6 +698,16 @@ export const InteractiveDeviceManager: React.FC<InteractiveDeviceManagerProps> =
                 </div>
                 <button onClick={() => playAsset(asset)} className="p-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50" title="Phát thử">
                   <PlayCircle size={17} />
+                </button>
+                <button
+                  onClick={() => commitDevice({ preAnnouncementAssetId: asset.id })}
+                  disabled={!canEdit}
+                  className={`p-2 rounded-lg border border-slate-200 hover:bg-amber-50 disabled:opacity-40 ${
+                    device.preAnnouncementAssetId === asset.id ? 'text-amber-700 bg-amber-50' : 'text-slate-600'
+                  }`}
+                  title="Đặt làm âm báo trước"
+                >
+                  <BellRing size={17} />
                 </button>
                 <button onClick={() => removeAsset(asset.id)} disabled={!canEdit} className="p-2 rounded-lg border border-slate-200 text-rose-600 hover:bg-rose-50 disabled:opacity-40" title="Xóa">
                   <Trash2 size={17} />
