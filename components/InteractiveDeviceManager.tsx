@@ -113,17 +113,31 @@ const applyTemplate = (template: string, event: Event, block?: HouseOperationTim
     .replace(/\{\{blockTitle\}\}/g, block?.title || 'hoạt động')
     .replace(/\{\{blockRoom\}\}/g, block?.room || 'khu trải nghiệm');
 
+const withYoutubeApiParams = (embedUrl: string) => {
+  try {
+    const parsed = new URL(embedUrl);
+    parsed.searchParams.set('autoplay', '1');
+    parsed.searchParams.set('enablejsapi', '1');
+    if (typeof window !== 'undefined' && window.location.origin) {
+      parsed.searchParams.set('origin', window.location.origin);
+    }
+    return parsed.toString();
+  } catch {
+    return embedUrl;
+  }
+};
+
 const normalizeYoutubeEmbed = (url?: string) => {
   if (!url) return '';
   try {
     const parsed = new URL(url);
     const list = parsed.searchParams.get('list');
-    if (list) return `https://www.youtube.com/embed/videoseries?list=${encodeURIComponent(list)}&autoplay=1`;
+    if (list) return withYoutubeApiParams(`https://www.youtube.com/embed/videoseries?list=${encodeURIComponent(list)}`);
     const videoId = parsed.hostname.includes('youtu.be')
       ? parsed.pathname.replace('/', '')
       : parsed.searchParams.get('v');
-    if (videoId) return `https://www.youtube.com/embed/${encodeURIComponent(videoId)}?autoplay=1`;
-    if (parsed.pathname.includes('/embed/')) return url;
+    if (videoId) return withYoutubeApiParams(`https://www.youtube.com/embed/${encodeURIComponent(videoId)}`);
+    if (parsed.pathname.includes('/embed/')) return withYoutubeApiParams(url);
   } catch {
     return url;
   }
@@ -203,6 +217,7 @@ export const InteractiveDeviceManager: React.FC<InteractiveDeviceManagerProps> =
   onUpdateDevices
 }) => {
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const youtubeIframeRef = useRef<HTMLIFrameElement | null>(null);
   const playedKeysRef = useRef<Set<string>>(new Set());
   const [now, setNow] = useState(new Date());
   const [isRunning, setIsRunning] = useState(false);
@@ -251,6 +266,23 @@ export const InteractiveDeviceManager: React.FC<InteractiveDeviceManagerProps> =
     [availableVoices]
   );
 
+  const sendYoutubeCommand = (func: string, args: unknown[] = []) => {
+    youtubeIframeRef.current?.contentWindow?.postMessage(JSON.stringify({
+      event: 'command',
+      func,
+      args
+    }), '*');
+  };
+
+  const setYoutubeBackgroundVolume = (volume: number) => {
+    sendYoutubeCommand('setVolume', [volume]);
+    if (volume > 0) sendYoutubeCommand('unMute');
+  };
+
+  const duckBackgroundMusic = () => setYoutubeBackgroundVolume(12);
+
+  const restoreBackgroundMusic = () => setYoutubeBackgroundVolume(65);
+
   const commitDevice = (patch: Partial<InteractiveDeviceProfile>) => {
     if (!canEdit) return;
     const nextDevice: InteractiveDeviceProfile = {
@@ -284,19 +316,23 @@ export const InteractiveDeviceManager: React.FC<InteractiveDeviceManagerProps> =
   const speakText = (text: string) => {
     if (!('speechSynthesis' in window)) {
       alert('Trình duyệt này chưa hỗ trợ Voice AI miễn phí bằng Web Speech.');
-      return;
+      return Promise.resolve(false);
     }
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = 'vi-VN';
-    utterance.volume = Math.min(1, Math.max(0, device.volume || 0.8));
-    utterance.rate = 0.95;
-    const preferredVoice = getPreferredVoice();
-    if (preferredVoice) {
-      utterance.voice = preferredVoice;
-      utterance.lang = preferredVoice.lang || 'vi-VN';
-    }
-    window.speechSynthesis.speak(utterance);
+    return new Promise<boolean>((resolve) => {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = 'vi-VN';
+      utterance.volume = Math.min(1, Math.max(0, device.volume || 0.8));
+      utterance.rate = 0.95;
+      const preferredVoice = getPreferredVoice();
+      if (preferredVoice) {
+        utterance.voice = preferredVoice;
+        utterance.lang = preferredVoice.lang || 'vi-VN';
+      }
+      utterance.onend = () => resolve(true);
+      utterance.onerror = () => resolve(false);
+      window.speechSynthesis.speak(utterance);
+    });
   };
 
   const playAudioUrl = (url: string) => {
@@ -339,23 +375,28 @@ export const InteractiveDeviceManager: React.FC<InteractiveDeviceManagerProps> =
     const audioUrl = announcement.asset?.dataUrl || announcement.asset?.url;
     const preUrl = preAnnouncementAsset?.dataUrl || preAnnouncementAsset?.url;
 
-    if (preUrl) {
-      await playAudioUrl(preUrl);
-    }
+    duckBackgroundMusic();
+    try {
+      if (preUrl) {
+        await playAudioUrl(preUrl);
+      }
 
-    if (audioUrl) {
-      await playAudioUrl(audioUrl);
-    } else if (text) {
-      speakText(text);
-    } else {
-      return;
-    }
+      if (audioUrl) {
+        await playAudioUrl(audioUrl);
+      } else if (text) {
+        await speakText(text);
+      } else {
+        return;
+      }
 
-    appendPlaybackLog({
-      title: announcement.title,
-      source,
-      detail: announcement.detail || text || announcement.asset?.title
-    });
+      appendPlaybackLog({
+        title: announcement.title,
+        source,
+        detail: announcement.detail || text || announcement.asset?.title
+      });
+    } finally {
+      restoreBackgroundMusic();
+    }
   };
 
   const playAsset = (asset: BroadcastAudioAsset) => {
@@ -563,10 +604,12 @@ export const InteractiveDeviceManager: React.FC<InteractiveDeviceManagerProps> =
             </div>
             {youtubeEmbed ? (
               <iframe
+                ref={youtubeIframeRef}
                 title="YouTube fallback playlist"
                 src={youtubeEmbed}
                 className="w-full aspect-video bg-slate-100"
                 allow="autoplay; encrypted-media"
+                onLoad={() => restoreBackgroundMusic()}
               />
             ) : (
               <div className="aspect-video bg-slate-100 flex items-center justify-center text-sm text-slate-500">Chưa có playlist</div>
