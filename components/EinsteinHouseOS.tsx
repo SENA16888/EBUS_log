@@ -359,6 +359,7 @@ const buildGroupActivityTimelines = (
   const experienceStationIds = getExperienceStations(stations, timeline).map(station => station.id);
   const experienceSlotDuration = getDefaultRoundDuration(getExperienceStations(stations, timeline));
   const commonBlocks = timeline.filter(block => block.kind === 'COMMON');
+  const sharedBreakBlocks = timeline.filter(block => block.kind === 'BREAK' || block.kind === 'LUNCH');
   const experienceBlocks = timeline.filter(block => block.kind === 'EXPERIENCE_AM' || block.kind === 'EXPERIENCE_PM');
 
   return rotations.map(group => {
@@ -377,6 +378,15 @@ const buildGroupActivityTimelines = (
           note: 'Hoạt động chung toàn đoàn'
         };
       }),
+      ...sharedBreakBlocks.map(block => ({
+        id: `${group.id}-${block.id}`,
+        title: block.title,
+        startTime: block.startTime,
+        endTime: block.endTime,
+        stationId: block.stationId,
+        room: block.room || 'Mốc chung',
+        note: block.kind === 'LUNCH' ? 'Nghỉ trưa toàn đoàn' : 'Nghỉ giữa giờ toàn đoàn'
+      })),
       ...experienceBlocks.flatMap(block => {
         const stationCount = Math.max(0, block.stationCount || 0);
         let cursor = timeToMinutes(block.startTime);
@@ -970,6 +980,63 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
     setFeedbackNote('');
   };
 
+  const printGroupTimelines = () => {
+    const rows = groupActivityTimelines.map((group, index) => {
+      const color = group.color || GROUP_COLORS[index % GROUP_COLORS.length];
+      const items = group.blocks.map((block, blockIndex) => `
+        <div class="block">
+          <div class="block-head">
+            <strong>${blockIndex + 1}. ${block.title}</strong>
+            <span>${block.startTime}-${block.endTime}</span>
+          </div>
+          <div class="meta">${block.room || 'Chưa gán vị trí'}${block.note ? ` • ${block.note}` : ''}</div>
+        </div>
+      `).join('');
+      return `
+        <section class="group" style="border-top-color:${color}">
+          <header>
+            <h2>${group.name}</h2>
+            <span>${group.studentCount} HS</span>
+          </header>
+          ${items || '<p class="empty">Chưa có timeline hoạt động.</p>'}
+        </section>
+      `;
+    }).join('');
+
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Timeline nhóm - ${selectedEvent?.name || 'Einstein House'}</title>
+          <style>
+            body { font-family: Inter, Arial, sans-serif; color: #0f172a; margin: 24px; }
+            h1 { font-size: 22px; margin: 0 0 4px; }
+            .subtitle { color: #64748b; font-size: 12px; margin-bottom: 18px; }
+            .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+            .group { border: 1px solid #e2e8f0; border-top: 5px solid #0f766e; border-radius: 8px; padding: 12px; break-inside: avoid; }
+            header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+            h2 { font-size: 15px; margin: 0; }
+            header span { font-size: 11px; font-weight: 800; color: #64748b; }
+            .block { border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px; margin-top: 7px; }
+            .block-head { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; }
+            .block-head span { white-space: nowrap; color: #475569; font-weight: 800; }
+            .meta { margin-top: 4px; font-size: 11px; color: #64748b; }
+            .empty { font-size: 12px; color: #64748b; }
+            @media print { body { margin: 12mm; } .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+          </style>
+        </head>
+        <body>
+          <h1>Timeline hoạt động theo nhóm</h1>
+          <div class="subtitle">${selectedEvent?.name || ''} • ${selectedEvent?.client || ''} • ${formatDate(getPrimaryDate(selectedEvent!))}</div>
+          <div class="grid">${rows}</div>
+          <script>window.onload = () => { window.print(); };</script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
   const equipmentOrder = useMemo(() => {
     if (!operation || !selectedEvent) return [];
     const map = new Map<string, { name: string; quantity: number; unit?: string; itemId?: string; available?: number }>();
@@ -1488,7 +1555,13 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                     <h3 className="font-black text-slate-900 flex items-center gap-2"><TimerReset size={18} />Timeline hoạt động theo nhóm</h3>
                     <p className="mt-1 text-xs text-slate-500">Các nhóm chạy song song theo màu. Cùng một round sẽ có cùng mốc giờ, nhưng đi khu vực khác nhau.</p>
                   </div>
-                  <span className="text-xs font-bold text-slate-500">Bắt đầu sau: {getActivityStartTime(operation.timeline, selectedEvent)}</span>
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs font-bold text-slate-500">Bắt đầu sau: {getActivityStartTime(operation.timeline, selectedEvent)}</span>
+                    <button onClick={printGroupTimelines} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-900 text-white text-xs font-black">
+                      <FileText size={15} />
+                      Xuất PDF
+                    </button>
+                  </div>
                 </div>
                 <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-3">
                   {groupActivityTimelines.map((group, groupIndex) => (
