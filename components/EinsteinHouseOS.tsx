@@ -256,6 +256,58 @@ const createStationInstances = (inventory: InventoryItem[]) =>
     };
   });
 
+const getPackageStationCategory = (pkg: ComboPackage): HouseOperationStation['category'] => {
+  const text = `${pkg.name} ${pkg.category || ''} ${pkg.description || ''}`.toLowerCase();
+  if (/vr|thực tế ảo|virtual/.test(text)) return 'VR';
+  if (/robot|alpha|drone/.test(text)) return 'ROBOT';
+  if (/workshop|stem|thí nghiệm|thi nghiem|science|khoa học/.test(text)) return 'WORKSHOP';
+  if (/show|biểu diễn|bieu dien|sân khấu|san khau/.test(text)) return 'SHOW';
+  if (/media|ảnh|video|camera/.test(text)) return 'MEDIA';
+  return 'STEM';
+};
+
+const getPackageStationDuration = (pkg: ComboPackage) => {
+  const category = getPackageStationCategory(pkg);
+  if (category === 'SHOW') return 25;
+  if (category === 'VR') return 30;
+  if (category === 'WORKSHOP') return 35;
+  if (category === 'ROBOT') return 30;
+  return 25;
+};
+
+const createStationFromPackage = (pkg: ComboPackage, inventory: InventoryItem[], index: number): HouseOperationStation => {
+  const category = getPackageStationCategory(pkg);
+  const equipment = (pkg.items || []).map(pkgItem => {
+    const inv = inventory.find(item => item.id === pkgItem.itemId);
+    return {
+      itemId: pkgItem.itemId,
+      name: inv?.name || pkgItem.itemId,
+      quantity: pkgItem.quantity,
+      unit: inv?.consumableUnit,
+      source: 'INVENTORY' as const
+    };
+  });
+
+  return {
+    id: `eh-station-pkg-${pkg.id}-${index + 1}`,
+    name: pkg.name,
+    packageId: pkg.id,
+    packageName: pkg.name,
+    category,
+    durationMinutes: getPackageStationDuration(pkg),
+    room: `Khu ${index + 1}`,
+    objective: pkg.description || `Tổ chức trạm trải nghiệm theo gói thiết bị ${pkg.name}.`,
+    sopVersion: `PKG-${pkg.id}`,
+    checklist: ['Kiểm tra đủ thiết bị trong gói', 'Test hoạt động trước khi đón đoàn', 'Sắp xếp khu vực và hàng chờ', 'Chốt người phụ trách trạm'],
+    equipment,
+    script: `Chào mừng các bạn đến với trạm ${pkg.name}. Ở trạm này, mình sẽ quan sát, thử nghiệm và rút ra kiến thức từ chính bộ giáo cụ đang dùng.`,
+    status: 'TODO'
+  };
+};
+
+const createPackageStationInstances = (packages: ComboPackage[], inventory: InventoryItem[]) =>
+  packages.map((pkg, index) => createStationFromPackage(pkg, inventory, index));
+
 const createDefaultTasks = (event: Event, stations: HouseOperationStation[], employees: Employee[]): HouseOperationTask[] => {
   const lead = employees.find(emp => /lead|hdv|leader|quản/i.test(`${emp.role} ${emp.name}`));
   const eventDate = getPrimaryDate(event);
@@ -280,8 +332,8 @@ const createDefaultTasks = (event: Event, stations: HouseOperationStation[], emp
   ];
 };
 
-const createDefaultOperation = (event: Event, inventory: InventoryItem[], employees: Employee[]): HouseOperationInstance => {
-  const stations = createStationInstances(inventory);
+const createDefaultOperation = (event: Event, inventory: InventoryItem[], employees: Employee[], packages: ComboPackage[] = []): HouseOperationInstance => {
+  const stations = packages.length > 0 ? createPackageStationInstances(packages, inventory) : createStationInstances(inventory);
   const studentCount = getStudentCount(event);
   return {
     templateVersion: 1,
@@ -304,8 +356,8 @@ const createDefaultOperation = (event: Event, inventory: InventoryItem[], employ
   };
 };
 
-const ensureOperation = (event: Event, inventory: InventoryItem[], employees: Employee[]): HouseOperationInstance => {
-  const fallback = createDefaultOperation(event, inventory, employees);
+const ensureOperation = (event: Event, inventory: InventoryItem[], employees: Employee[], packages: ComboPackage[] = []): HouseOperationInstance => {
+  const fallback = createDefaultOperation(event, inventory, employees, packages);
   const current = event.houseOperation;
   if (!current) return fallback;
   return {
@@ -359,8 +411,8 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
 
   const selectedEvent = events.find(event => event.id === selectedEventId) || events[0];
   const operation = useMemo(
-    () => selectedEvent ? ensureOperation(selectedEvent, inventory, employees) : null,
-    [selectedEvent, inventory, employees]
+    () => selectedEvent ? ensureOperation(selectedEvent, inventory, employees, packages) : null,
+    [selectedEvent, inventory, employees, packages]
   );
 
   const eventCards = useMemo(() => {
@@ -391,7 +443,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
 
   const saveOperation = (updater: (current: HouseOperationInstance) => HouseOperationInstance) => {
     if (!selectedEvent || !canEdit) return;
-    const current = ensureOperation(selectedEvent, inventory, employees);
+    const current = ensureOperation(selectedEvent, inventory, employees, packages);
     onUpdateEvent(selectedEvent.id, {
       houseOperation: {
         ...updater(current),
@@ -402,7 +454,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
 
   const initializeOperation = () => {
     if (!selectedEvent || !canEdit) return;
-    onUpdateEvent(selectedEvent.id, { houseOperation: createDefaultOperation(selectedEvent, inventory, employees) });
+    onUpdateEvent(selectedEvent.id, { houseOperation: createDefaultOperation(selectedEvent, inventory, employees, packages) });
   };
 
   const updateTask = (taskId: string, patch: Partial<HouseOperationTask>) => {
@@ -424,13 +476,11 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
     setNewTaskTitle('');
   };
 
-  const addStation = (template: Omit<HouseOperationStation, 'id' | 'room' | 'status'>) => {
+  const addPackageStation = (pkg: ComboPackage) => {
     saveOperation(current => {
-      const station: HouseOperationStation = {
-        ...template,
-        id: makeId('eh-station'),
-        room: `Khu ${current.stations.length + 1}`,
-        status: 'TODO'
+      const station = {
+        ...createStationFromPackage(pkg, inventory, current.stations.length),
+        id: makeId('eh-station')
       };
       const stations = [...current.stations, station];
       return {
@@ -632,7 +682,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
             </div>
             <div className="space-y-2 max-h-[430px] overflow-auto pr-1">
               {events.map(event => {
-                const op = ensureOperation(event, inventory, employees);
+                const op = ensureOperation(event, inventory, employees, packages);
                 const taskTotal = op.tasks.length || 1;
                 const taskDone = op.tasks.filter(task => task.status === 'DONE').length;
                 const pct = Math.round((taskDone / taskTotal) * 100);
@@ -790,10 +840,31 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                   </Field>
                 </div>
                 <div className="mt-4">
-                  <p className="text-xs font-black uppercase text-slate-500 mb-2">AI gợi ý station</p>
+                  <p className="text-xs font-black uppercase text-slate-500 mb-2">Trạm từ gói thiết bị</p>
                   <div className="flex flex-wrap gap-2">
-                    {STATION_TEMPLATES.map(template => (
-                      <button key={template.name} onClick={() => addStation(template)} disabled={!canEdit} className="inline-flex items-center gap-1 px-3 py-2 rounded-lg border border-slate-200 text-sm font-bold hover:bg-slate-50 disabled:text-slate-300">
+                    {packages.map(pkg => {
+                      const alreadyAdded = operation.stations.some(station => station.packageId === pkg.id);
+                      return (
+                        <button
+                          key={pkg.id}
+                          onClick={() => addPackageStation(pkg)}
+                          disabled={!canEdit}
+                          className={`inline-flex items-center gap-1 px-3 py-2 rounded-lg border text-sm font-bold hover:bg-slate-50 disabled:text-slate-300 ${alreadyAdded ? 'border-teal-200 bg-teal-50 text-teal-800' : 'border-slate-200 text-slate-800'}`}
+                          title={`${pkg.items.length} thiết bị trong gói`}
+                        >
+                          <Plus size={15} />
+                          {pkg.name}
+                          <span className="text-[11px] font-black text-slate-400">({pkg.items.length})</span>
+                        </button>
+                      );
+                    })}
+                    {packages.length === 0 && (
+                      <div className="w-full rounded-lg border border-amber-100 bg-amber-50 p-3 text-sm text-amber-800">
+                        Chưa có gói thiết bị. Hãy tạo gói ở module Gói thiết bị để EH OS dùng làm trạm.
+                      </div>
+                    )}
+                    {packages.length === 0 && STATION_TEMPLATES.map(template => (
+                      <button key={template.name} disabled className="inline-flex items-center gap-1 px-3 py-2 rounded-lg border border-slate-200 text-sm font-bold text-slate-300">
                         <Plus size={15} />
                         {template.name}
                       </button>
@@ -810,7 +881,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                       <div className="h-9 w-9 rounded-lg bg-teal-100 text-teal-800 flex items-center justify-center font-black">{index + 1}</div>
                       <div className="flex-1 min-w-0">
                         <p className="font-black text-slate-800">{station.name}</p>
-                        <p className="text-xs text-slate-500">{station.durationMinutes} phút • {station.room}</p>
+                        <p className="text-xs text-slate-500">{station.durationMinutes} phút • {station.room}{station.packageName ? ` • Gói: ${station.packageName}` : ''}</p>
                       </div>
                       <select value={station.status || 'TODO'} disabled={!canEdit} onChange={e => saveOperation(cur => ({ ...cur, stations: cur.stations.map(s => s.id === station.id ? { ...s, status: e.target.value as HouseOperationTaskStatus } : s) }))} className="border rounded-lg px-2 py-1 text-xs font-bold">
                         {Object.entries(STATUS_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}

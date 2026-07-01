@@ -398,6 +398,8 @@ export interface HouseOperationEquipment {
 export interface HouseOperationStation {
   id: string;
   name: string;
+  packageId?: string;
+  packageName?: string;
   category: 'SHOW' | 'VR' | 'WORKSHOP' | 'ROBOT' | 'STEM' | 'MEDIA' | 'OTHER';
   durationMinutes: number;
   room?: string;
