@@ -13,8 +13,9 @@ import { AIChat } from './components/AIChat';
 import { Elearning } from './components/Elearning';
 import { AdminLogPage } from './components/AdminLogPage';
 import { EinsteinHouseOS } from './components/EinsteinHouseOS';
-import { AppState, InventoryItem, Event, EventStatus, Transaction, TransactionType, ComboPackage, Employee, Quotation, EventStaffAllocation, EventExpense, EventAdvanceRequest, LogEntry, ChecklistDirection, ChecklistStatus, ChecklistSignature, EventChecklist, LearningAttempt, LearningProfile, AccessPermission, UserAccount, LearningTrack, InventoryReceipt, InventoryReceiptItem, ActiveSession, PayrollAdjustment, InventoryAuditSession, InventoryAuditItem, InventoryAuditBaseline } from './types';
-import { MOCK_INVENTORY, MOCK_EVENTS, MOCK_TRANSACTIONS, MOCK_PACKAGES, MOCK_EMPLOYEES, MOCK_LEARNING_TRACKS, MOCK_CAREER_RANKS, DEFAULT_USER_ACCOUNTS, MOCK_INVENTORY_RECEIPTS } from './constants';
+import { EducationContentManager } from './components/EducationContentManager';
+import { AppState, InventoryItem, Event, EventStatus, Transaction, TransactionType, ComboPackage, Employee, Quotation, EventStaffAllocation, EventExpense, EventAdvanceRequest, LogEntry, ChecklistDirection, ChecklistStatus, ChecklistSignature, EventChecklist, LearningAttempt, LearningProfile, AccessPermission, UserAccount, LearningTrack, InventoryReceipt, InventoryReceiptItem, ActiveSession, PayrollAdjustment, InventoryAuditSession, InventoryAuditItem, InventoryAuditBaseline, EducationActivity, EducationLessonLink } from './types';
+import { MOCK_INVENTORY, MOCK_EVENTS, MOCK_TRANSACTIONS, MOCK_PACKAGES, MOCK_EMPLOYEES, MOCK_LEARNING_TRACKS, MOCK_CAREER_RANKS, DEFAULT_USER_ACCOUNTS, MOCK_INVENTORY_RECEIPTS, MOCK_EDUCATION_ACTIVITIES } from './constants';
 import { MessageSquare } from 'lucide-react';
 import { ensureCollectionModelInitialized, initializeAuth, loadCollectionState, subscribeToSessions, setSessionOnline, setSessionOffline, syncCollectionStateDiff, saveLearningUserState, subscribeToLearningUserState, deleteLearningUserState, subscribeToLearningUsers } from './services/firebaseService';
 import { ensureInventoryBarcodes, ensureItemBarcode, findDuplicateBarcodeItem, findItemByBarcode, generateBarcode, normalizeBarcode } from './services/barcodeService';
@@ -25,7 +26,7 @@ import { LoginModal } from './components/LoginModal';
 
 const generateId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-type AppTab = 'dashboard' | 'inventory' | 'stocktake' | 'events' | 'house' | 'packages' | 'employees' | 'quotations' | 'sales' | 'elearning' | 'logs';
+type AppTab = 'dashboard' | 'inventory' | 'stocktake' | 'events' | 'house' | 'education' | 'packages' | 'employees' | 'quotations' | 'sales' | 'elearning' | 'logs';
 
 const getSessionId = () => {
   try {
@@ -89,7 +90,8 @@ const createInitialAppState = (): AppState => ({
   learningAttempts: [],
   careerRanks: MOCK_CAREER_RANKS,
   userAccounts: DEFAULT_USER_ACCOUNTS,
-  payrollAdjustments: []
+  payrollAdjustments: [],
+  educationActivities: MOCK_EDUCATION_ACTIVITIES
 });
 
 const buildLearningProfileForUser = (
@@ -143,6 +145,7 @@ const App: React.FC = () => {
   const [learningTeamProfilesState, setLearningTeamProfilesState] = useState<LearningProfile[]>([]);
   const [learningTeamAttemptsState, setLearningTeamAttemptsState] = useState<LearningAttempt[]>([]);
   const [learningLeaderboardProfiles, setLearningLeaderboardProfiles] = useState<LearningProfile[]>([]);
+  const [elearningOpenRequest, setElearningOpenRequest] = useState<{ trackId: string; lessonId: string; nonce: number } | undefined>(undefined);
   const [activeSessions, setActiveSessions] = useState<ActiveSession[]>([]);
   const isApplyingRemoteRef = useRef(false);
   const lastPersistedStateRef = useRef<AppState>(stripLearningUserData(createInitialAppState()));
@@ -203,7 +206,8 @@ const App: React.FC = () => {
       inventoryAudits: state.inventoryAudits || [],
       logs: normalizedLogs,
       userAccounts: normalizedAccounts,
-      payrollAdjustments: state.payrollAdjustments || []
+      payrollAdjustments: state.payrollAdjustments || [],
+      educationActivities: state.educationActivities && state.educationActivities.length > 0 ? state.educationActivities : MOCK_EDUCATION_ACTIVITIES
     };
   };
 
@@ -220,12 +224,14 @@ const App: React.FC = () => {
   const canViewEvents = can('EVENTS_VIEW');
   const canViewHouseOS = canViewEvents;
   const canViewElearning = can('ELEARNING_VIEW');
+  const canViewEducation = can('EDUCATION_VIEW');
   const canViewEmployees = can('EMPLOYEES_VIEW');
   const isElearningAdmin = currentUser?.role === 'ADMIN' || currentUser?.role === 'MANAGER';
   const firstAccessibleTab: AppTab =
     (canViewDashboard && 'dashboard') ||
     (canViewEvents && 'events') ||
     (canViewHouseOS && 'house') ||
+    (canViewEducation && 'education') ||
     (canViewInventory && 'inventory') ||
     (canViewStocktake && 'stocktake') ||
     (canViewPackages && 'packages') ||
@@ -325,6 +331,7 @@ const App: React.FC = () => {
       stocktake: canViewStocktake,
       events: canViewEvents,
       house: canViewHouseOS,
+      education: canViewEducation,
       packages: canViewPackages,
       employees: canViewEmployees,
       quotations: canViewQuotations,
@@ -344,6 +351,7 @@ const App: React.FC = () => {
     canViewStocktake,
     canViewEvents,
     canViewHouseOS,
+    canViewEducation,
     canViewPackages,
     canViewQuotations,
     canViewSales,
@@ -718,6 +726,16 @@ const App: React.FC = () => {
   const handleUpdateLearningTracks = (updatedTracks: LearningTrack[]) => {
     setAppState(prev => ({ ...prev, learningTracks: updatedTracks }));
     addLog('Cập nhật nội dung Elearning (khóa học/bài/ câu hỏi)', 'SUCCESS');
+  };
+
+  const handleUpdateEducationActivities = (activities: EducationActivity[]) => {
+    setAppState(prev => ({ ...prev, educationActivities: activities }));
+    addLog(`Cập nhật thư viện nội dung giáo dục (${activities.length} hoạt động)`, 'INFO');
+  };
+
+  const handleOpenEducationLesson = (link: EducationLessonLink) => {
+    setElearningOpenRequest({ ...link, nonce: Date.now() });
+    setActiveTab('elearning');
   };
 
   const handleDeleteLearningProfile = (profileId: string) => {
@@ -1938,6 +1956,7 @@ const App: React.FC = () => {
       canViewSales={canViewSales}
       canViewEvents={canViewEvents}
       canViewHouseOS={canViewHouseOS}
+      canViewEducation={canViewEducation}
       canViewElearning={canViewElearning}
       canViewEmployees={canViewEmployees}
       onOpenAccess={() => setIsAccessOpen(true)}
@@ -2019,6 +2038,17 @@ const App: React.FC = () => {
           canDelete={can('SALES_DELETE')}
         />
       )}
+      {activeTab === 'education' && canViewEducation && (
+        <EducationContentManager
+          activities={appState.educationActivities || []}
+          inventory={appState.inventory}
+          packages={appState.packages}
+          learningTracks={appState.learningTracks || []}
+          canEdit={can('EDUCATION_EDIT')}
+          onUpdateActivities={guard('EDUCATION_EDIT', handleUpdateEducationActivities)}
+          onOpenLesson={handleOpenEducationLesson}
+        />
+      )}
       {activeTab === 'elearning' && canViewElearning && (
         <Elearning
           tracks={appState.learningTracks || []}
@@ -2043,6 +2073,7 @@ const App: React.FC = () => {
           currentUserId={currentUser?.id}
           currentUserName={currentUser?.name}
           currentEmployeeId={currentUser?.linkedEmployeeId}
+          openLessonRequest={elearningOpenRequest}
         />
       )}
       {activeTab === 'logs' && canViewLogs && (

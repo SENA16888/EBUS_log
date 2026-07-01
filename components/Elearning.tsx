@@ -25,6 +25,7 @@ interface ElearningProps {
   currentUserId?: string;
   currentUserName?: string;
   currentEmployeeId?: string;
+  openLessonRequest?: { trackId: string; lessonId: string; nonce: number };
 }
 
 type ViewMode = 'home' | 'training' | 'progress' | 'leaderboard' | 'teamProgress' | 'lesson' | 'quiz' | 'result';
@@ -239,7 +240,8 @@ export const Elearning: React.FC<ElearningProps> = ({
   canManageRetakes = false,
   currentUserId,
   currentUserName,
-  currentEmployeeId
+  currentEmployeeId,
+  openLessonRequest
 }) => {
   const [viewMode, setViewMode] = useState<ViewMode>('home');
   const [selectedTrackId, setSelectedTrackId] = useState<string>('');
@@ -263,6 +265,16 @@ export const Elearning: React.FC<ElearningProps> = ({
     setLocalTracks(tracks);
     lastSavedTracksRef.current = tracks;
   }, [tracks]);
+
+  useEffect(() => {
+    if (!openLessonRequest) return;
+    const track = localTracks.find(item => item.id === openLessonRequest.trackId);
+    const lesson = track?.lessons.find(item => item.id === openLessonRequest.lessonId);
+    if (!track || !lesson) return;
+    setSelectedTrackId(track.id);
+    setSelectedLessonId(lesson.id);
+    setViewMode('lesson');
+  }, [openLessonRequest?.nonce, localTracks]);
 
   useEffect(() => {
     if (!isAdminView || !canEdit) return;

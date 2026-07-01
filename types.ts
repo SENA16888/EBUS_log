@@ -610,6 +610,8 @@ export type AccessPermission =
   | 'SALES_DELETE'
   | 'ELEARNING_VIEW'
   | 'ELEARNING_EDIT'
+  | 'EDUCATION_VIEW'
+  | 'EDUCATION_EDIT'
   | 'LOGS_VIEW'
   | 'ACCESS_MANAGE';
 
@@ -736,6 +738,42 @@ export interface PayrollAdjustment {
   note?: string;
 }
 
+export interface EducationEquipmentLink {
+  type: 'ITEM' | 'PACKAGE';
+  id: string;
+  quantity: number;
+  note?: string;
+}
+
+export interface EducationLessonLink {
+  trackId: string;
+  lessonId: string;
+}
+
+export interface EducationTheme {
+  id: string;
+  name: string;
+  description?: string;
+  equipment: EducationEquipmentLink[];
+  lessonLinks: EducationLessonLink[];
+  usageGuide: string;
+  pedagogyContent: string;
+  guideScript: string;
+  learningObjectives: string[];
+  updatedAt?: string;
+}
+
+export interface EducationActivity {
+  id: string;
+  name: string;
+  category?: string;
+  ageGroup?: string;
+  summary?: string;
+  themes: EducationTheme[];
+  createdAt: string;
+  updatedAt?: string;
+}
+
 export interface AppState {
   inventory: InventoryItem[];
   events: Event[];
@@ -754,4 +792,5 @@ export interface AppState {
   careerRanks?: CareerRank[];
   userAccounts?: UserAccount[];
   payrollAdjustments?: PayrollAdjustment[];
+  educationActivities?: EducationActivity[];
 }

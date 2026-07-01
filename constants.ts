@@ -1,5 +1,5 @@
 
-import { InventoryItem, Event, Transaction, EventStatus, TransactionType, ComboPackage, Employee, LearningTrack, LearningProfile, CareerRank, UserAccount, InventoryReceipt } from './types';
+import { InventoryItem, Event, Transaction, EventStatus, TransactionType, ComboPackage, Employee, LearningTrack, LearningProfile, CareerRank, UserAccount, InventoryReceipt, EducationActivity } from './types';
 import { getDefaultPermissionsForRole } from './services/accessControl';
 
 export const MOCK_INVENTORY: InventoryItem[] = [];
@@ -8,6 +8,51 @@ export const MOCK_EMPLOYEES: Employee[] = [];
 export const MOCK_EVENTS: Event[] = [];
 export const MOCK_TRANSACTIONS: Transaction[] = [];
 export const MOCK_INVENTORY_RECEIPTS: InventoryReceipt[] = [];
+export const MOCK_EDUCATION_ACTIVITIES: EducationActivity[] = [
+  {
+    id: 'edu-robot-alpha-1e',
+    name: 'Robot Alpha 1E',
+    category: 'Robot',
+    ageGroup: 'Tiểu học / THCS',
+    summary: 'Hoạt động trải nghiệm robot hình người, thay đổi nội dung theo chủ đề vận động và biểu diễn.',
+    createdAt: new Date().toISOString(),
+    themes: [
+      {
+        id: 'theme-alpha-football',
+        name: 'Đá bóng',
+        description: 'Robot thực hiện động tác sút bóng, giữ thăng bằng và phối hợp theo lượt.',
+        equipment: [],
+        lessonLinks: [{ trackId: 'lt-content', lessonId: 'ct-01' }],
+        usageGuide: 'Sạc pin trước giờ chạy, đặt bóng xốp cách robot 30-50cm, kiểm tra mặt sàn phẳng, cho học sinh đứng ngoài vạch an toàn.',
+        pedagogyContent: 'Trọng tâm sư phạm là cân bằng, lực tác động, góc sút và tư duy thử nghiệm. HDV cho học sinh dự đoán hướng bóng trước khi robot sút, sau đó so sánh dự đoán với kết quả thật.',
+        guideScript: 'Các bạn hãy quan sát chân robot. Theo các bạn, nếu robot nghiêng người nhiều hơn thì bóng sẽ đi xa hơn hay lệch hướng? Mỗi nhóm đưa ra một giả thuyết trước khi robot sút nhé.',
+        learningObjectives: ['Nhận biết cân bằng và trọng tâm', 'Dự đoán kết quả trước khi thử nghiệm', 'Liên hệ lực tác động với hướng chuyển động']
+      },
+      {
+        id: 'theme-alpha-dance',
+        name: 'Múa hát',
+        description: 'Robot biểu diễn chuỗi động tác theo nhạc, học sinh quan sát nhịp, trình tự và biểu cảm.',
+        equipment: [],
+        lessonLinks: [{ trackId: 'lt-content', lessonId: 'ct-01' }],
+        usageGuide: 'Test loa, file nhạc và động tác trước khi đón đoàn. Chừa khoảng trống tối thiểu 2m quanh robot để tránh va chạm.',
+        pedagogyContent: 'Trọng tâm sư phạm là thuật toán tuần tự, nhịp điệu và lập trình hành vi. HDV giải thích robot không tự “ngẫu hứng” mà thực hiện chuỗi lệnh đã được thiết kế.',
+        guideScript: 'Robot đang múa theo một chuỗi lệnh. Nếu đổi thứ tự ba động tác đầu tiên thì tiết mục sẽ khác như thế nào? Các bạn thử mô tả lại thuật toán của bài múa này.',
+        learningObjectives: ['Hiểu chuỗi lệnh tuần tự', 'Nhận biết nhịp và pattern', 'Diễn đạt thuật toán bằng ngôn ngữ đơn giản']
+      },
+      {
+        id: 'theme-alpha-boxing',
+        name: 'Boxing',
+        description: 'Robot mô phỏng động tác boxing an toàn, nhấn mạnh phản xạ, điều khiển động cơ và luật an toàn.',
+        equipment: [],
+        lessonLinks: [{ trackId: 'lt-operations', lessonId: 'ops-02' }],
+        usageGuide: 'Chỉ chạy chế độ demo, không để học sinh đứng trong vùng tay robot. Đặt vạch cách ly, kiểm tra pin và nút dừng trước khi biểu diễn.',
+        pedagogyContent: 'Trọng tâm sư phạm là điều khiển servo, phản xạ theo tín hiệu và an toàn khi tương tác với máy. HDV biến hoạt động thành quan sát khoa học thay vì thi đấu đối kháng.',
+        guideScript: 'Boxing của robot là mô phỏng chuyển động. Điều quan trọng không phải đánh mạnh, mà là robot nhận lệnh, giữ thăng bằng và dừng đúng lúc khi có tín hiệu an toàn.',
+        learningObjectives: ['Hiểu mô phỏng chuyển động', 'Nhận biết vai trò cảm biến/tín hiệu', 'Tuân thủ vùng an toàn khi tương tác robot']
+      }
+    ]
+  }
+];
 
 export const DEFAULT_USER_ACCOUNTS: UserAccount[] = [
   {
