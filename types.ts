@@ -429,6 +429,7 @@ export interface HouseOperationRotationGroup {
   name: string;
   studentCount: number;
   route: string[];
+  color?: string;
 }
 
 export interface HouseOperationTask {
@@ -485,6 +486,7 @@ export interface HouseOperationInstance {
   programType?: string;
   studentCount?: number;
   teacherCount?: number;
+  groupCount?: number;
   stations: HouseOperationStation[];
   timeline: HouseOperationTimelineBlock[];
   rotations: HouseOperationRotationGroup[];

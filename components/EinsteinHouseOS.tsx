@@ -158,6 +158,8 @@ const STATUS_LABELS: Record<HouseOperationTaskStatus, string> = {
   BLOCKED: 'Thiếu'
 };
 
+const GROUP_COLORS = ['#0f766e', '#2563eb', '#c2410c', '#7c3aed', '#be123c', '#047857'];
+
 const formatDate = (value?: string) => {
   if (!value) return 'Chưa có ngày';
   const date = new Date(value);
@@ -208,17 +210,28 @@ const buildTimeline = (event: Event, stations: HouseOperationStation[]): HouseOp
   ];
   cursor += 15;
 
-  stations.forEach((station, index) => {
+  const commonShow = stations.find(station => station.category === 'SHOW');
+  if (commonShow) {
     blocks.push({
       id: makeId('eh-time'),
-      title: station.name,
+      title: commonShow.name,
       startTime: minutesToTime(cursor),
-      endTime: minutesToTime(cursor + station.durationMinutes),
-      stationId: station.id,
-      room: station.room || `Khu ${index + 1}`
+      endTime: minutesToTime(cursor + commonShow.durationMinutes),
+      stationId: commonShow.id,
+      room: commonShow.room || commonShow.areaDescription || 'Sân khấu/khu chung',
+      note: 'Mốc chung cho toàn đoàn trước khi chia nhóm.'
     });
-    cursor += station.durationMinutes + 5;
+    cursor += commonShow.durationMinutes;
+  }
+
+  blocks.push({
+    id: makeId('eh-time'),
+    title: 'Chia nhóm - chuyển trạm',
+    startTime: minutesToTime(cursor),
+    endTime: minutesToTime(cursor + 10),
+    note: 'Tập trung HDV, chia nhóm màu và bắt đầu timeline hoạt động riêng.'
   });
+  cursor += 10;
 
   blocks.push({
     id: makeId('eh-time'),
@@ -231,15 +244,66 @@ const buildTimeline = (event: Event, stations: HouseOperationStation[]): HouseOp
   return blocks;
 };
 
-const buildRotations = (studentCount: number, stations: HouseOperationStation[]): HouseOperationRotationGroup[] => {
-  const groupCount = Math.max(1, Math.min(6, Math.ceil(studentCount / 25)));
+const buildRotations = (studentCount: number, stations: HouseOperationStation[], requestedGroupCount?: number): HouseOperationRotationGroup[] => {
+  const groupCount = Math.max(1, Math.min(6, requestedGroupCount || Math.ceil(studentCount / 25)));
   const stationIds = stations.map(station => station.id);
   return Array.from({ length: groupCount }).map((_, index) => ({
     id: makeId('eh-rot'),
     name: `Lớp/Nhóm ${String.fromCharCode(65 + index)}`,
     studentCount: Math.ceil(studentCount / groupCount),
+    color: GROUP_COLORS[index % GROUP_COLORS.length],
     route: stationIds.map((_, routeIndex) => stationIds[(routeIndex + index) % stationIds.length]).filter(Boolean)
   }));
+};
+
+const getActivityStartTime = (timeline: HouseOperationTimelineBlock[], event: Event) => {
+  const splitBlock = [...timeline].reverse().find(block => /chia|chuyển trạm|chuyen tram|bắt đầu|bat dau/i.test(`${block.title} ${block.note || ''}`));
+  if (splitBlock?.endTime) return splitBlock.endTime;
+  return timeline[0]?.endTime || addMinutes(getProgramStart(event), 15);
+};
+
+const buildGroupActivityTimelines = (
+  event: Event,
+  timeline: HouseOperationTimelineBlock[],
+  stations: HouseOperationStation[],
+  rotations: HouseOperationRotationGroup[]
+) => {
+  const stationMap = new Map(stations.map(station => [station.id, station]));
+  const maxRounds = Math.max(0, ...rotations.map(group => group.route.length));
+  let cursor = timeToMinutes(getActivityStartTime(timeline, event));
+  const roundStarts: number[] = [];
+  const roundDurations = Array.from({ length: maxRounds }).map((_, roundIndex) => {
+    roundStarts.push(cursor);
+    const duration = Math.max(
+      20,
+      ...rotations.map(group => {
+        const station = stationMap.get(group.route[roundIndex]);
+        return station?.durationMinutes || 20;
+      })
+    );
+    cursor += duration + 5;
+    return duration;
+  });
+
+  return rotations.map(group => {
+    const blocks = Array.from({ length: maxRounds }).map((_, roundIndex) => {
+      const stationId = group.route[roundIndex];
+      const station = stationId ? stationMap.get(stationId) : undefined;
+      const start = roundStarts[roundIndex] || cursor;
+      const duration = roundDurations[roundIndex] || station?.durationMinutes || 20;
+      const block = {
+        id: `${group.id}-${roundIndex}`,
+        title: station?.name || 'Nghỉ/chờ lượt',
+        startTime: minutesToTime(start),
+        endTime: minutesToTime(start + duration),
+        stationId,
+        room: station?.areaDescription || station?.room,
+        note: station?.packageName
+      };
+      return block;
+    });
+    return { ...group, blocks };
+  });
 };
 
 const createStationInstances = (inventory: InventoryItem[]) =>
@@ -383,6 +447,7 @@ const createDefaultTasks = (event: Event, stations: HouseOperationStation[], emp
 const createDefaultOperation = (event: Event, inventory: InventoryItem[], employees: Employee[], packages: ComboPackage[] = []): HouseOperationInstance => {
   const stations = packages.length > 0 ? createPackageStationInstances(packages, inventory) : createStationInstances(inventory);
   const studentCount = getStudentCount(event);
+  const groupCount = Math.max(1, Math.min(6, Math.ceil(studentCount / 25)));
   return {
     templateVersion: 1,
     createdAt: new Date().toISOString(),
@@ -392,9 +457,10 @@ const createDefaultOperation = (event: Event, inventory: InventoryItem[], employ
     programType: event.eventProfile?.eventType || 'SCIENCE_DAY',
     studentCount,
     teacherCount: getTeacherCount(event),
+    groupCount,
     stations,
     timeline: buildTimeline(event, stations),
-    rotations: buildRotations(studentCount, stations),
+    rotations: buildRotations(studentCount, stations, groupCount),
     tasks: createDefaultTasks(event, stations, employees),
     incidents: [],
     mediaTasks: SHOT_LIST.map(title => ({ id: makeId('eh-media'), title, checked: false })),
@@ -495,6 +561,15 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
 
   const overlapWarnings = useMemo(() => operation ? getOverlapWarnings(operation.timeline) : new Set<string>(), [operation]);
 
+  const groupActivityTimelines = useMemo(
+    () => selectedEvent && operation
+      ? buildGroupActivityTimelines(selectedEvent, operation.timeline, operation.stations, operation.rotations)
+      : [],
+    [selectedEvent, operation]
+  );
+
+  const hasGroupStationConflict = operation ? (operation.groupCount || operation.rotations.length || 1) > Math.max(1, operation.stations.length) : false;
+
   const saveOperation = (updater: (current: HouseOperationInstance) => HouseOperationInstance) => {
     if (!selectedEvent || !canEdit) return;
     const current = ensureOperation(selectedEvent, inventory, employees, packages);
@@ -541,7 +616,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
         ...current,
         stations,
         timeline: buildTimeline(selectedEvent!, stations),
-        rotations: buildRotations(current.studentCount || getStudentCount(selectedEvent!), stations)
+        rotations: buildRotations(current.studentCount || getStudentCount(selectedEvent!), stations, current.groupCount)
       };
     });
   };
@@ -553,7 +628,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
         ...current,
         stations,
         timeline: buildTimeline(selectedEvent!, stations),
-        rotations: buildRotations(current.studentCount || getStudentCount(selectedEvent!), stations)
+        rotations: buildRotations(current.studentCount || getStudentCount(selectedEvent!), stations, current.groupCount)
       };
     });
   };
@@ -565,7 +640,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
         ...current,
         stations,
         timeline: buildTimeline(selectedEvent!, stations),
-        rotations: buildRotations(current.studentCount || getStudentCount(selectedEvent!), stations)
+        rotations: buildRotations(current.studentCount || getStudentCount(selectedEvent!), stations, current.groupCount)
       };
     });
   };
@@ -583,7 +658,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
         ...current,
         stations,
         timeline: buildTimeline(selectedEvent!, stations),
-        rotations: buildRotations(current.studentCount || getStudentCount(selectedEvent!), stations)
+        rotations: buildRotations(current.studentCount || getStudentCount(selectedEvent!), stations, current.groupCount)
       };
     });
   };
@@ -612,7 +687,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
         ...current,
         stations,
         timeline: buildTimeline(selectedEvent!, stations),
-        rotations: buildRotations(current.studentCount || getStudentCount(selectedEvent!), stations)
+        rotations: buildRotations(current.studentCount || getStudentCount(selectedEvent!), stations, current.groupCount)
       };
     });
   };
@@ -624,7 +699,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
         ...current,
         stations,
         timeline: current.timeline.filter(block => block.stationId !== stationId),
-        rotations: buildRotations(current.studentCount || getStudentCount(selectedEvent!), stations),
+        rotations: buildRotations(current.studentCount || getStudentCount(selectedEvent!), stations, current.groupCount),
         tasks: current.tasks.filter(task => task.stationId !== stationId)
       };
     });
@@ -665,7 +740,16 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
   const regenerateRotations = () => {
     saveOperation(current => ({
       ...current,
-      rotations: buildRotations(current.studentCount || getStudentCount(selectedEvent!), current.stations)
+      rotations: buildRotations(current.studentCount || getStudentCount(selectedEvent!), current.stations, current.groupCount)
+    }));
+  };
+
+  const updateGroupCount = (value: number) => {
+    const groupCount = Math.max(1, Math.min(6, Math.round(value || 1)));
+    saveOperation(current => ({
+      ...current,
+      groupCount,
+      rotations: buildRotations(current.studentCount || getStudentCount(selectedEvent!), current.stations, groupCount)
     }));
   };
 
@@ -958,7 +1042,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                     <input value={operation.theme || ''} disabled={!canEdit} onChange={e => saveOperation(cur => ({ ...cur, theme: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm" />
                   </Field>
                   <Field label="Số học sinh">
-                    <input type="number" value={operation.studentCount || 0} disabled={!canEdit} onChange={e => saveOperation(cur => ({ ...cur, studentCount: Number(e.target.value), rotations: buildRotations(Number(e.target.value) || 1, cur.stations) }))} className="w-full border rounded-lg px-3 py-2 text-sm" />
+                    <input type="number" value={operation.studentCount || 0} disabled={!canEdit} onChange={e => saveOperation(cur => ({ ...cur, studentCount: Number(e.target.value), rotations: buildRotations(Number(e.target.value) || 1, cur.stations, cur.groupCount) }))} className="w-full border rounded-lg px-3 py-2 text-sm" />
                   </Field>
                   <Field label="Số giáo viên">
                     <input type="number" value={operation.teacherCount || 0} disabled={!canEdit} onChange={e => saveOperation(cur => ({ ...cur, teacherCount: Number(e.target.value) }))} className="w-full border rounded-lg px-3 py-2 text-sm" />
@@ -1095,10 +1179,13 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
             <div className="grid grid-cols-1 xl:grid-cols-[1.2fr_0.8fr] gap-4">
               <section className="bg-white border border-slate-200 rounded-lg p-4">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                  <h3 className="font-black text-slate-900 flex items-center gap-2"><TimerReset size={18} />Timeline Builder</h3>
+                  <div>
+                    <h3 className="font-black text-slate-900 flex items-center gap-2"><TimerReset size={18} />Timeline tổng</h3>
+                    <p className="mt-1 text-xs text-slate-500">Các mốc chung cho toàn đoàn: đến, show chung, nghỉ, ăn, ra về.</p>
+                  </div>
                   <div className="flex gap-2">
-                    <button onClick={insertBreak} disabled={!canEdit} className="px-3 py-2 rounded-lg border border-slate-200 text-sm font-bold disabled:text-slate-300">Thêm nghỉ 10p</button>
-                    <button onClick={recalcTimeline} disabled={!canEdit} className="px-3 py-2 rounded-lg bg-slate-900 text-white text-sm font-bold disabled:bg-slate-300">AI chia lại</button>
+                    <button onClick={insertBreak} disabled={!canEdit} className="px-3 py-2 rounded-lg border border-slate-200 text-sm font-bold disabled:text-slate-300">Thêm mốc nghỉ</button>
+                    <button onClick={recalcTimeline} disabled={!canEdit} className="px-3 py-2 rounded-lg bg-slate-900 text-white text-sm font-bold disabled:bg-slate-300">Sinh mốc chung</button>
                   </div>
                 </div>
                 <div className="mt-4 space-y-2">
@@ -1114,13 +1201,37 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
               </section>
 
               <section className="bg-white border border-slate-200 rounded-lg p-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="font-black text-slate-900 flex items-center gap-2"><Route size={18} />Rotation Planner</h3>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h3 className="font-black text-slate-900 flex items-center gap-2"><Route size={18} />Thiết lập nhóm</h3>
+                    <p className="mt-1 text-xs text-slate-500">Nhập số nhóm, hệ thống sinh timeline hoạt động riêng để tránh trùng trạm cùng giờ.</p>
+                  </div>
                   <button onClick={regenerateRotations} disabled={!canEdit} className="text-sm font-bold text-teal-700 disabled:text-slate-300">Sinh lại</button>
                 </div>
+                <div className="mt-4 grid grid-cols-2 gap-3">
+                  <Field label="Số nhóm">
+                    <input
+                      type="number"
+                      min={1}
+                      max={6}
+                      value={operation.groupCount || operation.rotations.length || 1}
+                      disabled={!canEdit}
+                      onChange={event => updateGroupCount(Number(event.target.value))}
+                      className="w-full border rounded-lg px-3 py-2 text-sm font-black"
+                    />
+                  </Field>
+                  <Field label="Số trạm/khu vực">
+                    <input readOnly value={operation.stations.length} className="w-full border rounded-lg px-3 py-2 text-sm font-black bg-slate-50" />
+                  </Field>
+                </div>
+                {hasGroupStationConflict && (
+                  <div className="mt-3 rounded-lg border border-amber-100 bg-amber-50 p-3 text-xs font-bold text-amber-800">
+                    Số nhóm đang nhiều hơn số khu vực/trạm, có thể phải cho một số nhóm nghỉ/chờ hoặc bổ sung khu vực để tránh trùng.
+                  </div>
+                )}
                 <div className="mt-4 space-y-3">
-                  {operation.rotations.map(group => (
-                    <div key={group.id} className="border border-slate-100 bg-slate-50 rounded-lg p-3">
+                  {operation.rotations.map((group, groupIndex) => (
+                    <div key={group.id} className="border border-slate-100 bg-slate-50 rounded-lg p-3" style={{ borderLeft: `5px solid ${group.color || GROUP_COLORS[groupIndex % GROUP_COLORS.length]}` }}>
                       <div className="flex items-center justify-between">
                         <p className="font-black text-slate-800">{group.name}</p>
                         <span className="text-xs font-bold text-slate-500">{group.studentCount} HS</span>
@@ -1130,6 +1241,38 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                           const station = operation.stations.find(s => s.id === stationId);
                           return <span key={`${group.id}-${stationId}-${index}`} className="px-2 py-1 bg-white border border-slate-200 rounded-md text-xs font-bold">{index + 1}. {station?.name || stationId}</span>;
                         })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              <section className="xl:col-span-2 bg-white border border-slate-200 rounded-lg p-4">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                  <div>
+                    <h3 className="font-black text-slate-900 flex items-center gap-2"><TimerReset size={18} />Timeline hoạt động theo nhóm</h3>
+                    <p className="mt-1 text-xs text-slate-500">Các nhóm chạy song song theo màu. Cùng một round sẽ có cùng mốc giờ, nhưng đi khu vực khác nhau.</p>
+                  </div>
+                  <span className="text-xs font-bold text-slate-500">Bắt đầu sau: {getActivityStartTime(operation.timeline, selectedEvent)}</span>
+                </div>
+                <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-3">
+                  {groupActivityTimelines.map((group, groupIndex) => (
+                    <div key={group.id} className="rounded-lg border border-slate-100 bg-slate-50 p-3" style={{ borderTop: `5px solid ${group.color || GROUP_COLORS[groupIndex % GROUP_COLORS.length]}` }}>
+                      <div className="flex items-center justify-between gap-3">
+                        <h4 className="font-black text-slate-900">{group.name}</h4>
+                        <span className="text-xs font-black text-slate-500">{group.studentCount} HS</span>
+                      </div>
+                      <div className="mt-3 space-y-2">
+                        {group.blocks.map((block, blockIndex) => (
+                          <div key={block.id} className="rounded-md border border-slate-200 bg-white p-2">
+                            <div className="flex items-start justify-between gap-2">
+                              <p className="text-sm font-black text-slate-800 leading-snug">{blockIndex + 1}. {block.title}</p>
+                              <span className="shrink-0 text-[11px] font-black text-slate-500">{block.startTime}-{block.endTime}</span>
+                            </div>
+                            <p className="mt-1 text-xs text-slate-500">{block.room || 'Chưa gán vị trí'}{block.note ? ` • ${block.note}` : ''}</p>
+                          </div>
+                        ))}
+                        {group.blocks.length === 0 && <p className="text-sm text-slate-500">Chưa có khu vực/trạm để sinh timeline hoạt động.</p>}
                       </div>
                     </div>
                   ))}
