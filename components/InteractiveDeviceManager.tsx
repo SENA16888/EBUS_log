@@ -1,0 +1,703 @@
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  BellRing,
+  CalendarClock,
+  FileAudio,
+  Headphones,
+  Link,
+  Mic2,
+  Music2,
+  PauseCircle,
+  PlayCircle,
+  Plus,
+  Radio,
+  Save,
+  Trash2,
+  Upload,
+  Volume2,
+  Wand2
+} from 'lucide-react';
+import {
+  BroadcastAudioAsset,
+  BroadcastEventRule,
+  BroadcastPlaybackLog,
+  BroadcastSchedule,
+  Event,
+  HouseOperationTimelineBlock,
+  InteractiveDeviceProfile
+} from '../types';
+
+interface InteractiveDeviceManagerProps {
+  devices: InteractiveDeviceProfile[];
+  events: Event[];
+  canEdit?: boolean;
+  onUpdateDevices: (devices: InteractiveDeviceProfile[]) => void;
+}
+
+type PendingAnnouncement = {
+  id: string;
+  title: string;
+  time: Date;
+  source: BroadcastPlaybackLog['source'];
+  text?: string;
+  asset?: BroadcastAudioAsset;
+  detail?: string;
+  priority: number;
+};
+
+const makeId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+
+const getLocalDateKey = (date = new Date()) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const timeToMinutes = (time?: string) => {
+  if (!time) return 0;
+  const [hour, minute] = time.split(':').map(Number);
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return 0;
+  return hour * 60 + minute;
+};
+
+const dateAtTime = (dateKey: string, time: string) => {
+  const [year, month, day] = dateKey.split('-').map(Number);
+  const [hour, minute] = time.split(':').map(Number);
+  return new Date(year, (month || 1) - 1, day || 1, hour || 0, minute || 0, 0, 0);
+};
+
+const addMinutes = (date: Date, minutes: number) => new Date(date.getTime() + minutes * 60 * 1000);
+
+const formatTime = (date: Date) => date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+
+const formatDate = (value?: string) => {
+  if (!value) return 'Chưa có ngày';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+};
+
+const getEventDateKeys = (event: Event) => {
+  const keys = new Set<string>();
+  (event.schedule || []).forEach(item => item.date && keys.add(item.date));
+  if (event.startDate) keys.add(event.startDate);
+  if (event.endDate) keys.add(event.endDate);
+  if (!keys.size && event.startDate && event.endDate) keys.add(event.startDate);
+  return Array.from(keys);
+};
+
+const isEventActiveOnDate = (event: Event, dateKey: string) => {
+  const explicitDates = getEventDateKeys(event);
+  if (explicitDates.includes(dateKey)) return true;
+  if (event.startDate && event.endDate) return event.startDate <= dateKey && dateKey <= event.endDate;
+  return false;
+};
+
+const getProgramStart = (event: Event) =>
+  event.eventProfile?.programTimeStart ||
+  event.houseOperation?.timeline?.[0]?.startTime ||
+  '09:00';
+
+const getBlockTriggerTime = (dateKey: string, block: HouseOperationTimelineBlock, rule: BroadcastEventRule) => {
+  if (rule.trigger === 'BLOCK_END' || rule.trigger === 'BEFORE_BLOCK_END') {
+    return addMinutes(dateAtTime(dateKey, block.endTime), rule.offsetMinutes);
+  }
+  return addMinutes(dateAtTime(dateKey, block.startTime), rule.offsetMinutes);
+};
+
+const applyTemplate = (template: string, event: Event, block?: HouseOperationTimelineBlock) =>
+  template
+    .replace(/\{\{eventName\}\}/g, event.name || 'đoàn trải nghiệm')
+    .replace(/\{\{client\}\}/g, event.client || event.eventProfile?.organization || 'đối tác')
+    .replace(/\{\{blockTitle\}\}/g, block?.title || 'hoạt động')
+    .replace(/\{\{blockRoom\}\}/g, block?.room || 'khu trải nghiệm');
+
+const normalizeYoutubeEmbed = (url?: string) => {
+  if (!url) return '';
+  try {
+    const parsed = new URL(url);
+    const list = parsed.searchParams.get('list');
+    if (list) return `https://www.youtube.com/embed/videoseries?list=${encodeURIComponent(list)}&autoplay=1`;
+    const videoId = parsed.hostname.includes('youtu.be')
+      ? parsed.pathname.replace('/', '')
+      : parsed.searchParams.get('v');
+    if (videoId) return `https://www.youtube.com/embed/${encodeURIComponent(videoId)}?autoplay=1`;
+    if (parsed.pathname.includes('/embed/')) return url;
+  } catch {
+    return url;
+  }
+  return url;
+};
+
+const createDefaultDevice = (): InteractiveDeviceProfile => ({
+  id: 'eh-broadcast-center',
+  name: 'Phát thanh trung tâm Einstein House',
+  type: 'BROADCAST_CENTER',
+  location: 'Einstein House',
+  isAutomationEnabled: true,
+  volume: 0.82,
+  youtubeFallbackUrl: 'https://www.youtube.com/embed/videoseries?list=PLFgquLnL59alCl_2TQvOiD5Vgm1hCaGSI',
+  audioAssets: [],
+  schedules: [],
+  eventRules: [],
+  playbackLogs: []
+});
+
+const buildDailyAnnouncements = (device: InteractiveDeviceProfile, dateKey: string): PendingAnnouncement[] => {
+  const today = new Date(dateAtTime(dateKey, '00:00')).getDay();
+  return (device.schedules || [])
+    .filter(schedule => schedule.enabled)
+    .filter(schedule => !schedule.daysOfWeek?.length || schedule.daysOfWeek.includes(today))
+    .map(schedule => {
+      const asset = (device.audioAssets || []).find(item => item.id === schedule.assetId);
+      return {
+        id: `schedule-${schedule.id}-${dateKey}`,
+        title: schedule.title,
+        time: dateAtTime(dateKey, schedule.time),
+        source: 'SCHEDULE' as const,
+        text: schedule.voiceText || asset?.transcript,
+        asset,
+        detail: 'Lịch cố định hằng ngày',
+        priority: schedule.priority || 0
+      };
+    });
+};
+
+const buildEventAnnouncements = (device: InteractiveDeviceProfile, events: Event[], dateKey: string): PendingAnnouncement[] => {
+  const activeEvents = events.filter(event => isEventActiveOnDate(event, dateKey));
+  return activeEvents.flatMap(event => (device.eventRules || []).filter(rule => rule.enabled).flatMap(rule => {
+    if (rule.trigger === 'EVENT_START') {
+      const time = addMinutes(dateAtTime(dateKey, getProgramStart(event)), rule.offsetMinutes);
+      return [{
+        id: `event-${event.id}-${rule.id}-${dateKey}`,
+        title: rule.title,
+        time,
+        source: 'EVENT' as const,
+        text: applyTemplate(rule.messageTemplate, event),
+        detail: `${event.name} • ${formatDate(dateKey)}`,
+        priority: rule.priority || 0
+      }];
+    }
+
+    return (event.houseOperation?.timeline || [])
+      .filter(block => !rule.blockKind || block.kind === rule.blockKind)
+      .map(block => ({
+        id: `event-${event.id}-${rule.id}-${block.id}-${dateKey}`,
+        title: rule.title,
+        time: getBlockTriggerTime(dateKey, block, rule),
+        source: 'EVENT' as const,
+        text: applyTemplate(rule.messageTemplate, event, block),
+        detail: `${event.name} • ${block.title}`,
+        priority: rule.priority || 0
+      }));
+  }));
+};
+
+export const InteractiveDeviceManager: React.FC<InteractiveDeviceManagerProps> = ({
+  devices,
+  events,
+  canEdit = true,
+  onUpdateDevices
+}) => {
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const playedKeysRef = useRef<Set<string>>(new Set());
+  const [now, setNow] = useState(new Date());
+  const [isRunning, setIsRunning] = useState(false);
+  const [scheduleTitle, setScheduleTitle] = useState('Thông báo mới');
+  const [scheduleTime, setScheduleTime] = useState('09:00');
+  const [scheduleText, setScheduleText] = useState('');
+  const [selectedAssetId, setSelectedAssetId] = useState('');
+  const [assetTitle, setAssetTitle] = useState('');
+  const [assetUrl, setAssetUrl] = useState('');
+  const [voiceTitle, setVoiceTitle] = useState('Voice AI thông báo');
+  const [voiceText, setVoiceText] = useState('');
+
+  const device = devices.find(item => item.type === 'BROADCAST_CENTER') || devices[0] || createDefaultDevice();
+  const todayKey = getLocalDateKey(now);
+
+  const todayEvents = useMemo(
+    () => events.filter(event => isEventActiveOnDate(event, todayKey)),
+    [events, todayKey]
+  );
+
+  const announcements = useMemo(() => {
+    const list = [
+      ...buildDailyAnnouncements(device, todayKey),
+      ...buildEventAnnouncements(device, events, todayKey)
+    ];
+    return list.sort((a, b) => a.time.getTime() - b.time.getTime() || b.priority - a.priority);
+  }, [device, events, todayKey]);
+
+  const nextAnnouncements = useMemo(
+    () => announcements.filter(item => item.time.getTime() >= now.getTime() - 60 * 1000).slice(0, 8),
+    [announcements, now]
+  );
+
+  const youtubeEmbed = normalizeYoutubeEmbed(device.youtubeFallbackUrl);
+
+  const commitDevice = (patch: Partial<InteractiveDeviceProfile>) => {
+    if (!canEdit) return;
+    const nextDevice: InteractiveDeviceProfile = {
+      ...device,
+      ...patch,
+      updatedAt: new Date().toISOString()
+    };
+    const exists = devices.some(item => item.id === nextDevice.id);
+    onUpdateDevices(exists ? devices.map(item => item.id === nextDevice.id ? nextDevice : item) : [nextDevice, ...devices]);
+  };
+
+  const appendPlaybackLog = (entry: Omit<BroadcastPlaybackLog, 'id' | 'playedAt'>) => {
+    const log: BroadcastPlaybackLog = {
+      ...entry,
+      id: makeId('bc-log'),
+      playedAt: new Date().toISOString()
+    };
+    commitDevice({ playbackLogs: [log, ...(device.playbackLogs || [])].slice(0, 80) });
+  };
+
+  const speakText = (text: string) => {
+    if (!('speechSynthesis' in window)) {
+      alert('Trình duyệt này chưa hỗ trợ Voice AI miễn phí bằng Web Speech.');
+      return;
+    }
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    const voices = window.speechSynthesis.getVoices();
+    utterance.lang = 'vi-VN';
+    utterance.volume = Math.min(1, Math.max(0, device.volume || 0.8));
+    utterance.rate = 0.95;
+    const viVoice = voices.find(voice => voice.lang.toLowerCase().startsWith('vi'));
+    if (viVoice) utterance.voice = viVoice;
+    window.speechSynthesis.speak(utterance);
+  };
+
+  const playAnnouncement = (announcement: PendingAnnouncement, manual = false) => {
+    const source = manual ? 'MANUAL' : announcement.source;
+    const text = announcement.text?.trim();
+    const audioUrl = announcement.asset?.dataUrl || announcement.asset?.url;
+
+    if (audioUrl && audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.src = audioUrl;
+      audioRef.current.volume = Math.min(1, Math.max(0, device.volume || 0.8));
+      void audioRef.current.play().catch(() => {
+        alert('Trình duyệt đã chặn phát tự động. Vui lòng bấm "Bật chế độ 24/24" một lần trên tablet.');
+      });
+    } else if (text) {
+      speakText(text);
+    } else {
+      return;
+    }
+
+    appendPlaybackLog({
+      title: announcement.title,
+      source,
+      detail: announcement.detail || text || announcement.asset?.title
+    });
+  };
+
+  const playAsset = (asset: BroadcastAudioAsset) => {
+    playAnnouncement({
+      id: `manual-${asset.id}`,
+      title: asset.title,
+      time: new Date(),
+      source: 'MANUAL',
+      asset,
+      text: asset.transcript,
+      detail: asset.fileName || asset.url || asset.transcript,
+      priority: 0
+    }, true);
+  };
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), 15000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!isRunning || !device.isAutomationEnabled) return;
+    const dueWindowMs = 60 * 1000;
+    const due = announcements
+      .filter(item => item.time.getTime() <= now.getTime() && item.time.getTime() >= now.getTime() - dueWindowMs)
+      .filter(item => !playedKeysRef.current.has(item.id))
+      .sort((a, b) => b.priority - a.priority || a.time.getTime() - b.time.getTime())[0];
+
+    if (!due) return;
+    playedKeysRef.current.add(due.id);
+    playAnnouncement(due);
+  }, [announcements, device.isAutomationEnabled, isRunning, now]);
+
+  const handleUpload = (file?: File | null) => {
+    if (!file || !canEdit) return;
+    if (!file.type.startsWith('audio/')) {
+      alert('Vui lòng chọn file âm thanh phổ biến như mp3, wav, m4a.');
+      return;
+    }
+    if (file.size > 700 * 1024) {
+      alert('File này khá lớn để lưu trực tiếp vào Firestore. Vui lòng dùng file thông báo ngắn dưới 700KB hoặc dán URL âm thanh ngoài.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const asset: BroadcastAudioAsset = {
+        id: makeId('bc-audio'),
+        title: assetTitle.trim() || file.name.replace(/\.[^.]+$/, ''),
+        source: 'UPLOAD',
+        category: 'ANNOUNCEMENT',
+        dataUrl: String(reader.result || ''),
+        fileName: file.name,
+        mimeType: file.type,
+        createdAt: new Date().toISOString()
+      };
+      commitDevice({ audioAssets: [asset, ...(device.audioAssets || [])] });
+      setAssetTitle('');
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const addUrlAsset = () => {
+    if (!assetUrl.trim()) return;
+    const asset: BroadcastAudioAsset = {
+      id: makeId('bc-audio'),
+      title: assetTitle.trim() || 'Audio URL',
+      source: 'URL',
+      category: 'ANNOUNCEMENT',
+      url: assetUrl.trim(),
+      createdAt: new Date().toISOString()
+    };
+    commitDevice({ audioAssets: [asset, ...(device.audioAssets || [])] });
+    setAssetTitle('');
+    setAssetUrl('');
+  };
+
+  const addVoiceAsset = () => {
+    if (!voiceText.trim()) return;
+    const asset: BroadcastAudioAsset = {
+      id: makeId('bc-voice'),
+      title: voiceTitle.trim() || 'Voice AI thông báo',
+      source: 'VOICE_AI',
+      category: 'ANNOUNCEMENT',
+      transcript: voiceText.trim(),
+      createdAt: new Date().toISOString()
+    };
+    commitDevice({ audioAssets: [asset, ...(device.audioAssets || [])] });
+    setVoiceTitle('Voice AI thông báo');
+    setVoiceText('');
+  };
+
+  const addSchedule = () => {
+    const hasAsset = selectedAssetId && selectedAssetId !== 'VOICE_ONLY';
+    if (!scheduleText.trim() && !hasAsset) {
+      alert('Vui lòng chọn file âm thanh hoặc nhập nội dung Voice AI.');
+      return;
+    }
+    const schedule: BroadcastSchedule = {
+      id: makeId('bc-schedule'),
+      title: scheduleTitle.trim() || 'Thông báo mới',
+      time: scheduleTime,
+      enabled: true,
+      assetId: hasAsset ? selectedAssetId : undefined,
+      voiceText: scheduleText.trim() || undefined,
+      priority: 10
+    };
+    commitDevice({ schedules: [...(device.schedules || []), schedule].sort((a, b) => timeToMinutes(a.time) - timeToMinutes(b.time)) });
+    setScheduleTitle('Thông báo mới');
+    setScheduleText('');
+    setSelectedAssetId('');
+  };
+
+  const removeAsset = (assetId: string) => {
+    commitDevice({
+      audioAssets: (device.audioAssets || []).filter(asset => asset.id !== assetId),
+      schedules: (device.schedules || []).map(schedule => schedule.assetId === assetId ? { ...schedule, assetId: undefined } : schedule)
+    });
+  };
+
+  return (
+    <div className="space-y-4">
+      <audio ref={audioRef} className="hidden" />
+
+      <section className="bg-white border border-slate-200 rounded-lg p-4">
+        <div className="flex flex-col xl:flex-row xl:items-start justify-between gap-4">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-blue-700 font-bold text-sm">
+              <Radio size={20} />
+              <span>Thiết bị tương tác</span>
+            </div>
+            <h2 className="text-2xl font-bold text-slate-900 mt-2">{device.name}</h2>
+            <p className="text-sm text-slate-500 mt-1">
+              Phát thanh tự động tại {device.location || 'trung tâm'} • {todayEvents.length} sự kiện hôm nay • {nextAnnouncements.length} thông báo sắp tới
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => setIsRunning(value => !value)}
+              className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition ${
+                isRunning ? 'bg-rose-50 text-rose-700 border border-rose-200' : 'bg-blue-600 text-white hover:bg-blue-700'
+              }`}
+            >
+              {isRunning ? <PauseCircle size={18} /> : <PlayCircle size={18} />}
+              {isRunning ? 'Tạm dừng phát tự động' : 'Bật chế độ 24/24'}
+            </button>
+            <button
+              onClick={() => commitDevice({ isAutomationEnabled: !device.isAutomationEnabled })}
+              disabled={!canEdit}
+              className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-semibold ${
+                device.isAutomationEnabled ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 text-slate-500'
+              } ${!canEdit ? 'opacity-60 cursor-not-allowed' : ''}`}
+            >
+              <BellRing size={17} />
+              {device.isAutomationEnabled ? 'Automation đang bật' : 'Automation đang tắt'}
+            </button>
+          </div>
+        </div>
+
+        <div className="grid lg:grid-cols-[1fr_360px] gap-4 mt-4">
+          <div className="border border-slate-200 rounded-lg p-3">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 font-bold text-slate-800">
+                <CalendarClock size={18} className="text-blue-600" />
+                Hàng đợi hôm nay
+              </div>
+              <span className="text-xs font-semibold text-slate-500">{formatTime(now)}</span>
+            </div>
+            <div className="mt-3 divide-y divide-slate-100">
+              {nextAnnouncements.length === 0 && (
+                <p className="text-sm text-slate-500 py-6 text-center">Chưa có thông báo sắp tới trong hôm nay.</p>
+              )}
+              {nextAnnouncements.map(item => (
+                <div key={item.id} className="flex items-center gap-3 py-3">
+                  <div className="w-14 shrink-0 text-sm font-bold text-slate-700">{formatTime(item.time)}</div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-bold text-slate-900 truncate">{item.title}</p>
+                    <p className="text-xs text-slate-500 truncate">{item.detail || item.text || item.asset?.title}</p>
+                  </div>
+                  <span className={`text-[11px] font-bold px-2 py-1 rounded-full ${item.source === 'EVENT' ? 'bg-amber-50 text-amber-700' : 'bg-blue-50 text-blue-700'}`}>
+                    {item.source === 'EVENT' ? 'Sự kiện' : 'Cố định'}
+                  </span>
+                  <button
+                    onClick={() => playAnnouncement(item, true)}
+                    className="p-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50"
+                    title="Phát thử"
+                  >
+                    <PlayCircle size={17} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="border border-slate-200 rounded-lg overflow-hidden">
+            <div className="p-3 border-b border-slate-200 flex items-center gap-2 font-bold text-slate-800">
+              <Music2 size={18} className="text-emerald-600" />
+              Nhạc nền YouTube
+            </div>
+            {youtubeEmbed ? (
+              <iframe
+                title="YouTube fallback playlist"
+                src={youtubeEmbed}
+                className="w-full aspect-video bg-slate-100"
+                allow="autoplay; encrypted-media"
+              />
+            ) : (
+              <div className="aspect-video bg-slate-100 flex items-center justify-center text-sm text-slate-500">Chưa có playlist</div>
+            )}
+            <div className="p-3 space-y-2">
+              <label className="text-xs font-bold text-slate-500 uppercase">URL playlist/video</label>
+              <div className="flex gap-2">
+                <input
+                  value={device.youtubeFallbackUrl || ''}
+                  onChange={e => commitDevice({ youtubeFallbackUrl: e.target.value })}
+                  disabled={!canEdit}
+                  className="min-w-0 flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                  placeholder="https://www.youtube.com/playlist?list=..."
+                />
+                <button className="px-3 py-2 rounded-lg border border-slate-200 text-slate-600" title="Lưu URL">
+                  <Save size={17} />
+                </button>
+              </div>
+              <p className="text-xs text-slate-500">Khi không có thông báo đến giờ, tablet tiếp tục chạy playlist này.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div className="grid xl:grid-cols-[1fr_420px] gap-4">
+        <section className="bg-white border border-slate-200 rounded-lg p-4 space-y-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h3 className="font-bold text-slate-900 flex items-center gap-2"><FileAudio size={18} className="text-blue-600" /> Thư viện âm thanh</h3>
+              <p className="text-xs text-slate-500 mt-1">Upload MP3 ngắn, dán URL audio hoặc tạo thông báo bằng Voice AI miễn phí của trình duyệt.</p>
+            </div>
+            <div className="flex items-center gap-2 text-sm text-slate-600">
+              <Volume2 size={17} />
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.01}
+                value={device.volume ?? 0.8}
+                onChange={e => commitDevice({ volume: Number(e.target.value) })}
+                disabled={!canEdit}
+              />
+            </div>
+          </div>
+
+          <div className="grid md:grid-cols-3 gap-3">
+            <div className="border border-slate-200 rounded-lg p-3 space-y-2">
+              <div className="flex items-center gap-2 font-bold text-sm text-slate-800"><Upload size={16} /> Upload audio</div>
+              <input value={assetTitle} onChange={e => setAssetTitle(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" placeholder="Tên âm thanh" disabled={!canEdit} />
+              <label className={`flex items-center justify-center gap-2 border border-dashed rounded-lg px-3 py-5 text-sm font-semibold ${canEdit ? 'cursor-pointer hover:bg-slate-50 text-slate-600' : 'opacity-60 cursor-not-allowed text-slate-400'}`}>
+                <Upload size={18} />
+                Chọn MP3/WAV
+                <input type="file" accept="audio/*" className="hidden" onChange={e => handleUpload(e.target.files?.[0])} disabled={!canEdit} />
+              </label>
+            </div>
+
+            <div className="border border-slate-200 rounded-lg p-3 space-y-2">
+              <div className="flex items-center gap-2 font-bold text-sm text-slate-800"><Link size={16} /> Audio URL</div>
+              <input value={assetTitle} onChange={e => setAssetTitle(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" placeholder="Tên âm thanh" disabled={!canEdit} />
+              <input value={assetUrl} onChange={e => setAssetUrl(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" placeholder="https://...mp3" disabled={!canEdit} />
+              <button onClick={addUrlAsset} disabled={!canEdit} className="w-full inline-flex justify-center items-center gap-2 bg-slate-900 text-white rounded-lg px-3 py-2 text-sm font-bold disabled:opacity-50">
+                <Plus size={16} /> Thêm URL
+              </button>
+            </div>
+
+            <div className="border border-slate-200 rounded-lg p-3 space-y-2">
+              <div className="flex items-center gap-2 font-bold text-sm text-slate-800"><Wand2 size={16} /> Voice AI miễn phí</div>
+              <input value={voiceTitle} onChange={e => setVoiceTitle(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" placeholder="Tên voice" disabled={!canEdit} />
+              <textarea value={voiceText} onChange={e => setVoiceText(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm min-h-[76px]" placeholder="Nội dung cần đọc..." disabled={!canEdit} />
+              <button onClick={addVoiceAsset} disabled={!canEdit} className="w-full inline-flex justify-center items-center gap-2 bg-blue-600 text-white rounded-lg px-3 py-2 text-sm font-bold disabled:opacity-50">
+                <Mic2 size={16} /> Tạo voice
+              </button>
+            </div>
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-3">
+            {(device.audioAssets || []).map(asset => (
+              <div key={asset.id} className="border border-slate-200 rounded-lg p-3 flex items-start gap-3">
+                <div className="w-9 h-9 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center shrink-0">
+                  {asset.source === 'VOICE_AI' ? <Mic2 size={18} /> : <Headphones size={18} />}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="font-bold text-sm text-slate-900 truncate">{asset.title}</p>
+                  <p className="text-xs text-slate-500 truncate">{asset.fileName || asset.url || asset.transcript || asset.source}</p>
+                </div>
+                <button onClick={() => playAsset(asset)} className="p-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50" title="Phát thử">
+                  <PlayCircle size={17} />
+                </button>
+                <button onClick={() => removeAsset(asset.id)} disabled={!canEdit} className="p-2 rounded-lg border border-slate-200 text-rose-600 hover:bg-rose-50 disabled:opacity-40" title="Xóa">
+                  <Trash2 size={17} />
+                </button>
+              </div>
+            ))}
+            {(device.audioAssets || []).length === 0 && (
+              <div className="md:col-span-2 border border-dashed border-slate-200 rounded-lg py-8 text-center text-sm text-slate-500">
+                Chưa có file âm thanh. Có thể dùng Voice AI trực tiếp trong lịch phát.
+              </div>
+            )}
+          </div>
+        </section>
+
+        <section className="bg-white border border-slate-200 rounded-lg p-4 space-y-4">
+          <div>
+            <h3 className="font-bold text-slate-900 flex items-center gap-2"><CalendarClock size={18} className="text-emerald-600" /> Lịch phát cố định</h3>
+            <p className="text-xs text-slate-500 mt-1">Dùng cho nghỉ trưa, đóng cửa, chào đầu ngày, kết thúc ca.</p>
+          </div>
+
+          <div className="border border-slate-200 rounded-lg p-3 space-y-2">
+            <div className="grid grid-cols-[1fr_112px] gap-2">
+              <input value={scheduleTitle} onChange={e => setScheduleTitle(e.target.value)} className="border border-slate-200 rounded-lg px-3 py-2 text-sm" placeholder="Tên lịch" disabled={!canEdit} />
+              <input type="time" value={scheduleTime} onChange={e => setScheduleTime(e.target.value)} className="border border-slate-200 rounded-lg px-3 py-2 text-sm" disabled={!canEdit} />
+            </div>
+            <select value={selectedAssetId} onChange={e => setSelectedAssetId(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" disabled={!canEdit}>
+              <option value="">Đọc bằng Voice AI</option>
+              {(device.audioAssets || []).map(asset => <option key={asset.id} value={asset.id}>{asset.title}</option>)}
+            </select>
+            <textarea value={scheduleText} onChange={e => setScheduleText(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm min-h-[82px]" placeholder="Nội dung Voice AI nếu không chọn file..." disabled={!canEdit} />
+            <button onClick={addSchedule} disabled={!canEdit} className="w-full inline-flex justify-center items-center gap-2 bg-emerald-600 text-white rounded-lg px-3 py-2 text-sm font-bold disabled:opacity-50">
+              <Plus size={16} /> Thêm lịch phát
+            </button>
+          </div>
+
+          <div className="space-y-2">
+            {(device.schedules || []).map(schedule => (
+              <div key={schedule.id} className="border border-slate-200 rounded-lg p-3">
+                <div className="flex items-start gap-3">
+                  <div className="w-12 text-sm font-bold text-slate-800">{schedule.time}</div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-bold text-slate-900">{schedule.title}</p>
+                    <p className="text-xs text-slate-500 line-clamp-2">
+                      {(device.audioAssets || []).find(asset => asset.id === schedule.assetId)?.title || schedule.voiceText || 'Chưa có nội dung'}
+                    </p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={schedule.enabled}
+                    onChange={e => commitDevice({ schedules: (device.schedules || []).map(item => item.id === schedule.id ? { ...item, enabled: e.target.checked } : item) })}
+                    disabled={!canEdit}
+                    className="mt-1"
+                  />
+                  <button
+                    onClick={() => commitDevice({ schedules: (device.schedules || []).filter(item => item.id !== schedule.id) })}
+                    disabled={!canEdit}
+                    className="p-1.5 text-rose-600 disabled:opacity-40"
+                    title="Xóa lịch"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      </div>
+
+      <div className="grid xl:grid-cols-2 gap-4">
+        <section className="bg-white border border-slate-200 rounded-lg p-4">
+          <h3 className="font-bold text-slate-900 flex items-center gap-2"><BellRing size={18} className="text-amber-600" /> Rule theo sự kiện</h3>
+          <p className="text-xs text-slate-500 mt-1">Nếu hôm nay có sự kiện và có timeline Einstein House OS, hệ thống tự phát thông báo đoàn.</p>
+          <div className="mt-3 space-y-2">
+            {(device.eventRules || []).map(rule => (
+              <div key={rule.id} className="border border-slate-200 rounded-lg p-3 flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={rule.enabled}
+                  onChange={e => commitDevice({ eventRules: (device.eventRules || []).map(item => item.id === rule.id ? { ...item, enabled: e.target.checked } : item) })}
+                  disabled={!canEdit}
+                  className="mt-1"
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-bold text-slate-900">{rule.title}</p>
+                  <p className="text-xs text-slate-500 mt-0.5">{rule.trigger}{rule.blockKind ? ` • ${rule.blockKind}` : ''} • offset {rule.offsetMinutes} phút</p>
+                  <p className="text-xs text-slate-600 mt-1 line-clamp-2">{rule.messageTemplate}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="bg-white border border-slate-200 rounded-lg p-4">
+          <h3 className="font-bold text-slate-900 flex items-center gap-2"><Radio size={18} className="text-blue-600" /> Nhật ký phát gần đây</h3>
+          <div className="mt-3 divide-y divide-slate-100">
+            {(device.playbackLogs || []).slice(0, 10).map(log => (
+              <div key={log.id} className="py-3 flex gap-3">
+                <div className="w-14 text-xs font-bold text-slate-500">{formatTime(new Date(log.playedAt))}</div>
+                <div className="min-w-0">
+                  <p className="text-sm font-bold text-slate-900">{log.title}</p>
+                  <p className="text-xs text-slate-500 truncate">{log.source} • {log.detail}</p>
+                </div>
+              </div>
+            ))}
+            {(device.playbackLogs || []).length === 0 && (
+              <p className="text-sm text-slate-500 py-8 text-center">Chưa có lượt phát nào trong phiên vận hành.</p>
+            )}
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+};

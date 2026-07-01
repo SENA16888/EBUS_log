@@ -623,6 +623,8 @@ export type AccessPermission =
   | 'ELEARNING_EDIT'
   | 'EDUCATION_VIEW'
   | 'EDUCATION_EDIT'
+  | 'INTERACTIVE_DEVICES_VIEW'
+  | 'INTERACTIVE_DEVICES_EDIT'
   | 'LOGS_VIEW'
   | 'ACCESS_MANAGE';
 
@@ -785,6 +787,68 @@ export interface EducationActivity {
   updatedAt?: string;
 }
 
+export type InteractiveDeviceType = 'BROADCAST_CENTER' | 'PROJECTOR' | 'DISPLAY' | 'SOUND_SYSTEM';
+
+export type BroadcastAudioSource = 'UPLOAD' | 'URL' | 'VOICE_AI';
+
+export interface BroadcastAudioAsset {
+  id: string;
+  title: string;
+  source: BroadcastAudioSource;
+  category: 'MUSIC' | 'ANNOUNCEMENT' | 'SFX';
+  url?: string;
+  dataUrl?: string;
+  fileName?: string;
+  mimeType?: string;
+  transcript?: string;
+  createdAt: string;
+}
+
+export interface BroadcastSchedule {
+  id: string;
+  title: string;
+  time: string;
+  enabled: boolean;
+  assetId?: string;
+  voiceText?: string;
+  daysOfWeek?: number[];
+  priority: number;
+}
+
+export interface BroadcastEventRule {
+  id: string;
+  title: string;
+  enabled: boolean;
+  trigger: 'EVENT_START' | 'BLOCK_START' | 'BLOCK_END' | 'BEFORE_BLOCK_END';
+  offsetMinutes: number;
+  blockKind?: HouseOperationTimelineBlock['kind'];
+  messageTemplate: string;
+  priority: number;
+}
+
+export interface BroadcastPlaybackLog {
+  id: string;
+  playedAt: string;
+  title: string;
+  source: 'SCHEDULE' | 'EVENT' | 'MANUAL' | 'FALLBACK';
+  detail?: string;
+}
+
+export interface InteractiveDeviceProfile {
+  id: string;
+  name: string;
+  type: InteractiveDeviceType;
+  location: string;
+  isAutomationEnabled: boolean;
+  volume: number;
+  youtubeFallbackUrl?: string;
+  audioAssets: BroadcastAudioAsset[];
+  schedules: BroadcastSchedule[];
+  eventRules: BroadcastEventRule[];
+  playbackLogs: BroadcastPlaybackLog[];
+  updatedAt?: string;
+}
+
 export interface AppState {
   inventory: InventoryItem[];
   events: Event[];
@@ -804,4 +868,5 @@ export interface AppState {
   userAccounts?: UserAccount[];
   payrollAdjustments?: PayrollAdjustment[];
   educationActivities?: EducationActivity[];
+  interactiveDevices?: InteractiveDeviceProfile[];
 }

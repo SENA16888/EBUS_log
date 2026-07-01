@@ -14,8 +14,9 @@ import { Elearning } from './components/Elearning';
 import { AdminLogPage } from './components/AdminLogPage';
 import { EinsteinHouseOS } from './components/EinsteinHouseOS';
 import { EducationContentManager } from './components/EducationContentManager';
-import { AppState, InventoryItem, Event, EventStatus, Transaction, TransactionType, ComboPackage, Employee, Quotation, EventStaffAllocation, EventExpense, EventAdvanceRequest, LogEntry, ChecklistDirection, ChecklistStatus, ChecklistSignature, EventChecklist, LearningAttempt, LearningProfile, AccessPermission, UserAccount, LearningTrack, InventoryReceipt, InventoryReceiptItem, ActiveSession, PayrollAdjustment, InventoryAuditSession, InventoryAuditItem, InventoryAuditBaseline, EducationActivity, EducationLessonLink } from './types';
-import { MOCK_INVENTORY, MOCK_EVENTS, MOCK_TRANSACTIONS, MOCK_PACKAGES, MOCK_EMPLOYEES, MOCK_LEARNING_TRACKS, MOCK_CAREER_RANKS, DEFAULT_USER_ACCOUNTS, MOCK_INVENTORY_RECEIPTS, MOCK_EDUCATION_ACTIVITIES } from './constants';
+import { InteractiveDeviceManager } from './components/InteractiveDeviceManager';
+import { AppState, InventoryItem, Event, EventStatus, Transaction, TransactionType, ComboPackage, Employee, Quotation, EventStaffAllocation, EventExpense, EventAdvanceRequest, LogEntry, ChecklistDirection, ChecklistStatus, ChecklistSignature, EventChecklist, LearningAttempt, LearningProfile, AccessPermission, UserAccount, LearningTrack, InventoryReceipt, InventoryReceiptItem, ActiveSession, PayrollAdjustment, InventoryAuditSession, InventoryAuditItem, InventoryAuditBaseline, EducationActivity, EducationLessonLink, InteractiveDeviceProfile } from './types';
+import { MOCK_INVENTORY, MOCK_EVENTS, MOCK_TRANSACTIONS, MOCK_PACKAGES, MOCK_EMPLOYEES, MOCK_LEARNING_TRACKS, MOCK_CAREER_RANKS, DEFAULT_USER_ACCOUNTS, MOCK_INVENTORY_RECEIPTS, MOCK_EDUCATION_ACTIVITIES, MOCK_INTERACTIVE_DEVICES } from './constants';
 import { MessageSquare } from 'lucide-react';
 import { ensureCollectionModelInitialized, initializeAuth, loadCollectionState, subscribeToSessions, setSessionOnline, setSessionOffline, syncCollectionStateDiff, saveLearningUserState, subscribeToLearningUserState, deleteLearningUserState, subscribeToLearningUsers } from './services/firebaseService';
 import { ensureInventoryBarcodes, ensureItemBarcode, findDuplicateBarcodeItem, findItemByBarcode, generateBarcode, normalizeBarcode } from './services/barcodeService';
@@ -26,7 +27,7 @@ import { LoginModal } from './components/LoginModal';
 
 const generateId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-type AppTab = 'dashboard' | 'inventory' | 'stocktake' | 'events' | 'house' | 'education' | 'packages' | 'employees' | 'quotations' | 'sales' | 'elearning' | 'logs';
+type AppTab = 'dashboard' | 'inventory' | 'stocktake' | 'events' | 'house' | 'education' | 'interactiveDevices' | 'packages' | 'employees' | 'quotations' | 'sales' | 'elearning' | 'logs';
 
 const getSessionId = () => {
   try {
@@ -91,7 +92,8 @@ const createInitialAppState = (): AppState => ({
   careerRanks: MOCK_CAREER_RANKS,
   userAccounts: DEFAULT_USER_ACCOUNTS,
   payrollAdjustments: [],
-  educationActivities: MOCK_EDUCATION_ACTIVITIES
+  educationActivities: MOCK_EDUCATION_ACTIVITIES,
+  interactiveDevices: MOCK_INTERACTIVE_DEVICES
 });
 
 const buildLearningProfileForUser = (
@@ -207,7 +209,8 @@ const App: React.FC = () => {
       logs: normalizedLogs,
       userAccounts: normalizedAccounts,
       payrollAdjustments: state.payrollAdjustments || [],
-      educationActivities: state.educationActivities && state.educationActivities.length > 0 ? state.educationActivities : MOCK_EDUCATION_ACTIVITIES
+      educationActivities: state.educationActivities && state.educationActivities.length > 0 ? state.educationActivities : MOCK_EDUCATION_ACTIVITIES,
+      interactiveDevices: state.interactiveDevices && state.interactiveDevices.length > 0 ? state.interactiveDevices : MOCK_INTERACTIVE_DEVICES
     };
   };
 
@@ -225,6 +228,7 @@ const App: React.FC = () => {
   const canViewHouseOS = canViewEvents;
   const canViewElearning = can('ELEARNING_VIEW');
   const canViewEducation = can('EDUCATION_VIEW');
+  const canViewInteractiveDevices = can('INTERACTIVE_DEVICES_VIEW');
   const canViewEmployees = can('EMPLOYEES_VIEW');
   const isElearningAdmin = currentUser?.role === 'ADMIN' || currentUser?.role === 'MANAGER';
   const firstAccessibleTab: AppTab =
@@ -232,6 +236,7 @@ const App: React.FC = () => {
     (canViewEvents && 'events') ||
     (canViewHouseOS && 'house') ||
     (canViewEducation && 'education') ||
+    (canViewInteractiveDevices && 'interactiveDevices') ||
     (canViewInventory && 'inventory') ||
     (canViewStocktake && 'stocktake') ||
     (canViewPackages && 'packages') ||
@@ -332,6 +337,7 @@ const App: React.FC = () => {
       events: canViewEvents,
       house: canViewHouseOS,
       education: canViewEducation,
+      interactiveDevices: canViewInteractiveDevices,
       packages: canViewPackages,
       employees: canViewEmployees,
       quotations: canViewQuotations,
@@ -352,6 +358,7 @@ const App: React.FC = () => {
     canViewEvents,
     canViewHouseOS,
     canViewEducation,
+    canViewInteractiveDevices,
     canViewPackages,
     canViewQuotations,
     canViewSales,
@@ -731,6 +738,11 @@ const App: React.FC = () => {
   const handleUpdateEducationActivities = (activities: EducationActivity[]) => {
     setAppState(prev => ({ ...prev, educationActivities: activities }));
     addLog(`Cập nhật thư viện nội dung giáo dục (${activities.length} hoạt động)`, 'INFO');
+  };
+
+  const handleUpdateInteractiveDevices = (devices: InteractiveDeviceProfile[]) => {
+    setAppState(prev => ({ ...prev, interactiveDevices: devices }));
+    addLog('Cập nhật cấu hình Thiết bị tương tác / phát thanh trung tâm', 'INFO');
   };
 
   const handleOpenEducationLesson = (link: EducationLessonLink) => {
@@ -1957,6 +1969,7 @@ const App: React.FC = () => {
       canViewEvents={canViewEvents}
       canViewHouseOS={canViewHouseOS}
       canViewEducation={canViewEducation}
+      canViewInteractiveDevices={canViewInteractiveDevices}
       canViewElearning={canViewElearning}
       canViewEmployees={canViewEmployees}
       onOpenAccess={() => setIsAccessOpen(true)}
@@ -2047,6 +2060,14 @@ const App: React.FC = () => {
           canEdit={can('EDUCATION_EDIT')}
           onUpdateActivities={guard('EDUCATION_EDIT', handleUpdateEducationActivities)}
           onOpenLesson={handleOpenEducationLesson}
+        />
+      )}
+      {activeTab === 'interactiveDevices' && canViewInteractiveDevices && (
+        <InteractiveDeviceManager
+          devices={appState.interactiveDevices || []}
+          events={appState.events}
+          canEdit={can('INTERACTIVE_DEVICES_EDIT')}
+          onUpdateDevices={guard('INTERACTIVE_DEVICES_EDIT', handleUpdateInteractiveDevices)}
         />
       )}
       {activeTab === 'elearning' && canViewElearning && (

@@ -2,15 +2,15 @@
 import React from 'react';
 import { 
   LayoutDashboard, Package, CalendarDays, 
-  Settings, Layers, Users, FileText, BookOpen, ShoppingBag, LucideIcon, GraduationCap, LogOut, ClipboardList, ScanBarcode, Building2, LibraryBig
+  Settings, Layers, Users, FileText, BookOpen, ShoppingBag, LucideIcon, GraduationCap, LogOut, ClipboardList, ScanBarcode, Building2, LibraryBig, RadioTower
 } from 'lucide-react';
 import { ActivityLog } from './ActivityLog';
 import { LogEntry, UserAccount } from '../types';
 
 interface LayoutProps {
   children: React.ReactNode;
-  activeTab: 'dashboard' | 'inventory' | 'stocktake' | 'events' | 'house' | 'education' | 'packages' | 'employees' | 'quotations' | 'sales' | 'elearning' | 'logs';
-  onTabChange: (tab: 'dashboard' | 'inventory' | 'stocktake' | 'events' | 'house' | 'education' | 'packages' | 'employees' | 'quotations' | 'sales' | 'elearning' | 'logs') => void;
+  activeTab: 'dashboard' | 'inventory' | 'stocktake' | 'events' | 'house' | 'education' | 'interactiveDevices' | 'packages' | 'employees' | 'quotations' | 'sales' | 'elearning' | 'logs';
+  onTabChange: (tab: 'dashboard' | 'inventory' | 'stocktake' | 'events' | 'house' | 'education' | 'interactiveDevices' | 'packages' | 'employees' | 'quotations' | 'sales' | 'elearning' | 'logs') => void;
   logs: LogEntry[];
   currentUser?: UserAccount | null;
   canManageAccess?: boolean;
@@ -24,6 +24,7 @@ interface LayoutProps {
   canViewEvents?: boolean;
   canViewHouseOS?: boolean;
   canViewEducation?: boolean;
+  canViewInteractiveDevices?: boolean;
   canViewElearning?: boolean;
   canViewEmployees?: boolean;
   onOpenAccess?: () => void;
@@ -47,6 +48,7 @@ export const Layout: React.FC<LayoutProps> = ({
   canViewEvents = true,
   canViewHouseOS = true,
   canViewEducation = true,
+  canViewInteractiveDevices = true,
   canViewElearning = true,
   canViewEmployees = true, 
   onOpenAccess, 
@@ -62,6 +64,7 @@ export const Layout: React.FC<LayoutProps> = ({
     { key: 'events', label: 'Sự kiện', icon: CalendarDays },
     { key: 'house', label: 'Einstein House OS', icon: Building2 },
     { key: 'education', label: 'Nội dung GD', icon: LibraryBig },
+    { key: 'interactiveDevices', label: 'Thiết bị tương tác', icon: RadioTower },
     { key: 'employees', label: 'Nhân sự', icon: Users },
     { key: 'elearning', label: 'Elearning', icon: GraduationCap }
   ].filter(tab =>
@@ -74,6 +77,7 @@ export const Layout: React.FC<LayoutProps> = ({
     (tab.key !== 'events' || canViewEvents) &&
     (tab.key !== 'house' || canViewHouseOS) &&
     (tab.key !== 'education' || canViewEducation) &&
+    (tab.key !== 'interactiveDevices' || canViewInteractiveDevices) &&
     (tab.key !== 'elearning' || canViewElearning) &&
     (tab.key !== 'employees' || canViewEmployees)
   );

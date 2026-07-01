@@ -1,5 +1,5 @@
 
-import { InventoryItem, Event, Transaction, EventStatus, TransactionType, ComboPackage, Employee, LearningTrack, LearningProfile, CareerRank, UserAccount, InventoryReceipt, EducationActivity } from './types';
+import { InventoryItem, Event, Transaction, EventStatus, TransactionType, ComboPackage, Employee, LearningTrack, LearningProfile, CareerRank, UserAccount, InventoryReceipt, EducationActivity, InteractiveDeviceProfile } from './types';
 import { getDefaultPermissionsForRole } from './services/accessControl';
 
 export const MOCK_INVENTORY: InventoryItem[] = [];
@@ -8,6 +8,113 @@ export const MOCK_EMPLOYEES: Employee[] = [];
 export const MOCK_EVENTS: Event[] = [];
 export const MOCK_TRANSACTIONS: Transaction[] = [];
 export const MOCK_INVENTORY_RECEIPTS: InventoryReceipt[] = [];
+export const MOCK_INTERACTIVE_DEVICES: InteractiveDeviceProfile[] = [
+  {
+    id: 'eh-broadcast-center',
+    name: 'Phát thanh trung tâm Einstein House',
+    type: 'BROADCAST_CENTER',
+    location: 'Einstein House',
+    isAutomationEnabled: true,
+    volume: 0.82,
+    youtubeFallbackUrl: 'https://www.youtube.com/embed/videoseries?list=PLFgquLnL59alCl_2TQvOiD5Vgm1hCaGSI',
+    audioAssets: [],
+    schedules: [
+      {
+        id: 'bc-welcome',
+        title: 'Âm thanh chào đón đầu ngày',
+        time: '08:00',
+        enabled: true,
+        voiceText: 'Einstein House xin chào. Chúc mọi người một ngày trải nghiệm khoa học thật nhiều năng lượng.',
+        priority: 10
+      },
+      {
+        id: 'bc-lunch',
+        title: 'Thông báo nghỉ trưa',
+        time: '11:30',
+        enabled: true,
+        voiceText: 'Đã đến giờ nghỉ trưa. Các khu trải nghiệm tạm dừng hoạt động và sẽ tiếp tục theo lịch sau giờ nghỉ.',
+        priority: 9
+      },
+      {
+        id: 'bc-end-shift',
+        title: 'Thông báo kết thúc ca làm',
+        time: '17:30',
+        enabled: true,
+        voiceText: 'Ca vận hành hôm nay đã kết thúc. Vui lòng kiểm tra thiết bị, tắt nguồn và bàn giao khu vực theo checklist.',
+        priority: 9
+      },
+      {
+        id: 'bc-closing',
+        title: 'Thông báo đóng cửa',
+        time: '21:00',
+        enabled: true,
+        voiceText: 'Einstein House chuẩn bị đóng cửa. Cảm ơn quý khách và hẹn gặp lại trong những trải nghiệm tiếp theo.',
+        priority: 8
+      }
+    ],
+    eventRules: [
+      {
+        id: 'bc-event-start',
+        title: 'Chào đoàn theo sự kiện',
+        enabled: true,
+        trigger: 'EVENT_START',
+        offsetMinutes: 0,
+        messageTemplate: 'Einstein House xin chào đoàn {{eventName}}. Chúc các bạn có một hành trình khám phá khoa học thật vui và an toàn.',
+        priority: 20
+      },
+      {
+        id: 'bc-block-start',
+        title: 'Thông báo đổi trạm buổi sáng',
+        enabled: true,
+        trigger: 'BLOCK_START',
+        offsetMinutes: 0,
+        blockKind: 'EXPERIENCE_AM',
+        messageTemplate: 'Đã đến giờ di chuyển trạm trải nghiệm. Các nhóm vui lòng đi theo hướng dẫn viên đến khu vực tiếp theo.',
+        priority: 18
+      },
+      {
+        id: 'bc-block-start-pm',
+        title: 'Thông báo đổi trạm buổi chiều',
+        enabled: true,
+        trigger: 'BLOCK_START',
+        offsetMinutes: 0,
+        blockKind: 'EXPERIENCE_PM',
+        messageTemplate: 'Đã đến giờ di chuyển trạm trải nghiệm. Các nhóm vui lòng đi theo hướng dẫn viên đến khu vực tiếp theo.',
+        priority: 18
+      },
+      {
+        id: 'bc-before-block-end',
+        title: 'Sắp hết giờ trải nghiệm',
+        enabled: true,
+        trigger: 'BEFORE_BLOCK_END',
+        offsetMinutes: -5,
+        messageTemplate: 'Còn 5 phút nữa là kết thúc lượt trải nghiệm hiện tại. Các nhóm vui lòng hoàn thiện hoạt động và chuẩn bị di chuyển.',
+        priority: 17
+      },
+      {
+        id: 'bc-lunch-event',
+        title: 'Nghỉ trưa theo timeline sự kiện',
+        enabled: true,
+        trigger: 'BLOCK_START',
+        offsetMinutes: 0,
+        blockKind: 'LUNCH',
+        messageTemplate: 'Đã đến giờ ăn trưa. Các đoàn vui lòng di chuyển theo hướng dẫn của ban tổ chức.',
+        priority: 19
+      },
+      {
+        id: 'bc-event-closing',
+        title: 'Kết thúc thời gian trải nghiệm',
+        enabled: true,
+        trigger: 'BLOCK_START',
+        offsetMinutes: 0,
+        blockKind: 'CLOSING',
+        messageTemplate: 'Thời gian trải nghiệm tại Einstein House đã kết thúc. Cảm ơn thầy cô và các bạn đã đồng hành cùng chương trình.',
+        priority: 20
+      }
+    ],
+    playbackLogs: []
+  }
+];
 export const MOCK_EDUCATION_ACTIVITIES: EducationActivity[] = [
   {
     id: 'edu-robot-alpha-1e',

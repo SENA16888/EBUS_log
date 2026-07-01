@@ -1,6 +1,6 @@
 import { AccessPermission, AccessRole, UserAccount } from '../types';
 
-export const ACCESS_PERMISSION_VERSION = 3;
+export const ACCESS_PERMISSION_VERSION = 4;
 
 export const ACCESS_PERMISSION_GROUPS: { group: string; items: { key: AccessPermission; label: string }[] }[] = [
   {
@@ -72,6 +72,13 @@ export const ACCESS_PERMISSION_GROUPS: { group: string; items: { key: AccessPerm
     ]
   },
   {
+    group: 'Thiet bi tuong tac',
+    items: [
+      { key: 'INTERACTIVE_DEVICES_VIEW', label: 'Xem thiet bi tuong tac' },
+      { key: 'INTERACTIVE_DEVICES_EDIT', label: 'Cau hinh phat thanh/thiet bi' }
+    ]
+  },
+  {
     group: 'He thong',
     items: [
       { key: 'LOGS_VIEW', label: 'Xem nhat ky he thong' },
@@ -92,7 +99,8 @@ const LEGACY_ROLE_VIEW_PERMISSIONS: Record<Exclude<AccessRole, 'ADMIN'>, AccessP
     'QUOTATIONS_VIEW',
     'SALES_VIEW',
     'ELEARNING_VIEW',
-    'EDUCATION_VIEW'
+    'EDUCATION_VIEW',
+    'INTERACTIVE_DEVICES_VIEW'
   ],
   STAFF: ['ELEARNING_VIEW']
 };
@@ -105,7 +113,8 @@ const MODULE_VIEW_DEPENDENCIES: { view: AccessPermission; related: AccessPermiss
   { view: 'QUOTATIONS_VIEW', related: ['QUOTATIONS_EDIT', 'QUOTATIONS_DELETE'] },
   { view: 'SALES_VIEW', related: ['SALES_EDIT', 'SALES_DELETE'] },
   { view: 'ELEARNING_VIEW', related: ['ELEARNING_EDIT'] },
-  { view: 'EDUCATION_VIEW', related: ['EDUCATION_EDIT'] }
+  { view: 'EDUCATION_VIEW', related: ['EDUCATION_EDIT'] },
+  { view: 'INTERACTIVE_DEVICES_VIEW', related: ['INTERACTIVE_DEVICES_EDIT'] }
 ];
 
 export const normalizePhone = (value: string) => value.replace(/[^0-9]/g, '');
@@ -145,6 +154,8 @@ export const normalizePermissionsForRole = (
   if (isLegacyPermissions && role === 'MANAGER') {
     nextPermissions.add('EDUCATION_VIEW');
     nextPermissions.add('EDUCATION_EDIT');
+    nextPermissions.add('INTERACTIVE_DEVICES_VIEW');
+    nextPermissions.add('INTERACTIVE_DEVICES_EDIT');
   }
 
   MODULE_VIEW_DEPENDENCIES.forEach(({ view, related }) => {

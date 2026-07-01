@@ -45,7 +45,8 @@ export const PERSISTED_STATE_KEYS = [
   'careerRanks',
   'userAccounts',
   'payrollAdjustments',
-  'educationActivities'
+  'educationActivities',
+  'interactiveDevices'
 ] as const;
 
 export type PersistedStateKey = typeof PERSISTED_STATE_KEYS[number];
@@ -66,7 +67,8 @@ const PERSISTED_COLLECTIONS: Record<PersistedStateKey, string> = {
   careerRanks: 'careerRanks',
   userAccounts: 'userAccounts',
   payrollAdjustments: 'payrollAdjustments',
-  educationActivities: 'educationActivities'
+  educationActivities: 'educationActivities',
+  interactiveDevices: 'interactiveDevices'
 };
 
 const COLLECTION_MODEL_META_PATH = ['systemMeta', 'collectionModel'] as const;
