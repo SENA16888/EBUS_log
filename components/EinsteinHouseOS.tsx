@@ -895,6 +895,19 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
     });
   };
 
+  const removeTimelineBlock = (blockId: string) => {
+    saveOperation(current => {
+      if (current.timeline.length <= 1) return current;
+      const target = current.timeline.find(block => block.id === blockId);
+      const timeline = current.timeline.filter(block => block.id !== blockId);
+      const normalizedTimeline =
+        target?.sectionCode === 'D'
+          ? timeline.map(block => block.sectionCode === 'C1' ? { ...block, sectionCode: 'C' as const, title: 'Hoạt động trải nghiệm sáng' } : block)
+          : timeline;
+      return { ...current, timeline: recalcStructuredTimeline(selectedEvent!, current.stations, normalizedTimeline) };
+    });
+  };
+
   const regenerateRotations = () => {
     saveOperation(current => ({
       ...current,
@@ -1357,9 +1370,14 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                         <div className="grid grid-cols-1 md:grid-cols-[48px_92px_92px_minmax(0,1fr)] gap-2">
                           <div className="flex items-center justify-between gap-1 rounded-lg bg-slate-100 text-slate-700 text-xs font-black px-2">
                             <span>{block.sectionCode || '-'}</span>
-                            <span className="flex flex-col leading-none">
-                              <button type="button" disabled={!canEdit} onClick={() => moveTimelineBlock(block.id, -1)} className="text-[10px] text-slate-400 hover:text-slate-800 disabled:hover:text-slate-400">↑</button>
-                              <button type="button" disabled={!canEdit} onClick={() => moveTimelineBlock(block.id, 1)} className="text-[10px] text-slate-400 hover:text-slate-800 disabled:hover:text-slate-400">↓</button>
+                            <span className="flex items-center gap-1 leading-none">
+                              <span className="flex flex-col">
+                                <button type="button" disabled={!canEdit} onClick={() => moveTimelineBlock(block.id, -1)} className="text-[10px] text-slate-400 hover:text-slate-800 disabled:hover:text-slate-400">↑</button>
+                                <button type="button" disabled={!canEdit} onClick={() => moveTimelineBlock(block.id, 1)} className="text-[10px] text-slate-400 hover:text-slate-800 disabled:hover:text-slate-400">↓</button>
+                              </span>
+                              <button type="button" disabled={!canEdit || operation.timeline.length <= 1} onClick={() => removeTimelineBlock(block.id)} className="text-slate-300 hover:text-rose-600 disabled:hover:text-slate-300" title="Xóa mốc">
+                                <Trash2 size={12} />
+                              </button>
                             </span>
                           </div>
                           <input type="time" value={block.startTime} disabled={!canEdit} onChange={e => updateTimeline(block.id, { startTime: e.target.value })} className="border rounded-lg px-2 py-2 text-sm" />
