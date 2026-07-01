@@ -196,12 +196,28 @@ const getTeacherCount = (event: Event) => event.houseOperation?.teacherCount || 
 
 const makeId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
+const getExperienceStations = (stations: HouseOperationStation[], timeline: HouseOperationTimelineBlock[] = []) => {
+  const commonStationIds = new Set(timeline.filter(block => block.kind === 'COMMON' && block.stationId).map(block => block.stationId as string));
+  return stations.filter(station => !commonStationIds.has(station.id));
+};
+
+const getDefaultRoundDuration = (stations: HouseOperationStation[]) =>
+  Math.max(20, ...stations.map(station => station.durationMinutes || 20));
+
 const buildTimeline = (event: Event, stations: HouseOperationStation[]): HouseOperationTimelineBlock[] => {
   const start = getProgramStart(event);
   let cursor = timeToMinutes(start);
+  const commonShow = stations.find(station => station.category === 'SHOW');
+  const experienceStations = commonShow ? stations.filter(station => station.id !== commonShow.id) : stations;
+  const roundDuration = getDefaultRoundDuration(experienceStations);
+  const amStationCount = Math.min(3, Math.max(1, experienceStations.length || 1));
+  const pmStationCount = Math.min(3, Math.max(0, experienceStations.length - amStationCount));
+
   const blocks: HouseOperationTimelineBlock[] = [
     {
       id: makeId('eh-time'),
+      sectionCode: 'A',
+      kind: 'OPENING',
       title: 'Đón đoàn - check in',
       startTime: minutesToTime(cursor),
       endTime: minutesToTime(cursor + 15),
@@ -210,10 +226,11 @@ const buildTimeline = (event: Event, stations: HouseOperationStation[]): HouseOp
   ];
   cursor += 15;
 
-  const commonShow = stations.find(station => station.category === 'SHOW');
   if (commonShow) {
     blocks.push({
       id: makeId('eh-time'),
+      sectionCode: 'B',
+      kind: 'COMMON',
       title: commonShow.name,
       startTime: minutesToTime(cursor),
       endTime: minutesToTime(cursor + commonShow.durationMinutes),
@@ -224,17 +241,49 @@ const buildTimeline = (event: Event, stations: HouseOperationStation[]): HouseOp
     cursor += commonShow.durationMinutes;
   }
 
+  const amDuration = amStationCount * roundDuration + Math.max(0, amStationCount - 1) * 5;
   blocks.push({
     id: makeId('eh-time'),
-    title: 'Chia nhóm - chuyển trạm',
+    sectionCode: 'C',
+    kind: 'EXPERIENCE_AM',
+    title: 'Hoạt động trải nghiệm sáng',
     startTime: minutesToTime(cursor),
-    endTime: minutesToTime(cursor + 10),
-    note: 'Tập trung HDV, chia nhóm màu và bắt đầu timeline hoạt động riêng.'
+    endTime: minutesToTime(cursor + amDuration),
+    stationCount: amStationCount,
+    note: 'Các nhóm chạy timeline riêng theo màu, không trùng trạm cùng mốc giờ.'
   });
-  cursor += 10;
+  cursor += amDuration;
 
   blocks.push({
     id: makeId('eh-time'),
+    sectionCode: 'E',
+    kind: 'LUNCH',
+    title: 'Nghỉ trưa - ăn và ngủ',
+    startTime: minutesToTime(cursor),
+    endTime: '13:30',
+    note: 'Giờ kết thúc nghỉ trưa nhập tay; đây là giờ bắt đầu hoạt động chiều.'
+  });
+  cursor = Math.max(timeToMinutes('13:30'), cursor);
+
+  if (pmStationCount > 0) {
+    const pmDuration = pmStationCount * roundDuration + Math.max(0, pmStationCount - 1) * 5;
+    blocks.push({
+      id: makeId('eh-time'),
+      sectionCode: 'F',
+      kind: 'EXPERIENCE_PM',
+      title: 'Hoạt động trải nghiệm chiều',
+      startTime: minutesToTime(cursor),
+      endTime: minutesToTime(cursor + pmDuration),
+      stationCount: pmStationCount,
+      note: 'Các nhóm tiếp tục xoay trạm theo timeline riêng.'
+    });
+    cursor += pmDuration;
+  }
+
+  blocks.push({
+    id: makeId('eh-time'),
+    sectionCode: 'G',
+    kind: 'CLOSING',
     title: 'Tổng kết - trả đoàn',
     startTime: minutesToTime(cursor),
     endTime: minutesToTime(cursor + 15),
@@ -242,6 +291,44 @@ const buildTimeline = (event: Event, stations: HouseOperationStation[]): HouseOp
   });
 
   return blocks;
+};
+
+const recalcStructuredTimeline = (event: Event, stations: HouseOperationStation[], sourceTimeline: HouseOperationTimelineBlock[]) => {
+  let cursor = timeToMinutes(sourceTimeline[0]?.startTime || getProgramStart(event));
+  const experienceStations = getExperienceStations(stations, sourceTimeline);
+  const roundDuration = getDefaultRoundDuration(experienceStations);
+
+  return sourceTimeline.map(block => {
+    const next = { ...block };
+    next.startTime = minutesToTime(cursor);
+    next.warning = undefined;
+
+    if (next.kind === 'EXPERIENCE_AM' || next.kind === 'EXPERIENCE_PM') {
+      const stationCount = Math.max(0, next.stationCount || 0);
+      const duration = stationCount > 0 ? stationCount * roundDuration + Math.max(0, stationCount - 1) * 5 : 0;
+      next.endTime = minutesToTime(cursor + duration);
+      cursor += duration;
+      return next;
+    }
+
+    if (next.kind === 'LUNCH') {
+      const targetEnd = timeToMinutes(next.endTime || minutesToTime(cursor + 60));
+      if (targetEnd <= cursor) {
+        next.warning = 'Giờ kết thúc nghỉ trưa đang cắn vào hoạt động trước. Hãy tăng giờ kết thúc hoặc giảm số trạm buổi sáng.';
+        next.endTime = minutesToTime(cursor + 60);
+        cursor += 60;
+      } else {
+        next.startTime = minutesToTime(cursor);
+        cursor = targetEnd;
+      }
+      return next;
+    }
+
+    const duration = Math.max(0, timeToMinutes(next.endTime) - timeToMinutes(next.startTime)) || 10;
+    next.endTime = minutesToTime(cursor + duration);
+    cursor += duration;
+    return next;
+  });
 };
 
 const buildRotations = (studentCount: number, stations: HouseOperationStation[], requestedGroupCount?: number): HouseOperationRotationGroup[] => {
@@ -257,8 +344,8 @@ const buildRotations = (studentCount: number, stations: HouseOperationStation[],
 };
 
 const getActivityStartTime = (timeline: HouseOperationTimelineBlock[], event: Event) => {
-  const splitBlock = [...timeline].reverse().find(block => /chia|chuyển trạm|chuyen tram|bắt đầu|bat dau/i.test(`${block.title} ${block.note || ''}`));
-  if (splitBlock?.endTime) return splitBlock.endTime;
+  const firstExperience = timeline.find(block => block.kind === 'EXPERIENCE_AM' || block.kind === 'EXPERIENCE_PM');
+  if (firstExperience?.startTime) return firstExperience.startTime;
   return timeline[0]?.endTime || addMinutes(getProgramStart(event), 15);
 };
 
@@ -269,39 +356,48 @@ const buildGroupActivityTimelines = (
   rotations: HouseOperationRotationGroup[]
 ) => {
   const stationMap = new Map(stations.map(station => [station.id, station]));
-  const maxRounds = Math.max(0, ...rotations.map(group => group.route.length));
-  let cursor = timeToMinutes(getActivityStartTime(timeline, event));
-  const roundStarts: number[] = [];
-  const roundDurations = Array.from({ length: maxRounds }).map((_, roundIndex) => {
-    roundStarts.push(cursor);
-    const duration = Math.max(
-      20,
-      ...rotations.map(group => {
-        const station = stationMap.get(group.route[roundIndex]);
-        return station?.durationMinutes || 20;
-      })
-    );
-    cursor += duration + 5;
-    return duration;
-  });
+  const experienceStationIds = getExperienceStations(stations, timeline).map(station => station.id);
+  const commonBlocks = timeline.filter(block => block.kind === 'COMMON');
+  const experienceBlocks = timeline.filter(block => block.kind === 'EXPERIENCE_AM' || block.kind === 'EXPERIENCE_PM');
 
   return rotations.map(group => {
-    const blocks = Array.from({ length: maxRounds }).map((_, roundIndex) => {
-      const stationId = group.route[roundIndex];
-      const station = stationId ? stationMap.get(stationId) : undefined;
-      const start = roundStarts[roundIndex] || cursor;
-      const duration = roundDurations[roundIndex] || station?.durationMinutes || 20;
-      const block = {
-        id: `${group.id}-${roundIndex}`,
-        title: station?.name || 'Nghỉ/chờ lượt',
-        startTime: minutesToTime(start),
-        endTime: minutesToTime(start + duration),
-        stationId,
-        room: station?.areaDescription || station?.room,
-        note: station?.packageName
-      };
-      return block;
-    });
+    const groupRoute = experienceStationIds.map((_, routeIndex) => experienceStationIds[(routeIndex + rotations.indexOf(group)) % experienceStationIds.length]).filter(Boolean);
+    let routeCursor = 0;
+    const blocks = [
+      ...commonBlocks.map(block => {
+        const station = block.stationId ? stationMap.get(block.stationId) : undefined;
+        return {
+          id: `${group.id}-${block.id}`,
+          title: block.title,
+          startTime: block.startTime,
+          endTime: block.endTime,
+          stationId: block.stationId,
+          room: block.room || station?.areaDescription || station?.room,
+          note: 'Hoạt động chung toàn đoàn'
+        };
+      }),
+      ...experienceBlocks.flatMap(block => {
+        const stationCount = Math.max(0, block.stationCount || 0);
+        let cursor = timeToMinutes(block.startTime);
+        return Array.from({ length: stationCount }).map((_, roundIndex) => {
+          const stationId = groupRoute[routeCursor % Math.max(1, groupRoute.length)];
+          routeCursor += 1;
+          const station = stationId ? stationMap.get(stationId) : undefined;
+          const duration = station?.durationMinutes || getDefaultRoundDuration(stations);
+          const item = {
+            id: `${group.id}-${block.id}-${roundIndex}`,
+            title: station?.name || 'Nghỉ/chờ lượt',
+            startTime: minutesToTime(cursor),
+            endTime: minutesToTime(cursor + duration),
+            stationId,
+            room: station?.areaDescription || station?.room,
+            note: `${block.sectionCode || ''} • ${station?.packageName || block.title}`
+          };
+          cursor += duration + 5;
+          return item;
+        });
+      })
+    ].sort((a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime));
     return { ...group, blocks };
   });
 };
@@ -615,7 +711,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
       return {
         ...current,
         stations,
-        timeline: buildTimeline(selectedEvent!, stations),
+        timeline: recalcStructuredTimeline(selectedEvent!, stations, current.timeline),
         rotations: buildRotations(current.studentCount || getStudentCount(selectedEvent!), stations, current.groupCount)
       };
     });
@@ -627,7 +723,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
       return {
         ...current,
         stations,
-        timeline: buildTimeline(selectedEvent!, stations),
+        timeline: recalcStructuredTimeline(selectedEvent!, stations, current.timeline),
         rotations: buildRotations(current.studentCount || getStudentCount(selectedEvent!), stations, current.groupCount)
       };
     });
@@ -639,7 +735,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
       return {
         ...current,
         stations,
-        timeline: buildTimeline(selectedEvent!, stations),
+        timeline: recalcStructuredTimeline(selectedEvent!, stations, current.timeline),
         rotations: buildRotations(current.studentCount || getStudentCount(selectedEvent!), stations, current.groupCount)
       };
     });
@@ -657,7 +753,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
       return {
         ...current,
         stations,
-        timeline: buildTimeline(selectedEvent!, stations),
+        timeline: recalcStructuredTimeline(selectedEvent!, stations, current.timeline),
         rotations: buildRotations(current.studentCount || getStudentCount(selectedEvent!), stations, current.groupCount)
       };
     });
@@ -686,7 +782,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
       return {
         ...current,
         stations,
-        timeline: buildTimeline(selectedEvent!, stations),
+        timeline: recalcStructuredTimeline(selectedEvent!, stations, current.timeline),
         rotations: buildRotations(current.studentCount || getStudentCount(selectedEvent!), stations, current.groupCount)
       };
     });
@@ -698,7 +794,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
       return {
         ...current,
         stations,
-        timeline: current.timeline.filter(block => block.stationId !== stationId),
+        timeline: recalcStructuredTimeline(selectedEvent!, stations, current.timeline.filter(block => block.stationId !== stationId)),
         rotations: buildRotations(current.studentCount || getStudentCount(selectedEvent!), stations, current.groupCount),
         tasks: current.tasks.filter(task => task.stationId !== stationId)
       };
@@ -714,27 +810,89 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
 
   const insertBreak = () => {
     saveOperation(current => {
-      const firstStationIndex = current.timeline.findIndex(block => block.stationId);
-      const insertAfter = firstStationIndex >= 0 ? firstStationIndex + 1 : 1;
-      const anchor = current.timeline[insertAfter - 1];
+      if (current.timeline.some(block => block.kind === 'BREAK')) return current;
       const breakBlock: HouseOperationTimelineBlock = {
         id: makeId('eh-time'),
-        title: 'Nghỉ chuyển trạm',
-        startTime: anchor?.endTime || getProgramStart(selectedEvent!),
-        endTime: addMinutes(anchor?.endTime || getProgramStart(selectedEvent!), 10),
-        note: 'Khoảng đệm để di chuyển, vệ sinh thiết bị và ổn định lớp.'
+        sectionCode: 'D',
+        kind: 'BREAK',
+        title: 'Nghỉ giữa giờ',
+        startTime: getProgramStart(selectedEvent!),
+        endTime: addMinutes(getProgramStart(selectedEvent!), 10),
+        note: 'Nếu có mốc này, hoạt động sáng được hiểu là C1 trước nghỉ và C2 sau nghỉ.'
       };
       const timeline = [...current.timeline];
-      timeline.splice(insertAfter, 0, breakBlock);
-      return { ...current, timeline };
+      const amIndex = timeline.findIndex(block => block.kind === 'EXPERIENCE_AM');
+      if (amIndex >= 0) {
+        const amBlock = timeline[amIndex];
+        const totalStations = Math.max(1, amBlock.stationCount || 1);
+        const firstCount = Math.ceil(totalStations / 2);
+        const secondCount = Math.max(0, totalStations - firstCount);
+        timeline.splice(
+          amIndex,
+          1,
+          { ...amBlock, sectionCode: 'C1', title: 'Hoạt động trải nghiệm sáng C1', stationCount: firstCount },
+          breakBlock,
+          {
+            ...amBlock,
+            id: makeId('eh-time'),
+            sectionCode: 'C2',
+            title: 'Hoạt động trải nghiệm sáng C2',
+            stationCount: secondCount,
+            note: 'Ẩn/để 0 nếu không cần chạy thêm trạm sáng sau nghỉ.'
+          }
+        );
+      } else {
+        const lunchIndex = timeline.findIndex(block => block.kind === 'LUNCH');
+        const insertAt = lunchIndex >= 0 ? lunchIndex : Math.max(1, timeline.length - 1);
+        timeline.splice(insertAt, 0, breakBlock);
+      }
+      return { ...current, timeline: recalcStructuredTimeline(selectedEvent!, current.stations, timeline) };
+    });
+  };
+
+  const addCommonActivity = () => {
+    saveOperation(current => {
+      const firstStation = current.stations[0];
+      const block: HouseOperationTimelineBlock = {
+        id: makeId('eh-time'),
+        sectionCode: 'B',
+        kind: 'COMMON',
+        title: 'Hoạt động chung',
+        startTime: getProgramStart(selectedEvent!),
+        endTime: addMinutes(getProgramStart(selectedEvent!), firstStation?.durationMinutes || 15),
+        stationId: firstStation?.id,
+        room: firstStation?.areaDescription || firstStation?.room,
+        note: 'Toàn bộ nhóm cùng tham gia mốc này.'
+      };
+      const firstExperienceIndex = current.timeline.findIndex(item => item.kind === 'EXPERIENCE_AM' || item.kind === 'EXPERIENCE_PM');
+      const insertAt = firstExperienceIndex >= 0 ? firstExperienceIndex : Math.max(1, current.timeline.length - 1);
+      const timeline = [...current.timeline];
+      timeline.splice(insertAt, 0, block);
+      return { ...current, timeline: recalcStructuredTimeline(selectedEvent!, current.stations, timeline) };
     });
   };
 
   const updateTimeline = (blockId: string, patch: Partial<HouseOperationTimelineBlock>) => {
     saveOperation(current => ({
       ...current,
-      timeline: current.timeline.map(block => block.id === blockId ? { ...block, ...patch } : block)
+      timeline: recalcStructuredTimeline(
+        selectedEvent!,
+        current.stations,
+        current.timeline.map(block => block.id === blockId ? { ...block, ...patch } : block)
+      )
     }));
+  };
+
+  const moveTimelineBlock = (blockId: string, delta: number) => {
+    saveOperation(current => {
+      const index = current.timeline.findIndex(block => block.id === blockId);
+      const targetIndex = index + delta;
+      if (index < 0 || targetIndex < 0 || targetIndex >= current.timeline.length) return current;
+      const timeline = [...current.timeline];
+      const [moving] = timeline.splice(index, 1);
+      timeline.splice(targetIndex, 0, moving);
+      return { ...current, timeline: recalcStructuredTimeline(selectedEvent!, current.stations, timeline) };
+    });
   };
 
   const regenerateRotations = () => {
@@ -1184,19 +1342,77 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                     <p className="mt-1 text-xs text-slate-500">Các mốc chung cho toàn đoàn: đến, show chung, nghỉ, ăn, ra về.</p>
                   </div>
                   <div className="flex gap-2">
-                    <button onClick={insertBreak} disabled={!canEdit} className="px-3 py-2 rounded-lg border border-slate-200 text-sm font-bold disabled:text-slate-300">Thêm mốc nghỉ</button>
+                    <button onClick={addCommonActivity} disabled={!canEdit} className="px-3 py-2 rounded-lg border border-slate-200 text-sm font-bold disabled:text-slate-300">Thêm hoạt động chung</button>
+                    <button onClick={insertBreak} disabled={!canEdit} className="px-3 py-2 rounded-lg border border-slate-200 text-sm font-bold disabled:text-slate-300">Thêm nghỉ giữa giờ</button>
                     <button onClick={recalcTimeline} disabled={!canEdit} className="px-3 py-2 rounded-lg bg-slate-900 text-white text-sm font-bold disabled:bg-slate-300">Sinh mốc chung</button>
                   </div>
                 </div>
                 <div className="mt-4 space-y-2">
-                  {operation.timeline.map(block => (
-                    <div key={block.id} className={`grid grid-cols-1 md:grid-cols-[110px_110px_1fr_130px] gap-2 border rounded-lg p-3 ${overlapWarnings.has(block.id) ? 'border-rose-200 bg-rose-50' : 'border-slate-100 bg-white'}`}>
-                      <input type="time" value={block.startTime} disabled={!canEdit} onChange={e => updateTimeline(block.id, { startTime: e.target.value })} className="border rounded-lg px-2 py-2 text-sm" />
-                      <input type="time" value={block.endTime} disabled={!canEdit} onChange={e => updateTimeline(block.id, { endTime: e.target.value })} className="border rounded-lg px-2 py-2 text-sm" />
-                      <input value={block.title} disabled={!canEdit} onChange={e => updateTimeline(block.id, { title: e.target.value })} className="border rounded-lg px-2 py-2 text-sm font-bold" />
-                      <input value={block.room || ''} disabled={!canEdit} onChange={e => updateTimeline(block.id, { room: e.target.value })} placeholder="Phòng/khu" className="border rounded-lg px-2 py-2 text-sm" />
-                    </div>
-                  ))}
+                  {operation.timeline.map(block => {
+                    if ((block.sectionCode === 'C2' || block.sectionCode === 'F') && (block.stationCount || 0) <= 0) return null;
+                    const isExperience = block.kind === 'EXPERIENCE_AM' || block.kind === 'EXPERIENCE_PM';
+                    const isCommon = block.kind === 'COMMON';
+                    return (
+                      <div key={block.id} className={`border rounded-lg p-3 ${block.warning || overlapWarnings.has(block.id) ? 'border-rose-200 bg-rose-50' : 'border-slate-100 bg-white'}`}>
+                        <div className="grid grid-cols-1 md:grid-cols-[48px_92px_92px_minmax(0,1fr)] gap-2">
+                          <div className="flex items-center justify-between gap-1 rounded-lg bg-slate-100 text-slate-700 text-xs font-black px-2">
+                            <span>{block.sectionCode || '-'}</span>
+                            <span className="flex flex-col leading-none">
+                              <button type="button" disabled={!canEdit} onClick={() => moveTimelineBlock(block.id, -1)} className="text-[10px] text-slate-400 hover:text-slate-800 disabled:hover:text-slate-400">↑</button>
+                              <button type="button" disabled={!canEdit} onClick={() => moveTimelineBlock(block.id, 1)} className="text-[10px] text-slate-400 hover:text-slate-800 disabled:hover:text-slate-400">↓</button>
+                            </span>
+                          </div>
+                          <input type="time" value={block.startTime} disabled={!canEdit} onChange={e => updateTimeline(block.id, { startTime: e.target.value })} className="border rounded-lg px-2 py-2 text-sm" />
+                          <input type="time" value={block.endTime} disabled={!canEdit} onChange={e => updateTimeline(block.id, { endTime: e.target.value })} className="border rounded-lg px-2 py-2 text-sm" />
+                          <input value={block.title} disabled={!canEdit} onChange={e => updateTimeline(block.id, { title: e.target.value })} className="border rounded-lg px-2 py-2 text-sm font-bold" />
+                        </div>
+                        <div className="mt-2 grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_140px] gap-2">
+                          {isCommon ? (
+                            <select
+                              value={block.stationId || ''}
+                              disabled={!canEdit}
+                              onChange={e => {
+                                const station = operation.stations.find(item => item.id === e.target.value);
+                                updateTimeline(block.id, {
+                                  stationId: station?.id,
+                                  title: station?.name || block.title,
+                                  room: station?.areaDescription || station?.room,
+                                  endTime: addMinutes(block.startTime, station?.durationMinutes || 15)
+                                });
+                              }}
+                              className="border rounded-lg px-2 py-2 text-sm font-bold bg-white"
+                            >
+                              <option value="">Chọn trạm xem chung</option>
+                              {operation.stations.map(station => <option key={station.id} value={station.id}>{station.name}</option>)}
+                            </select>
+                          ) : (
+                            <input value={block.room || ''} disabled={!canEdit} onChange={e => updateTimeline(block.id, { room: e.target.value })} placeholder="Phòng/khu hoặc ghi chú" className="border rounded-lg px-2 py-2 text-sm" />
+                          )}
+                          {isExperience ? (
+                            <label className="flex items-center gap-2 border rounded-lg px-2 py-2 bg-white">
+                              <span className="text-[11px] font-black text-slate-500">Số trạm</span>
+                              <input
+                                type="number"
+                                min={0}
+                                value={block.stationCount || 0}
+                                disabled={!canEdit}
+                                onChange={e => updateTimeline(block.id, { stationCount: Math.max(0, Number(e.target.value) || 0) })}
+                                className="min-w-0 flex-1 text-sm font-black outline-none"
+                              />
+                            </label>
+                          ) : (
+                            <input value={block.note || ''} disabled={!canEdit} onChange={e => updateTimeline(block.id, { note: e.target.value })} placeholder="Ghi chú" className="border rounded-lg px-2 py-2 text-sm" />
+                          )}
+                        </div>
+                        {block.warning && (
+                          <div className="mt-2 flex items-start gap-2 text-xs font-bold text-rose-700">
+                            <AlertTriangle size={14} />
+                            <span>{block.warning}</span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </section>
 

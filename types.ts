@@ -418,7 +418,10 @@ export interface HouseOperationTimelineBlock {
   title: string;
   startTime: string;
   endTime: string;
+  sectionCode?: 'A' | 'B' | 'C' | 'C1' | 'C2' | 'D' | 'E' | 'F' | 'G';
+  kind?: 'OPENING' | 'COMMON' | 'EXPERIENCE_AM' | 'BREAK' | 'LUNCH' | 'EXPERIENCE_PM' | 'CLOSING';
   stationId?: string;
+  stationCount?: number;
   room?: string;
   note?: string;
   warning?: string;
