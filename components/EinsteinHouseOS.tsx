@@ -478,6 +478,11 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
     };
   }, [events]);
 
+  const sidebarEvents = useMemo(
+    () => [...events].sort((a, b) => (getPrimaryDate(b) || '').localeCompare(getPrimaryDate(a) || '')),
+    [events]
+  );
+
   const progress = useMemo(() => {
     if (!operation) return { done: 0, total: 0, pct: 0, missing: 0 };
     const total = operation.tasks.length + operation.stations.length + operation.mediaTasks.length;
@@ -801,7 +806,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
               <CalendarDays size={18} className="text-slate-400" />
             </div>
             <div className="space-y-2 max-h-[430px] overflow-auto pr-1">
-              {events.map(event => {
+              {sidebarEvents.map(event => {
                 const op = ensureOperation(event, inventory, employees, packages);
                 const taskTotal = op.tasks.length || 1;
                 const taskDone = op.tasks.filter(task => task.status === 'DONE').length;
