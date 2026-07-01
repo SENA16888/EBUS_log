@@ -393,7 +393,7 @@ const buildGroupActivityTimelines = (
             room: station?.areaDescription || station?.room,
             note: `${block.sectionCode || ''} • ${station?.packageName || block.title}`
           };
-          cursor += duration + 5;
+          cursor += duration;
           return item;
         });
       })
