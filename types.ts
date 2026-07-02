@@ -878,6 +878,10 @@ export interface InteractiveDeviceProfile {
   location: string;
   isAutomationEnabled: boolean;
   volume: number;
+  backgroundVolume?: number;
+  announcementVolume?: number;
+  duckVolume?: number;
+  duckFadeMs?: number;
   preAnnouncementAssetId?: string;
   voiceURI?: string;
   backgroundMode?: BroadcastBackgroundMode;

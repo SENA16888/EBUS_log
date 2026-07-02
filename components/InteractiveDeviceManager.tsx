@@ -235,6 +235,10 @@ const createDefaultDevice = (): InteractiveDeviceProfile => ({
   location: 'Einstein House',
   isAutomationEnabled: true,
   volume: 0.82,
+  backgroundVolume: 0.35,
+  announcementVolume: 0.95,
+  duckVolume: 0.08,
+  duckFadeMs: 700,
   preAnnouncementAssetId: '',
   voiceURI: '',
   backgroundMode: 'LOOP_ALL',
@@ -319,7 +323,7 @@ const buildEventAnnouncements = (device: InteractiveDeviceProfile, events: Event
   }));
 };
 
-const normalizeBroadcastDevice = (input?: InteractiveDeviceProfile): InteractiveDeviceProfile => {
+  const normalizeBroadcastDevice = (input?: InteractiveDeviceProfile): InteractiveDeviceProfile => {
   const defaults = createDefaultDevice();
   if (!input) return defaults;
 
@@ -350,6 +354,10 @@ const normalizeBroadcastDevice = (input?: InteractiveDeviceProfile): Interactive
   return {
     ...defaults,
     ...input,
+    backgroundVolume: typeof input.backgroundVolume === 'number' ? input.backgroundVolume : defaults.backgroundVolume,
+    announcementVolume: typeof input.announcementVolume === 'number' ? input.announcementVolume : (typeof input.volume === 'number' ? input.volume : defaults.announcementVolume),
+    duckVolume: typeof input.duckVolume === 'number' ? input.duckVolume : defaults.duckVolume,
+    duckFadeMs: typeof input.duckFadeMs === 'number' ? input.duckFadeMs : defaults.duckFadeMs,
     backgroundMode: input.backgroundMode || defaults.backgroundMode,
     backgroundTrackId: input.backgroundTrackId || defaults.backgroundTrackId,
     youtubePlaylist: input.youtubePlaylist && input.youtubePlaylist.length > 0
@@ -374,6 +382,7 @@ export const InteractiveDeviceManager: React.FC<InteractiveDeviceManagerProps> =
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const youtubeIframeRef = useRef<HTMLIFrameElement | null>(null);
   const wakeLockRef = useRef<any>(null);
+  const youtubeVolumeRef = useRef(35);
   const playedKeysRef = useRef<Set<string>>(new Set());
   const [now, setNow] = useState(new Date());
   const [isRunning, setIsRunning] = useState(false);
@@ -522,13 +531,39 @@ export const InteractiveDeviceManager: React.FC<InteractiveDeviceManagerProps> =
   };
 
   const setYoutubeBackgroundVolume = (volume: number) => {
-    sendYoutubeCommand('setVolume', [volume]);
+    const nextVolume = Math.max(0, Math.min(100, Math.round(volume)));
+    youtubeVolumeRef.current = nextVolume;
+    sendYoutubeCommand('setVolume', [nextVolume]);
     if (volume > 0) sendYoutubeCommand('unMute');
   };
 
-  const duckBackgroundMusic = () => setYoutubeBackgroundVolume(12);
+  const backgroundVolumePercent = () => Math.round((device.backgroundVolume ?? 0.35) * 100);
 
-  const restoreBackgroundMusic = () => setYoutubeBackgroundVolume(65);
+  const announcementVolume = () => Math.min(1, Math.max(0, device.announcementVolume ?? device.volume ?? 0.95));
+
+  const duckVolumePercent = () => Math.round((device.duckVolume ?? 0.08) * 100);
+
+  const animateYoutubeVolume = (targetVolume: number) => {
+    const duration = Math.max(0, device.duckFadeMs ?? 700);
+    const startVolume = youtubeVolumeRef.current;
+    const safeTarget = Math.max(0, Math.min(100, Math.round(targetVolume)));
+    if (duration === 0 || startVolume === safeTarget) {
+      setYoutubeBackgroundVolume(safeTarget);
+      return;
+    }
+    const steps = Math.max(1, Math.min(12, Math.round(duration / 100)));
+    const stepMs = duration / steps;
+    Array.from({ length: steps }).forEach((_, index) => {
+      window.setTimeout(() => {
+        const pct = (index + 1) / steps;
+        setYoutubeBackgroundVolume(startVolume + (safeTarget - startVolume) * pct);
+      }, stepMs * (index + 1));
+    });
+  };
+
+  const duckBackgroundMusic = () => animateYoutubeVolume(duckVolumePercent());
+
+  const restoreBackgroundMusic = () => animateYoutubeVolume(backgroundVolumePercent());
 
   const pauseBackgroundMusic = () => sendYoutubeCommand('pauseVideo');
 
@@ -612,7 +647,7 @@ export const InteractiveDeviceManager: React.FC<InteractiveDeviceManagerProps> =
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.lang = 'vi-VN';
-      utterance.volume = Math.min(1, Math.max(0, device.volume || 0.8));
+      utterance.volume = announcementVolume();
       utterance.rate = 0.95;
       const preferredVoice = getPreferredVoice();
       if (preferredVoice) {
@@ -648,7 +683,7 @@ export const InteractiveDeviceManager: React.FC<InteractiveDeviceManagerProps> =
 
       audio.pause();
       audio.src = url;
-      audio.volume = Math.min(1, Math.max(0, device.volume || 0.8));
+      audio.volume = announcementVolume();
       audio.addEventListener('ended', handleEnded, { once: true });
       audio.addEventListener('error', handleError, { once: true });
       void audio.play().catch(() => {
@@ -1075,23 +1110,81 @@ export const InteractiveDeviceManager: React.FC<InteractiveDeviceManagerProps> =
 
       <div className="grid xl:grid-cols-[1fr_420px] gap-4">
         <section className="bg-white border border-slate-200 rounded-lg p-4 space-y-4">
-          <div className="flex items-center justify-between gap-3">
+          <div>
             <div>
               <h3 className="font-bold text-slate-900 flex items-center gap-2"><FileAudio size={18} className="text-blue-600" /> Thư viện âm thanh</h3>
               <p className="text-xs text-slate-500 mt-1">Upload MP3 ngắn, dán URL audio hoặc tạo thông báo bằng Voice AI miễn phí của trình duyệt.</p>
             </div>
-            <div className="flex items-center gap-2 text-sm text-slate-600">
-              <Volume2 size={17} />
-              <input
-                type="range"
-                min={0}
-                max={1}
-                step={0.01}
-                value={device.volume ?? 0.8}
-                onChange={e => commitDevice({ volume: Number(e.target.value) })}
-                disabled={!canEdit}
-              />
+          </div>
+
+          <div className="border border-slate-200 rounded-lg p-3">
+            <div className="flex items-center gap-2 font-bold text-sm text-slate-800">
+              <Volume2 size={17} className="text-blue-600" />
+              Âm lượng & hiệu ứng
             </div>
+            <div className="grid md:grid-cols-4 gap-3 mt-3">
+              <label className="space-y-1">
+                <span className="text-xs font-bold text-slate-500">Nhạc nền</span>
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={device.backgroundVolume ?? 0.35}
+                  onChange={e => {
+                    const value = Number(e.target.value);
+                    commitDevice({ backgroundVolume: value });
+                    setYoutubeBackgroundVolume(value * 100);
+                  }}
+                  disabled={!canEdit}
+                  className="w-full"
+                />
+                <span className="text-xs font-semibold text-slate-700">{Math.round((device.backgroundVolume ?? 0.35) * 100)}%</span>
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs font-bold text-slate-500">Thông báo</span>
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={device.announcementVolume ?? device.volume ?? 0.95}
+                  onChange={e => commitDevice({ announcementVolume: Number(e.target.value), volume: Number(e.target.value) })}
+                  disabled={!canEdit}
+                  className="w-full"
+                />
+                <span className="text-xs font-semibold text-slate-700">{Math.round((device.announcementVolume ?? device.volume ?? 0.95) * 100)}%</span>
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs font-bold text-slate-500">Nền khi thông báo</span>
+                <input
+                  type="range"
+                  min={0}
+                  max={0.5}
+                  step={0.01}
+                  value={device.duckVolume ?? 0.08}
+                  onChange={e => commitDevice({ duckVolume: Number(e.target.value) })}
+                  disabled={!canEdit}
+                  className="w-full"
+                />
+                <span className="text-xs font-semibold text-slate-700">{Math.round((device.duckVolume ?? 0.08) * 100)}%</span>
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs font-bold text-slate-500">Chuyển âm</span>
+                <input
+                  type="range"
+                  min={0}
+                  max={2000}
+                  step={100}
+                  value={device.duckFadeMs ?? 700}
+                  onChange={e => commitDevice({ duckFadeMs: Number(e.target.value) })}
+                  disabled={!canEdit}
+                  className="w-full"
+                />
+                <span className="text-xs font-semibold text-slate-700">{device.duckFadeMs ?? 700}ms</span>
+              </label>
+            </div>
+            <p className="text-xs text-slate-500 mt-2">Khi có thông báo, nhạc nền tự hạ xuống mức “Nền khi thông báo”, phát âm báo/giọng thông báo ở mức “Thông báo”, rồi trả nhạc nền về mức thường.</p>
           </div>
 
           <div className="grid md:grid-cols-2 gap-3">
