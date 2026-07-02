@@ -231,6 +231,7 @@ const buildDailyAnnouncements = (device: InteractiveDeviceProfile, dateKey: stri
 const buildEventAnnouncements = (device: InteractiveDeviceProfile, events: Event[], dateKey: string): PendingAnnouncement[] => {
   const activeEvents = events.filter(event => isEventActiveOnDate(event, dateKey));
   return activeEvents.flatMap(event => (device.eventRules || []).filter(rule => rule.enabled).flatMap(rule => {
+    const asset = (device.audioAssets || []).find(item => item.id === rule.assetId);
     if (rule.trigger === 'EVENT_START') {
       const time = addMinutes(dateAtTime(dateKey, getProgramStart(event)), rule.offsetMinutes);
       return [{
@@ -238,7 +239,8 @@ const buildEventAnnouncements = (device: InteractiveDeviceProfile, events: Event
         title: rule.title,
         time,
         source: 'EVENT' as const,
-        text: applyTemplate(rule.messageTemplate, event),
+        text: asset ? asset.transcript : applyTemplate(rule.messageTemplate, event),
+        asset,
         detail: `${event.name} • ${formatDate(dateKey)}`,
         priority: rule.priority || 0
       }];
@@ -251,7 +253,8 @@ const buildEventAnnouncements = (device: InteractiveDeviceProfile, events: Event
         title: rule.title,
         time: getBlockTriggerTime(dateKey, block, rule),
         source: 'EVENT' as const,
-        text: applyTemplate(rule.messageTemplate, event, block),
+        text: asset ? asset.transcript : applyTemplate(rule.messageTemplate, event, block),
+        asset,
         detail: `${event.name} • ${block.title}`,
         priority: rule.priority || 0
       }));
@@ -1265,6 +1268,24 @@ export const InteractiveDeviceManager: React.FC<InteractiveDeviceManagerProps> =
                   <p className="text-sm font-bold text-slate-900">{rule.title}</p>
                   <p className="text-xs text-slate-500 mt-0.5">{rule.trigger}{rule.blockKind ? ` • ${rule.blockKind}` : ''} • offset {rule.offsetMinutes} phút</p>
                   <p className="text-xs text-slate-600 mt-1 line-clamp-2">{rule.messageTemplate}</p>
+                  <div className="mt-2 grid sm:grid-cols-[150px_1fr] gap-2 items-center">
+                    <span className="text-xs font-bold text-slate-500">Âm thanh thông báo</span>
+                    <select
+                      value={rule.assetId || ''}
+                      onChange={e => commitDevice({
+                        eventRules: (device.eventRules || []).map(item =>
+                          item.id === rule.id ? { ...item, assetId: e.target.value || undefined } : item
+                        )
+                      })}
+                      disabled={!canEdit}
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-700 bg-white"
+                    >
+                      <option value="">Dùng Voice AI từ nội dung mẫu</option>
+                      {(device.audioAssets || []).map(asset => (
+                        <option key={asset.id} value={asset.id}>{asset.title}</option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
               </div>
             ))}

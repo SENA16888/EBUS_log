@@ -824,6 +824,7 @@ export interface BroadcastEventRule {
   trigger: 'EVENT_START' | 'BLOCK_START' | 'BLOCK_END' | 'BEFORE_BLOCK_END';
   offsetMinutes: number;
   blockKind?: HouseOperationTimelineBlock['kind'];
+  assetId?: string;
   messageTemplate: string;
   priority: number;
 }
