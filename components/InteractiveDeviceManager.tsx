@@ -22,6 +22,7 @@ import {
   BroadcastPlaybackLog,
   BroadcastSchedule,
   BroadcastYoutubeTrack,
+  BroadcastEventMusicSetting,
   Event,
   HouseOperationTimelineBlock,
   InteractiveDeviceProfile
@@ -200,6 +201,7 @@ const createDefaultDevice = (): InteractiveDeviceProfile => ({
   silenceWindows: [
     { id: 'silent-center-lunch', title: 'Nghỉ trưa trung tâm', startTime: '12:00', endTime: '13:00', enabled: true }
   ],
+  eventMusicSettings: [],
   audioAssets: [],
   schedules: [],
   eventRules: [],
@@ -284,6 +286,7 @@ const normalizeBroadcastDevice = (input?: InteractiveDeviceProfile): Interactive
       : (input.youtubeFallbackUrl ? [{ id: 'yt-legacy-fallback', title: 'Nhạc nền đang lưu', url: input.youtubeFallbackUrl }] : defaults.youtubePlaylist),
     operatingHours: input.operatingHours && input.operatingHours.length > 0 ? input.operatingHours : defaults.operatingHours,
     silenceWindows: input.silenceWindows && input.silenceWindows.length > 0 ? input.silenceWindows : defaults.silenceWindows,
+    eventMusicSettings: input.eventMusicSettings || [],
     schedules: schedules.length > 0 ? schedules : defaults.schedules,
     audioAssets: input.audioAssets || [],
     eventRules: input.eventRules && input.eventRules.length > 0 ? input.eventRules : defaults.eventRules,
@@ -326,12 +329,30 @@ export const InteractiveDeviceManager: React.FC<InteractiveDeviceManagerProps> =
     }
     return [];
   }, [device.youtubeFallbackUrl, device.youtubePlaylist]);
-  const activeBackgroundTrack = backgroundTracks.find(track => track.id === device.backgroundTrackId) || backgroundTracks[0];
 
   const todayEvents = useMemo(
     () => events.filter(event => isEventActiveOnDate(event, todayKey)),
     [events, todayKey]
   );
+
+  const activeEventMusic = useMemo(() => {
+    const settings = device.eventMusicSettings || [];
+    return todayEvents
+      .map(event => settings.find(setting => setting.enabled && setting.eventId === event.id && setting.trackIds.length > 0))
+      .find((setting): setting is BroadcastEventMusicSetting => !!setting);
+  }, [device.eventMusicSettings, todayEvents]);
+
+  const effectiveBackgroundTracks = useMemo(() => {
+    if (!activeEventMusic) return backgroundTracks;
+    const selectedIds = new Set(activeEventMusic.trackIds);
+    const selectedTracks = backgroundTracks.filter(track => selectedIds.has(track.id));
+    return selectedTracks.length > 0 ? selectedTracks : backgroundTracks;
+  }, [activeEventMusic, backgroundTracks]);
+
+  const effectiveBackgroundMode = activeEventMusic?.mode || device.backgroundMode || 'LOOP_ALL';
+  const activeBackgroundTrack = effectiveBackgroundTracks.find(track =>
+    track.id === (activeEventMusic?.trackIds[0] || device.backgroundTrackId)
+  ) || effectiveBackgroundTracks[0];
 
   const announcements = useMemo(() => {
     const list = [
@@ -346,9 +367,9 @@ export const InteractiveDeviceManager: React.FC<InteractiveDeviceManagerProps> =
     [announcements, now]
   );
 
-  const youtubeEmbed = device.backgroundMode === 'SINGLE'
+  const youtubeEmbed = effectiveBackgroundMode === 'SINGLE'
     ? getYoutubeTrackEmbed(activeBackgroundTrack)
-    : getYoutubePlaylistEmbed(backgroundTracks);
+    : getYoutubePlaylistEmbed(effectiveBackgroundTracks);
   const preAnnouncementAsset = useMemo(
     () => (device.audioAssets || []).find(asset => asset.id === device.preAnnouncementAssetId),
     [device.audioAssets, device.preAnnouncementAssetId]
@@ -768,6 +789,30 @@ export const InteractiveDeviceManager: React.FC<InteractiveDeviceManagerProps> =
     });
   };
 
+  const upsertEventMusicSetting = (eventId: string, patch: Partial<BroadcastEventMusicSetting>) => {
+    const currentSettings = device.eventMusicSettings || [];
+    const existing = currentSettings.find(setting => setting.eventId === eventId);
+    const nextSetting: BroadcastEventMusicSetting = {
+      eventId,
+      enabled: true,
+      mode: 'LOOP_ALL',
+      trackIds: [],
+      ...(existing || {}),
+      ...patch
+    };
+    const nextSettings = existing
+      ? currentSettings.map(setting => setting.eventId === eventId ? nextSetting : setting)
+      : [...currentSettings, nextSetting];
+    commitDevice({ eventMusicSettings: nextSettings });
+  };
+
+  const toggleEventTrack = (eventId: string, trackId: string, checked: boolean) => {
+    const existing = (device.eventMusicSettings || []).find(setting => setting.eventId === eventId);
+    const currentIds = new Set(existing?.trackIds || []);
+    if (checked) currentIds.add(trackId); else currentIds.delete(trackId);
+    upsertEventMusicSetting(eventId, { trackIds: Array.from(currentIds), enabled: currentIds.size > 0 });
+  };
+
   return (
     <div className="space-y-4">
       <audio ref={audioRef} className="hidden" />
@@ -1132,6 +1177,80 @@ export const InteractiveDeviceManager: React.FC<InteractiveDeviceManagerProps> =
         <section className="bg-white border border-slate-200 rounded-lg p-4">
           <h3 className="font-bold text-slate-900 flex items-center gap-2"><BellRing size={18} className="text-amber-600" /> Rule theo sự kiện</h3>
           <p className="text-xs text-slate-500 mt-1">Nếu hôm nay có sự kiện và có timeline Einstein House OS, hệ thống tự phát thông báo đoàn.</p>
+          <div className="mt-3 border border-blue-100 bg-blue-50 rounded-lg p-3">
+            <div className="flex items-center gap-2 font-bold text-sm text-blue-800">
+              <Music2 size={17} />
+              Nhạc nền theo đoàn hôm nay
+            </div>
+            <p className="text-xs text-blue-700 mt-1">Chọn nhạc riêng cho từng đoàn từ danh sách link YouTube nền đã thêm.</p>
+            <div className="mt-3 space-y-3">
+              {todayEvents.length === 0 && (
+                <div className="bg-white/70 border border-blue-100 rounded-lg px-3 py-4 text-sm text-blue-700 text-center">
+                  Hôm nay chưa có đoàn/sự kiện để gán nhạc riêng.
+                </div>
+              )}
+              {todayEvents.map(event => {
+                const setting = (device.eventMusicSettings || []).find(item => item.eventId === event.id);
+                const selectedIds = new Set(setting?.trackIds || []);
+                const enabled = setting?.enabled && selectedIds.size > 0;
+                return (
+                  <div key={event.id} className="bg-white border border-blue-100 rounded-lg p-3 space-y-2">
+                    <div className="flex items-start gap-3">
+                      <input
+                        type="checkbox"
+                        checked={!!enabled}
+                        onChange={e => {
+                          const firstTrackId = backgroundTracks[0]?.id;
+                          upsertEventMusicSetting(event.id, {
+                            enabled: e.target.checked,
+                            trackIds: e.target.checked && selectedIds.size === 0 && firstTrackId ? [firstTrackId] : Array.from(selectedIds)
+                          });
+                        }}
+                        disabled={!canEdit || backgroundTracks.length === 0}
+                        className="mt-1"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-bold text-slate-900 truncate">{event.name}</p>
+                        <p className="text-xs text-slate-500 truncate">{event.client || event.eventProfile?.organization || 'Đoàn trải nghiệm'} • {formatDate(getEventDateKeys(event)[0])}</p>
+                      </div>
+                      <select
+                        value={setting?.mode || 'LOOP_ALL'}
+                        onChange={e => upsertEventMusicSetting(event.id, { mode: e.target.value as BroadcastEventMusicSetting['mode'] })}
+                        disabled={!canEdit}
+                        className="border border-blue-100 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-700"
+                      >
+                        <option value="SINGLE">1 bài</option>
+                        <option value="LOOP_ALL">Lặp playlist</option>
+                      </select>
+                    </div>
+                    <div className="grid sm:grid-cols-2 gap-2">
+                      {backgroundTracks.map(track => (
+                        <label key={track.id} className="flex items-center gap-2 text-xs text-slate-700 border border-slate-100 rounded-lg px-2 py-2">
+                          <input
+                            type={setting?.mode === 'SINGLE' ? 'radio' : 'checkbox'}
+                            name={`event-music-${event.id}`}
+                            checked={selectedIds.has(track.id)}
+                            onChange={e => {
+                              if (setting?.mode === 'SINGLE') {
+                                upsertEventMusicSetting(event.id, { enabled: true, trackIds: [track.id] });
+                              } else {
+                                toggleEventTrack(event.id, track.id, e.target.checked);
+                              }
+                            }}
+                            disabled={!canEdit}
+                          />
+                          <span className="truncate">{track.title}</span>
+                        </label>
+                      ))}
+                    </div>
+                    {backgroundTracks.length === 0 && (
+                      <p className="text-xs text-blue-700">Chưa có link YouTube nền. Thêm link ở khung Nhạc nền YouTube trước.</p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
           <div className="mt-3 space-y-2">
             {(device.eventRules || []).map(rule => (
               <div key={rule.id} className="border border-slate-200 rounded-lg p-3 flex items-start gap-3">

@@ -55,6 +55,7 @@ export const MOCK_INTERACTIVE_DEVICES: InteractiveDeviceProfile[] = [
         enabled: true
       }
     ],
+    eventMusicSettings: [],
     audioAssets: [],
     schedules: [
       {

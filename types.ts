@@ -862,6 +862,14 @@ export interface BroadcastSilenceWindow {
   enabled: boolean;
 }
 
+export interface BroadcastEventMusicSetting {
+  eventId: string;
+  enabled: boolean;
+  mode: BroadcastBackgroundMode;
+  trackIds: string[];
+  note?: string;
+}
+
 export interface InteractiveDeviceProfile {
   id: string;
   name: string;
@@ -877,6 +885,7 @@ export interface InteractiveDeviceProfile {
   youtubePlaylist?: BroadcastYoutubeTrack[];
   operatingHours?: BroadcastOperatingHours[];
   silenceWindows?: BroadcastSilenceWindow[];
+  eventMusicSettings?: BroadcastEventMusicSetting[];
   audioAssets: BroadcastAudioAsset[];
   schedules: BroadcastSchedule[];
   eventRules: BroadcastEventRule[];
