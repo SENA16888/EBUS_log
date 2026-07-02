@@ -710,6 +710,35 @@ export const EventManager: React.FC<EventManagerProps> = ({
     }
   };
 
+  const handleSyncFromHouseOperation = () => {
+    if (!selectedEvent || !onUpdateEvent) return;
+    const stations = selectedEvent.houseOperation?.stations || [];
+    const targetMap = new Map<string, number>();
+    stations.forEach(station => {
+      (station.equipment || []).forEach(item => {
+        if (!item.itemId) return;
+        targetMap.set(item.itemId, (targetMap.get(item.itemId) || 0) + (Number(item.quantity) || 0));
+      });
+    });
+    if (targetMap.size === 0) {
+      alert('EH OS chưa có thiết bị kho trong Program Canvas/Knowledge để đồng bộ.');
+      return;
+    }
+    const existingMap = new Map(selectedEvent.items.map(item => [item.itemId, item]));
+    const nextItems = selectedEvent.items.filter(item => !targetMap.has(item.itemId));
+    targetMap.forEach((quantity, itemId) => {
+      const existing = existingMap.get(itemId);
+      nextItems.push({
+        itemId,
+        quantity,
+        returnedQuantity: Math.min(existing?.returnedQuantity || 0, quantity),
+        done: existing?.done
+      });
+    });
+    onUpdateEvent(selectedEvent.id, { items: nextItems });
+    alert(`Đã đồng bộ ${targetMap.size} thiết bị từ EH OS sang sự kiện.`);
+  };
+
   const handleCreateOrder = () => {
     if (!selectedEventId) return;
     if (onFinalizeOrder) {
@@ -1651,6 +1680,13 @@ export const EventManager: React.FC<EventManagerProps> = ({
                         className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-blue-700"
                       >
                         + Thêm Combo
+                      </button>
+                      <button
+                        onClick={handleSyncFromHouseOperation}
+                        disabled={!selectedEvent.houseOperation?.stations?.length}
+                        className={`px-4 py-2 rounded-lg text-sm font-bold border ${selectedEvent.houseOperation?.stations?.length ? 'bg-teal-50 text-teal-700 border-teal-200 hover:bg-teal-100' : 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'}`}
+                      >
+                        Đồng bộ từ EH OS
                       </button>
                       <button
                         onClick={handleRemoveSelectedItems}

@@ -395,6 +395,11 @@ export interface HouseOperationEquipment {
   source?: 'INVENTORY' | 'CONSUMABLE' | 'MANUAL';
 }
 
+export interface HouseOperationEducationLink {
+  activityId: string;
+  themeId: string;
+}
+
 export interface HouseOperationStation {
   id: string;
   name: string;
@@ -409,6 +414,7 @@ export interface HouseOperationStation {
   sopVersion?: string;
   checklist: string[];
   equipment: HouseOperationEquipment[];
+  educationLink?: HouseOperationEducationLink;
   script?: string;
   status?: HouseOperationTaskStatus;
 }

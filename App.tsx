@@ -754,6 +754,10 @@ const App: React.FC = () => {
     setActiveTab('elearning');
   };
 
+  const handleOpenEducationContent = () => {
+    setActiveTab('education');
+  };
+
   const handleDeleteLearningProfile = (profileId: string) => {
     if (!currentUser) return;
     if (learningProfilesState[0]?.id !== profileId) return;
@@ -1964,12 +1968,13 @@ const App: React.FC = () => {
         ) : publicEvent ? (
           <EinsteinHouseOS
             events={[publicEvent]}
-            inventory={appState.inventory}
-            employees={appState.employees}
-            packages={appState.packages}
-            canEdit={false}
-            liveOnly
-            publicMode
+          inventory={appState.inventory}
+          employees={appState.employees}
+          packages={appState.packages}
+          educationActivities={appState.educationActivities || []}
+          canEdit={false}
+          liveOnly
+          publicMode
             initialEventId={publicLiveEventId}
             onUpdateEvent={() => undefined}
           />
@@ -2140,7 +2145,9 @@ const App: React.FC = () => {
           inventory={appState.inventory}
           employees={appState.employees}
           packages={appState.packages}
+          educationActivities={appState.educationActivities || []}
           canEdit={can('EVENTS_EDIT')}
+          onOpenEducationContent={handleOpenEducationContent}
           onUpdateEvent={guard('EVENTS_EDIT', handleUpdateEvent)}
         />
       )}

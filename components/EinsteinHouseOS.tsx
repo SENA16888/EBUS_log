@@ -42,6 +42,8 @@ import {
 import {
   ComboPackage,
   Employee,
+  EducationActivity,
+  EducationTheme,
   Event,
   HouseOperationFeedback,
   HouseOperationIncident,
@@ -60,10 +62,12 @@ interface EinsteinHouseOSProps {
   inventory: InventoryItem[];
   employees: Employee[];
   packages: ComboPackage[];
+  educationActivities?: EducationActivity[];
   canEdit?: boolean;
   liveOnly?: boolean;
   publicMode?: boolean;
   initialEventId?: string;
+  onOpenEducationContent?: (payload?: { activityId?: string; themeId?: string }) => void;
   onUpdateEvent: (eventId: string, updates: Partial<Event>) => void;
 }
 
@@ -690,10 +694,12 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
   inventory,
   employees,
   packages,
+  educationActivities = [],
   canEdit = true,
   liveOnly = false,
   publicMode = false,
   initialEventId,
+  onOpenEducationContent,
   onUpdateEvent
 }) => {
   const [selectedEventId, setSelectedEventId] = useState(initialEventId || events[0]?.id || '');
@@ -705,6 +711,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
   const [draggedStationId, setDraggedStationId] = useState<string | null>(null);
   const [liveNow, setLiveNow] = useState(new Date());
   const [liveViewMode, setLiveViewMode] = useState<LiveViewMode>('CONTROL');
+  const [expandedEquipmentStationId, setExpandedEquipmentStationId] = useState<string | null>(null);
 
   const selectedEvent = events.find(event => event.id === selectedEventId) || events[0];
   const operation = useMemo(
@@ -906,6 +913,39 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
         rotations: buildRotations(current.studentCount || getStudentCount(selectedEvent!), stations, current.groupCount)
       };
     });
+  };
+
+  const addInventoryItemToStation = (stationId: string, itemId: string) => {
+    const item = inventory.find(inv => inv.id === itemId);
+    if (!item) return;
+    saveOperation(current => {
+      const stations = current.stations.map(station => {
+        if (station.id !== stationId) return station;
+        return {
+          ...station,
+          equipment: mergeEquipment(station.equipment || [], [{
+            itemId: item.id,
+            name: item.name,
+            quantity: 1,
+            unit: item.consumableUnit,
+            source: 'INVENTORY' as const
+          }])
+        };
+      });
+      return { ...current, stations };
+    });
+  };
+
+  const updateStationEducationLink = (stationId: string, value: string) => {
+    const [activityId, themeId] = value.split('::');
+    saveOperation(current => ({
+      ...current,
+      stations: current.stations.map(station =>
+        station.id === stationId
+          ? { ...station, educationLink: activityId && themeId ? { activityId, themeId } : undefined }
+          : station
+      )
+    }));
   };
 
   const removeStation = (stationId: string) => {
@@ -1774,11 +1814,15 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
           )}
 
           {activeTab === 'KNOWLEDGE' && (
-            <div className="grid grid-cols-1 xl:grid-cols-[1fr_360px] gap-4">
+            <div className="space-y-4">
               <section className="bg-white border border-slate-200 rounded-lg p-4">
                 <h3 className="font-black text-slate-900 flex items-center gap-2"><Library size={18} />SOP Center + Station Library</h3>
                 <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-3">
-                  {operation.stations.map(station => (
+                  {operation.stations.map(station => {
+                    const selectedEducationValue = station.educationLink ? `${station.educationLink.activityId}::${station.educationLink.themeId}` : '';
+                    const selectedEducationActivity = station.educationLink ? educationActivities.find(activity => activity.id === station.educationLink?.activityId) : undefined;
+                    const selectedEducationTheme = selectedEducationActivity?.themes.find(theme => theme.id === station.educationLink?.themeId);
+                    return (
                     <div key={station.id} className="border border-slate-100 rounded-lg p-3 bg-slate-50">
                       <div className="flex items-start justify-between gap-3">
                         <div>
@@ -1797,26 +1841,90 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                         ))}
                       </div>
                       <textarea value={station.script || ''} disabled={!canEdit} onChange={e => saveOperation(cur => ({ ...cur, stations: cur.stations.map(s => s.id === station.id ? { ...s, script: e.target.value } : s) }))} className="mt-3 w-full min-h-[90px] border rounded-lg p-2 text-xs" />
-                    </div>
-                  ))}
-                </div>
-              </section>
-
-              <section className="bg-white border border-slate-200 rounded-lg p-4">
-                <h3 className="font-black text-slate-900 flex items-center gap-2"><PackageCheck size={18} />Equipment Order</h3>
-                <div className="mt-4 space-y-2">
-                  {equipmentOrder.map(item => (
-                    <div key={item.itemId || item.name} className="flex items-center justify-between gap-3 border border-slate-100 rounded-lg p-3">
-                      <div>
-                        <p className="font-bold text-slate-800">{item.name}</p>
-                        <p className="text-xs text-slate-500">{item.itemId ? 'Từ kho Einstein Bus' : 'Vật tư thủ công'}</p>
+                      <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2">
+                        <select
+                          value=""
+                          disabled={!canEdit || packages.length === 0}
+                          onChange={event => {
+                            if (!event.target.value) return;
+                            mergePackageIntoStation(station.id, event.target.value);
+                            event.currentTarget.value = '';
+                          }}
+                          className="w-full border rounded-lg px-2 py-2 text-xs font-bold bg-white"
+                        >
+                          <option value="">Thêm gói thiết bị</option>
+                          {packages.map(pkg => <option key={pkg.id} value={pkg.id}>{pkg.name} ({pkg.items.length})</option>)}
+                        </select>
+                        <select
+                          value=""
+                          disabled={!canEdit || inventory.length === 0}
+                          onChange={event => {
+                            if (!event.target.value) return;
+                            addInventoryItemToStation(station.id, event.target.value);
+                            event.currentTarget.value = '';
+                          }}
+                          className="w-full border rounded-lg px-2 py-2 text-xs font-bold bg-white"
+                        >
+                          <option value="">Thêm thiết bị lẻ</option>
+                          {inventory.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+                        </select>
                       </div>
-                      <div className="text-right">
-                        <p className="font-black text-slate-900">{item.quantity} {item.unit || ''}</p>
-                        {item.available !== undefined && <p className={`text-xs font-bold ${item.available >= item.quantity ? 'text-emerald-600' : 'text-rose-600'}`}>Kho: {item.available}</p>}
+                      <div className="mt-2 grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_auto_auto] gap-2">
+                        <select
+                          value={selectedEducationValue}
+                          disabled={!canEdit || educationActivities.length === 0}
+                          onChange={event => updateStationEducationLink(station.id, event.target.value)}
+                          className="w-full border rounded-lg px-2 py-2 text-xs font-bold bg-white"
+                        >
+                          <option value="">Gắn nội dung giáo dục</option>
+                          {educationActivities.flatMap(activity => activity.themes.map(theme => (
+                            <option key={`${activity.id}::${theme.id}`} value={`${activity.id}::${theme.id}`}>{activity.name} • {theme.name}</option>
+                          )))}
+                        </select>
+                        <button
+                          onClick={() => setExpandedEquipmentStationId(expandedEquipmentStationId === station.id ? null : station.id)}
+                          className="px-3 py-2 rounded-lg border border-slate-200 bg-white text-xs font-black text-slate-700"
+                        >
+                          {expandedEquipmentStationId === station.id ? 'Ẩn thiết bị' : 'Xem thiết bị'}
+                        </button>
+                        <button
+                          onClick={() => onOpenEducationContent?.(station.educationLink)}
+                          className="px-3 py-2 rounded-lg border border-indigo-100 bg-indigo-50 text-xs font-black text-indigo-700"
+                        >
+                          Xem nội dung GD
+                        </button>
                       </div>
+                      {selectedEducationTheme && (
+                        <div className="mt-2 rounded-lg border border-indigo-100 bg-indigo-50 p-2 text-xs text-indigo-900">
+                          <p className="font-black">{selectedEducationActivity?.name} • {selectedEducationTheme.name}</p>
+                          <p className="mt-1">{selectedEducationTheme.pedagogyContent}</p>
+                        </div>
+                      )}
+                      {expandedEquipmentStationId === station.id && (
+                        <div className="mt-3 rounded-lg border border-slate-200 bg-white p-3">
+                          <p className="text-xs font-black uppercase text-slate-500">Danh mục thiết bị của phòng/khu vực</p>
+                          <div className="mt-2 space-y-2">
+                            {(station.equipment || []).map(item => {
+                              const inv = item.itemId ? inventory.find(i => i.id === item.itemId) : undefined;
+                              return (
+                                <div key={`${item.itemId || item.name}-${item.name}`} className="flex items-center justify-between gap-3 rounded-lg border border-slate-100 p-2">
+                                  <div>
+                                    <p className="font-bold text-slate-800 text-sm">{item.name}</p>
+                                    <p className="text-[11px] text-slate-500">{item.itemId ? 'Thiết bị lẻ/kho' : 'Vật tư thủ công'}</p>
+                                  </div>
+                                  <div className="text-right">
+                                    <p className="font-black text-slate-900">{item.quantity} {item.unit || ''}</p>
+                                    {inv && <p className={`text-[11px] font-bold ${inv.availableQuantity >= item.quantity ? 'text-emerald-600' : 'text-rose-600'}`}>Kho: {inv.availableQuantity}</p>}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                            {(station.equipment || []).length === 0 && <p className="text-sm text-slate-500">Chưa có thiết bị cho khu vực này.</p>}
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  ))}
+                  )})}
                 </div>
               </section>
             </div>
