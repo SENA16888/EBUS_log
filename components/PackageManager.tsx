@@ -1,6 +1,6 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { ComboPackage, InventoryItem } from '../types';
+import { ComboPackage, ComboPackageType, InventoryItem } from '../types';
 import { Plus, X, Trash2, Package, Pencil } from 'lucide-react';
 
 interface PackageManagerProps {
@@ -27,17 +27,23 @@ export const PackageManager: React.FC<PackageManagerProps> = ({
   const [newPkgName, setNewPkgName] = useState('');
   const [newPkgDesc, setNewPkgDesc] = useState('');
   const [newPkgCategory, setNewPkgCategory] = useState('');
+  const [newPkgType, setNewPkgType] = useState<ComboPackageType>('EDUCATION');
   const [newPkgPrice, setNewPkgPrice] = useState(0);
   const [tempItems, setTempItems] = useState<{itemId: string, quantity: number}[]>([]);
   const [selectedItemId, setSelectedItemId] = useState('');
   const [selectedQty, setSelectedQty] = useState(1);
   const [itemSearchTerm, setItemSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string>('ALL');
+  const [packageTypeFilter, setPackageTypeFilter] = useState<ComboPackageType | 'ALL'>('ALL');
   const [packageSearch, setPackageSearch] = useState('');
   const [detailItemId, setDetailItemId] = useState<string | null>(null);
   const [hoverItem, setHoverItem] = useState<{ id: string; x: number; y: number } | null>(null);
 
   const categoryLabel = (category?: string) => category?.trim() || 'Khác/Chưa phân loại';
+  const packageTypeLabel = (type?: ComboPackageType) => (type || 'EDUCATION') === 'EVENT_SUPPORT' ? 'Phụ trợ sự kiện' : 'Học liệu';
+  const packageTypeClasses = (type?: ComboPackageType) => (type || 'EDUCATION') === 'EVENT_SUPPORT'
+    ? 'bg-amber-50 text-amber-700 border-amber-100'
+    : 'bg-emerald-50 text-emerald-700 border-emerald-100';
 
   const packageCategories = useMemo(() => {
     const set = new Set<string>();
@@ -90,6 +96,7 @@ export const PackageManager: React.FC<PackageManagerProps> = ({
     const normalizedSearch = packageSearch.trim().toLowerCase();
     return [...packages]
       .filter(pkg => {
+        if (packageTypeFilter !== 'ALL' && (pkg.packageType || 'EDUCATION') !== packageTypeFilter) return false;
         if (categoryFilter === 'UNCATEGORIZED') return !pkg.category || !pkg.category.trim();
         if (categoryFilter !== 'ALL') return pkg.category?.trim() === categoryFilter;
         return true;
@@ -104,7 +111,7 @@ export const PackageManager: React.FC<PackageManagerProps> = ({
         if (catCompare !== 0) return catCompare;
         return a.name.localeCompare(b.name, 'vi', { sensitivity: 'base' });
       });
-  }, [packages, categoryFilter, packageSearch]);
+  }, [packages, packageTypeFilter, categoryFilter, packageSearch]);
 
   const detailItem = detailItemId ? inventory.find(i => i.id === detailItemId) : null;
   const hoverDetailItem = hoverItem ? inventory.find(i => i.id === hoverItem.id) : null;
@@ -117,6 +124,7 @@ export const PackageManager: React.FC<PackageManagerProps> = ({
     setNewPkgName(pkg.name);
     setNewPkgDesc(pkg.description);
     setNewPkgCategory(pkg.category || '');
+    setNewPkgType(pkg.packageType || 'EDUCATION');
     setNewPkgPrice(pkg.packagePrice || 0);
     setTempItems([...pkg.items]);
     setShowCreateModal(true);
@@ -158,6 +166,7 @@ export const PackageManager: React.FC<PackageManagerProps> = ({
       name: newPkgName,
       description: newPkgDesc,
       category: newPkgCategory.trim() || undefined,
+      packageType: newPkgType,
       packagePrice: Number(newPkgPrice),
       items: tempItems
     };
@@ -167,7 +176,7 @@ export const PackageManager: React.FC<PackageManagerProps> = ({
   };
 
   const closeModal = () => { setShowCreateModal(false); resetForm(); };
-  const resetForm = () => { setNewPkgName(''); setNewPkgDesc(''); setNewPkgCategory(''); setNewPkgPrice(0); setTempItems([]); setSelectedItemId(''); setSelectedQty(1); setEditingPkgId(null); };
+  const resetForm = () => { setNewPkgName(''); setNewPkgDesc(''); setNewPkgCategory(''); setNewPkgType('EDUCATION'); setNewPkgPrice(0); setTempItems([]); setSelectedItemId(''); setSelectedQty(1); setEditingPkgId(null); };
 
   return (
     <div className="space-y-6">
@@ -185,6 +194,18 @@ export const PackageManager: React.FC<PackageManagerProps> = ({
 
       <div className="bg-white border border-slate-100 rounded-xl shadow-sm p-4 space-y-3">
         <div className="flex flex-col lg:flex-row gap-3">
+          <div className="flex-1">
+            <p className="text-[11px] font-bold text-gray-500 uppercase mb-1">Loại gói</p>
+            <select
+              value={packageTypeFilter}
+              onChange={(e) => setPackageTypeFilter(e.target.value as ComboPackageType | 'ALL')}
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+            >
+              <option value="ALL">Tất cả loại gói</option>
+              <option value="EDUCATION">Học liệu</option>
+              <option value="EVENT_SUPPORT">Phụ trợ sự kiện</option>
+            </select>
+          </div>
           <div className="flex-1">
             <p className="text-[11px] font-bold text-gray-500 uppercase mb-1">Lọc theo danh mục</p>
             <select
@@ -229,6 +250,7 @@ export const PackageManager: React.FC<PackageManagerProps> = ({
                   </h3>
                   <div className="flex items-center flex-wrap gap-2 mt-1">
                     <p className="text-sm font-bold text-blue-600">{pkg.packagePrice?.toLocaleString()} VNĐ</p>
+                    <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${packageTypeClasses(pkg.packageType)}`}>{packageTypeLabel(pkg.packageType)}</span>
                     <span className="text-[11px] font-semibold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">{categoryLabel(pkg.category)}</span>
                   </div>
                 </div>
@@ -306,8 +328,12 @@ export const PackageManager: React.FC<PackageManagerProps> = ({
             <div className="p-6 overflow-y-auto space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <input type="text" className="w-full border p-2 rounded-lg" placeholder="Tên gói" value={newPkgName} onChange={(e) => setNewPkgName(e.target.value)} />
-                <input type="text" className="w-full border p-2 rounded-lg" placeholder="Danh mục (VD: Âm thanh, Ánh sáng)" value={newPkgCategory} onChange={(e) => setNewPkgCategory(e.target.value)} />
+                <select className="w-full border p-2 rounded-lg bg-white" value={newPkgType} onChange={(e) => setNewPkgType(e.target.value as ComboPackageType)}>
+                  <option value="EDUCATION">Học liệu</option>
+                  <option value="EVENT_SUPPORT">Phụ trợ sự kiện</option>
+                </select>
               </div>
+              <input type="text" className="w-full border p-2 rounded-lg" placeholder="Danh mục (VD: Robot, Vận chuyển, Bán hàng)" value={newPkgCategory} onChange={(e) => setNewPkgCategory(e.target.value)} />
               <input type="number" className="w-full border p-2 rounded-lg" placeholder="Giá gói" value={newPkgPrice} onChange={(e) => setNewPkgPrice(Number(e.target.value))} />
               <div className="border-t pt-4">
                 <p className="font-bold mb-2">Thêm thiết bị</p>

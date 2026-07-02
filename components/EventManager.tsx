@@ -89,6 +89,14 @@ const SESSION_OPTIONS: { value: EventSession; label: string }[] = [
   { value: 'EVENING', label: 'TỐI' }
 ];
 
+const packageTypeLabel = (pkg?: ComboPackage) => (pkg?.packageType || 'EDUCATION') === 'EVENT_SUPPORT'
+  ? 'Phụ trợ sự kiện'
+  : 'Học liệu';
+
+const packageTypeBadgeClass = (pkg?: ComboPackage) => (pkg?.packageType || 'EDUCATION') === 'EVENT_SUPPORT'
+  ? 'bg-amber-50 text-amber-700 border-amber-100'
+  : 'bg-emerald-50 text-emerald-700 border-emerald-100';
+
 const TIMELINE_PHASES: { value: EventTimelinePhase; label: string; color: string; description: string }[] = [
   { value: 'BEFORE', label: 'Trước sự kiện', color: 'bg-amber-50 border-amber-100', description: 'Công tác chuẩn bị, vận chuyển, set up' },
   { value: 'DURING', label: 'Trong sự kiện', color: 'bg-emerald-50 border-emerald-100', description: 'Những mốc diễn ra trong chương trình' },
@@ -998,7 +1006,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
       if (!exists) {
         options.push({
           value: `PKG-${pkg.id}`,
-          label: `${pkg.name} • Gói hệ thống`,
+          label: `${pkg.name} • ${packageTypeLabel(pkg)}`,
           displayName: pkg.name,
           source: 'PACKAGE',
           rawId: pkg.id
@@ -3161,7 +3169,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
                 <div className="space-y-3">
                   <select className="w-full border rounded-xl p-3 bg-white" value={selectedPackageId} onChange={e => setSelectedPackageId(e.target.value)}>
                     <option value="">-- Chọn gói combo --</option>
-                    {packages.map(pkg => <option key={pkg.id} value={pkg.id}>{pkg.name}</option>)}
+                    {packages.map(pkg => <option key={pkg.id} value={pkg.id}>{pkg.name} • {packageTypeLabel(pkg)}</option>)}
                   </select>
                   {selectedPackageForExport ? (
                     <div className="rounded-xl border border-blue-100 bg-blue-50 p-3">
@@ -3169,6 +3177,9 @@ export const EventManager: React.FC<EventManagerProps> = ({
                       <div className="mt-1 flex items-start justify-between gap-3">
                         <div>
                           <p className="font-black text-slate-900">{selectedPackageForExport.name}</p>
+                          <span className={`mt-1 inline-flex rounded-full border px-2 py-0.5 text-[10px] font-black ${packageTypeBadgeClass(selectedPackageForExport)}`}>
+                            {packageTypeLabel(selectedPackageForExport)}
+                          </span>
                           {selectedPackageForExport.description && (
                             <p className="mt-0.5 text-xs text-slate-600">{selectedPackageForExport.description}</p>
                           )}

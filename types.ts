@@ -559,11 +559,14 @@ export interface ComboItem {
   quantity: number;
 }
 
+export type ComboPackageType = 'EDUCATION' | 'EVENT_SUPPORT';
+
 export interface ComboPackage {
   id: string;
   name: string;
   description: string;
   category?: string;
+  packageType?: ComboPackageType;
   items: ComboItem[];
   packagePrice: number;
 }

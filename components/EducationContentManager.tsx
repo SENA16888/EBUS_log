@@ -123,6 +123,10 @@ export const EducationContentManager: React.FC<EducationContentManagerProps> = (
     learningTracks.flatMap(track => track.lessons.map(lesson => ({ trackId: track.id, trackTitle: track.title, lesson }))),
     [learningTracks]
   );
+  const educationPackages = useMemo(
+    () => packages.filter(pkg => (pkg.packageType || 'EDUCATION') === 'EDUCATION'),
+    [packages]
+  );
 
   const activeTheme = selectedActivity?.themes.find(theme => theme.id === selectedThemeId)
     || selectedActivity?.themes[0]
@@ -181,7 +185,7 @@ export const EducationContentManager: React.FC<EducationContentManagerProps> = (
 
   const addEquipment = (type: EducationEquipmentLink['type']) => {
     if (!activeTheme) return;
-    const source = type === 'ITEM' ? inventory[0] : packages[0];
+    const source = type === 'ITEM' ? inventory[0] : educationPackages[0];
     if (!source) return;
     updateTheme(activeTheme.id, {
       equipment: [...activeTheme.equipment, { type, id: source.id, quantity: 1 }]
@@ -381,7 +385,7 @@ export const EducationContentManager: React.FC<EducationContentManagerProps> = (
                   <h3 className="font-black text-slate-900 flex items-center gap-2"><PackagePlus size={18} />Giáo cụ đi kèm</h3>
                   <div className="flex gap-1">
                     <button title="Thêm thiết bị lẻ" onClick={() => addEquipment('ITEM')} disabled={!canEdit || inventory.length === 0} className="p-2 rounded-lg border border-slate-200 text-slate-600 disabled:text-slate-300"><Box size={16} /></button>
-                    <button title="Thêm gói thiết bị" onClick={() => addEquipment('PACKAGE')} disabled={!canEdit || packages.length === 0} className="p-2 rounded-lg border border-slate-200 text-slate-600 disabled:text-slate-300"><Layers size={16} /></button>
+                    <button title="Thêm gói học liệu" onClick={() => addEquipment('PACKAGE')} disabled={!canEdit || educationPackages.length === 0} className="p-2 rounded-lg border border-slate-200 text-slate-600 disabled:text-slate-300"><Layers size={16} /></button>
                   </div>
                 </div>
                 <div className="mt-3 space-y-2">
@@ -389,7 +393,7 @@ export const EducationContentManager: React.FC<EducationContentManagerProps> = (
                     <div key={`${link.type}-${index}`} className="border border-slate-100 rounded-lg p-3">
                       <div className="flex items-center gap-2">
                         <select value={link.id} disabled={!canEdit} onChange={e => updateEquipment(index, { id: e.target.value })} className="flex-1 border rounded-lg px-2 py-2 text-sm">
-                          {(link.type === 'PACKAGE' ? packages : inventory).map(source => <option key={source.id} value={source.id}>{source.name}</option>)}
+                          {(link.type === 'PACKAGE' ? educationPackages : inventory).map(source => <option key={source.id} value={source.id}>{source.name}</option>)}
                         </select>
                         <input type="number" min={1} value={link.quantity} disabled={!canEdit} onChange={e => updateEquipment(index, { quantity: Number(e.target.value) || 1 })} className="w-16 border rounded-lg px-2 py-2 text-sm" />
                         <button onClick={() => removeEquipment(index)} disabled={!canEdit} className="text-slate-300 hover:text-rose-600 disabled:hover:text-slate-300"><Trash2 size={16} /></button>

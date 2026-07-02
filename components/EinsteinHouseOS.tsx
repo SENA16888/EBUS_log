@@ -169,6 +169,19 @@ const GROUP_LOGOS = [
   { id: 'space', label: 'Vũ trụ', icon: Telescope }
 ];
 
+const MAX_ROTATION_GROUPS = 30;
+
+const getGroupLetter = (index: number) => {
+  let value = index + 1;
+  let label = '';
+  while (value > 0) {
+    value -= 1;
+    label = String.fromCharCode(65 + (value % 26)) + label;
+    value = Math.floor(value / 26);
+  }
+  return label;
+};
+
 const getGroupLogo = (group: Pick<HouseOperationRotationGroup, 'logoId'>, index: number) =>
   GROUP_LOGOS.find(logo => logo.id === group.logoId) || GROUP_LOGOS[index % GROUP_LOGOS.length];
 
@@ -344,12 +357,14 @@ const recalcStructuredTimeline = (event: Event, stations: HouseOperationStation[
 };
 
 const buildRotations = (studentCount: number, stations: HouseOperationStation[], requestedGroupCount?: number): HouseOperationRotationGroup[] => {
-  const groupCount = Math.max(1, Math.min(6, requestedGroupCount || Math.ceil(studentCount / 25)));
+  const groupCount = Math.max(1, Math.min(MAX_ROTATION_GROUPS, requestedGroupCount || Math.ceil(studentCount / 25)));
   const stationIds = stations.map(station => station.id);
+  const baseStudentCount = Math.floor(studentCount / groupCount);
+  const remainder = studentCount % groupCount;
   return Array.from({ length: groupCount }).map((_, index) => ({
     id: makeId('eh-rot'),
-    name: `Lớp/Nhóm ${String.fromCharCode(65 + index)}`,
-    studentCount: Math.ceil(studentCount / groupCount),
+    name: `Lớp/Nhóm ${getGroupLetter(index)}`,
+    studentCount: baseStudentCount + (index < remainder ? 1 : 0),
     color: GROUP_COLORS[index % GROUP_COLORS.length],
     logoId: GROUP_LOGOS[index % GROUP_LOGOS.length].id,
     route: stationIds.map((_, routeIndex) => stationIds[(routeIndex + index) % stationIds.length]).filter(Boolean)
@@ -523,6 +538,8 @@ const createStationInstances = (inventory: InventoryItem[]) =>
     };
   });
 
+const isEducationPackage = (pkg: ComboPackage) => (pkg.packageType || 'EDUCATION') === 'EDUCATION';
+
 const getPackageStationCategory = (pkg: ComboPackage): HouseOperationStation['category'] => {
   const text = `${pkg.name} ${pkg.category || ''} ${pkg.description || ''}`.toLowerCase();
   if (/vr|thực tế ảo|virtual/.test(text)) return 'VR';
@@ -620,7 +637,7 @@ const createEmptyAreaStation = (index: number): HouseOperationStation => ({
 });
 
 const createPackageStationInstances = (packages: ComboPackage[], inventory: InventoryItem[]) =>
-  packages.map((pkg, index) => createStationFromPackage(pkg, inventory, index));
+  packages.filter(isEducationPackage).map((pkg, index) => createStationFromPackage(pkg, inventory, index));
 
 const createDefaultTasks = (event: Event, stations: HouseOperationStation[], employees: Employee[]): HouseOperationTask[] => {
   const lead = employees.find(emp => /lead|hdv|leader|quản/i.test(`${emp.role} ${emp.name}`));
@@ -647,9 +664,10 @@ const createDefaultTasks = (event: Event, stations: HouseOperationStation[], emp
 };
 
 const createDefaultOperation = (event: Event, inventory: InventoryItem[], employees: Employee[], packages: ComboPackage[] = []): HouseOperationInstance => {
-  const stations = packages.length > 0 ? createPackageStationInstances(packages, inventory) : createStationInstances(inventory);
+  const educationPackages = packages.filter(isEducationPackage);
+  const stations = educationPackages.length > 0 ? createPackageStationInstances(educationPackages, inventory) : createStationInstances(inventory);
   const studentCount = getStudentCount(event);
-  const groupCount = Math.max(1, Math.min(6, Math.ceil(studentCount / 25)));
+  const groupCount = Math.max(1, Math.min(MAX_ROTATION_GROUPS, Math.ceil(studentCount / 25)));
   return {
     templateVersion: 1,
     createdAt: new Date().toISOString(),
@@ -740,6 +758,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
     () => selectedEvent ? ensureOperation(selectedEvent, inventory, employees, packages) : null,
     [selectedEvent, inventory, employees, packages]
   );
+  const educationPackages = useMemo(() => packages.filter(isEducationPackage), [packages]);
 
   useEffect(() => {
     if (initialEventId && initialEventId !== selectedEventId) {
@@ -1141,7 +1160,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
   };
 
   const updateGroupCount = (value: number) => {
-    const groupCount = Math.max(1, Math.min(6, Math.round(value || 1)));
+    const groupCount = Math.max(1, Math.min(MAX_ROTATION_GROUPS, Math.round(value || 1)));
     saveOperation(current => ({
       ...current,
       groupCount,
@@ -1515,7 +1534,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                 <div className="mt-4">
                   <p className="text-xs font-black uppercase text-slate-500 mb-2">Tạo nhanh khu vực từ gói thiết bị</p>
                   <div className="flex flex-wrap gap-2">
-                    {packages.map(pkg => {
+                    {educationPackages.map(pkg => {
                       const alreadyAdded = operation.stations.some(station => getStationPackageIds(station).includes(pkg.id));
                       return (
                         <button
@@ -1531,12 +1550,12 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                         </button>
                       );
                     })}
-                    {packages.length === 0 && (
+                    {educationPackages.length === 0 && (
                       <div className="w-full rounded-lg border border-amber-100 bg-amber-50 p-3 text-sm text-amber-800">
-                        Chưa có gói thiết bị. Hãy tạo gói ở module Gói thiết bị để EH OS dùng làm trạm.
+                        Chưa có gói học liệu. Hãy tạo hoặc chuyển loại gói ở module Gói thiết bị để EH OS dùng làm trạm.
                       </div>
                     )}
-                    {packages.length === 0 && STATION_TEMPLATES.map(template => (
+                    {educationPackages.length === 0 && STATION_TEMPLATES.map(template => (
                       <button key={template.name} disabled className="inline-flex items-center gap-1 px-3 py-2 rounded-lg border border-slate-200 text-sm font-bold text-slate-300">
                         <Plus size={15} />
                         {template.name}
@@ -1557,7 +1576,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                 <div className="mt-4 space-y-2">
                   {operation.stations.map((station, index) => {
                     const stationPackageIds = getStationPackageIds(station);
-                    const mergeablePackages = packages.filter(pkg => !stationPackageIds.includes(pkg.id));
+                    const mergeablePackages = educationPackages.filter(pkg => !stationPackageIds.includes(pkg.id));
                     return (
                       <div
                         key={station.id}
@@ -1740,7 +1759,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                     <input
                       type="number"
                       min={1}
-                      max={6}
+                      max={MAX_ROTATION_GROUPS}
                       value={operation.groupCount || operation.rotations.length || 1}
                       disabled={!canEdit}
                       onChange={event => updateGroupCount(Number(event.target.value))}
@@ -1932,7 +1951,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                       <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2">
                         <select
                           value=""
-                          disabled={!canEdit || packages.length === 0}
+                          disabled={!canEdit || educationPackages.length === 0}
                           onChange={event => {
                             if (!event.target.value) return;
                             mergePackageIntoStation(station.id, event.target.value);
@@ -1941,7 +1960,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                           className="w-full border rounded-lg px-2 py-2 text-xs font-bold bg-white"
                         >
                           <option value="">Bổ sung gói ngoài Design</option>
-                          {packages.map(pkg => <option key={pkg.id} value={pkg.id}>{pkg.name} ({pkg.items.length})</option>)}
+                          {educationPackages.map(pkg => <option key={pkg.id} value={pkg.id}>{pkg.name} ({pkg.items.length})</option>)}
                         </select>
                         <select
                           value=""
