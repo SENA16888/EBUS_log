@@ -77,7 +77,7 @@ export const MOCK_INTERACTIVE_DEVICES: InteractiveDeviceProfile[] = [
       {
         id: 'bc-end-shift-weekday',
         title: 'Thông báo kết thúc ca làm Thứ 2 - Thứ 5',
-        time: '18:50',
+        time: '18:30',
         enabled: true,
         daysOfWeek: [1, 2, 3, 4],
         voiceText: 'Ca vận hành hôm nay đã kết thúc. Vui lòng kiểm tra thiết bị, tắt nguồn và bàn giao khu vực theo checklist.',
@@ -95,7 +95,7 @@ export const MOCK_INTERACTIVE_DEVICES: InteractiveDeviceProfile[] = [
       {
         id: 'bc-end-shift-weekend',
         title: 'Thông báo kết thúc ca làm Thứ 6 - Chủ nhật',
-        time: '20:50',
+        time: '20:30',
         enabled: true,
         daysOfWeek: [5, 6, 0],
         voiceText: 'Ca vận hành hôm nay đã kết thúc. Vui lòng kiểm tra thiết bị, tắt nguồn và bàn giao khu vực theo checklist.',

@@ -88,6 +88,26 @@ const formatDate = (value?: string) => {
   return date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
 };
 
+const WEEKDAY_OPTIONS = [
+  { value: 1, label: 'T2' },
+  { value: 2, label: 'T3' },
+  { value: 3, label: 'T4' },
+  { value: 4, label: 'T5' },
+  { value: 5, label: 'T6' },
+  { value: 6, label: 'T7' },
+  { value: 0, label: 'CN' }
+];
+
+const formatWeekdays = (days?: number[]) => {
+  if (!days || days.length === 0) return 'Hằng ngày';
+  const order = [1, 2, 3, 4, 5, 6, 0];
+  const labels = order
+    .filter(day => days.includes(day))
+    .map(day => WEEKDAY_OPTIONS.find(option => option.value === day)?.label)
+    .filter(Boolean);
+  return labels.join(', ') || 'Hằng ngày';
+};
+
 const getEventDateKeys = (event: Event) => {
   const keys = new Set<string>();
   (event.schedule || []).forEach(item => item.date && keys.add(item.date));
@@ -315,6 +335,16 @@ const normalizeBroadcastDevice = (input?: InteractiveDeviceProfile): Interactive
           ['bc-end-shift-weekday', 'bc-closing-weekday', 'bc-end-shift-weekend', 'bc-closing-weekend'].includes(defaultSchedule.id)
         )
       ];
+  const normalizedSchedules = schedules.map(schedule => {
+    const defaultSchedule = defaults.schedules.find(item => item.id === schedule.id);
+    if (!defaultSchedule) return schedule;
+    if (!['bc-end-shift-weekday', 'bc-closing-weekday', 'bc-end-shift-weekend', 'bc-closing-weekend'].includes(schedule.id)) return schedule;
+    return {
+      ...schedule,
+      time: defaultSchedule.time,
+      daysOfWeek: defaultSchedule.daysOfWeek
+    };
+  });
 
   return {
     ...defaults,
@@ -327,7 +357,7 @@ const normalizeBroadcastDevice = (input?: InteractiveDeviceProfile): Interactive
     operatingHours: input.operatingHours && input.operatingHours.length > 0 ? input.operatingHours : defaults.operatingHours,
     silenceWindows: input.silenceWindows && input.silenceWindows.length > 0 ? input.silenceWindows : defaults.silenceWindows,
     eventMusicSettings: input.eventMusicSettings || [],
-    schedules: schedules.length > 0 ? schedules : defaults.schedules,
+    schedules: normalizedSchedules.length > 0 ? normalizedSchedules : defaults.schedules,
     audioAssets: input.audioAssets || [],
     eventRules: input.eventRules && input.eventRules.length > 0 ? input.eventRules : defaults.eventRules,
     playbackLogs: input.playbackLogs || []
@@ -350,6 +380,7 @@ export const InteractiveDeviceManager: React.FC<InteractiveDeviceManagerProps> =
   const [scheduleTitle, setScheduleTitle] = useState('Thông báo mới');
   const [scheduleTime, setScheduleTime] = useState('09:00');
   const [scheduleText, setScheduleText] = useState('');
+  const [scheduleDays, setScheduleDays] = useState<number[]>([]);
   const [selectedAssetId, setSelectedAssetId] = useState('');
   const [assetTitle, setAssetTitle] = useState('');
   const [assetUrl, setAssetUrl] = useState('');
@@ -790,11 +821,13 @@ export const InteractiveDeviceManager: React.FC<InteractiveDeviceManagerProps> =
       enabled: true,
       assetId: hasAsset ? selectedAssetId : undefined,
       voiceText: scheduleText.trim() || undefined,
+      daysOfWeek: scheduleDays.length > 0 ? [...scheduleDays].sort((a, b) => a - b) : undefined,
       priority: 10
     };
     commitDevice({ schedules: [...(device.schedules || []), schedule].sort((a, b) => timeToMinutes(a.time) - timeToMinutes(b.time)) });
     setScheduleTitle('Thông báo mới');
     setScheduleText('');
+    setScheduleDays([]);
     setSelectedAssetId('');
   };
 
@@ -1174,6 +1207,29 @@ export const InteractiveDeviceManager: React.FC<InteractiveDeviceManagerProps> =
               <input value={scheduleTitle} onChange={e => setScheduleTitle(e.target.value)} className="border border-slate-200 rounded-lg px-3 py-2 text-sm" placeholder="Tên lịch" disabled={!canEdit} />
               <input type="time" value={scheduleTime} onChange={e => setScheduleTime(e.target.value)} className="border border-slate-200 rounded-lg px-3 py-2 text-sm" disabled={!canEdit} />
             </div>
+            <div className="grid grid-cols-7 gap-1">
+              {WEEKDAY_OPTIONS.map(option => {
+                const active = scheduleDays.includes(option.value);
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => setScheduleDays(prev =>
+                      prev.includes(option.value)
+                        ? prev.filter(day => day !== option.value)
+                        : [...prev, option.value]
+                    )}
+                    disabled={!canEdit}
+                    className={`py-2 rounded-lg border text-xs font-bold transition ${
+                      active ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-slate-200 text-slate-500 hover:bg-slate-50'
+                    } disabled:opacity-50`}
+                  >
+                    {option.label}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-xs text-slate-500">{scheduleDays.length ? `Chỉ phát: ${formatWeekdays(scheduleDays)}` : 'Không chọn thứ = phát hằng ngày'}</p>
             <select value={selectedAssetId} onChange={e => setSelectedAssetId(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" disabled={!canEdit}>
               <option value="">Đọc bằng Voice AI</option>
               {(device.audioAssets || []).map(asset => <option key={asset.id} value={asset.id}>{asset.title}</option>)}
@@ -1191,6 +1247,7 @@ export const InteractiveDeviceManager: React.FC<InteractiveDeviceManagerProps> =
                   <div className="w-12 text-sm font-bold text-slate-800">{schedule.time}</div>
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-bold text-slate-900">{schedule.title}</p>
+                    <p className="text-[11px] font-bold text-emerald-700 mt-0.5">{formatWeekdays(schedule.daysOfWeek)}</p>
                     <p className="text-xs text-slate-500 line-clamp-2">
                       {(device.audioAssets || []).find(asset => asset.id === schedule.assetId)?.title || schedule.voiceText || 'Chưa có nội dung'}
                     </p>
