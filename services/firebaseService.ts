@@ -1,6 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { getFirestore, doc, getDoc, setDoc, collection, getDocs, deleteDoc, onSnapshot, Unsubscribe, runTransaction, writeBatch } from 'firebase/firestore';
 import { getAuth, onAuthStateChanged, signInAnonymously } from 'firebase/auth';
+import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { AppState, LogEntry } from '../types';
 
 // Helper to safely get environment variables (same pattern as geminiService)
@@ -21,12 +22,41 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
 export const auth = getAuth(app);
+export const storage = getStorage(app);
 
 type PersistedActor = {
   id?: string;
   name?: string;
   role?: string;
   phone?: string;
+};
+
+const sanitizeStorageName = (value: string) =>
+  value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9._-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 90) || 'audio';
+
+export const uploadBroadcastAudioFile = async (
+  file: File,
+  assetId: string
+): Promise<{ url: string; fullPath: string }> => {
+  await initializeAuth();
+  const safeName = sanitizeStorageName(file.name || `${assetId}.mp3`);
+  const path = `broadcast-audio/${assetId}-${safeName}`;
+  const ref = storageRef(storage, path);
+  await uploadBytes(ref, file, {
+    contentType: file.type || 'audio/mpeg',
+    customMetadata: {
+      originalName: file.name || '',
+      uploadedAt: new Date().toISOString()
+    }
+  });
+  const url = await getDownloadURL(ref);
+  return { url, fullPath: path };
 };
 
 export const PERSISTED_STATE_KEYS = [

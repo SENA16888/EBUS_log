@@ -27,6 +27,7 @@ import {
   HouseOperationTimelineBlock,
   InteractiveDeviceProfile
 } from '../types';
+import { uploadBroadcastAudioFile } from '../services/firebaseService';
 
 interface InteractiveDeviceManagerProps {
   devices: InteractiveDeviceProfile[];
@@ -377,6 +378,7 @@ export const InteractiveDeviceManager: React.FC<InteractiveDeviceManagerProps> =
   const [now, setNow] = useState(new Date());
   const [isRunning, setIsRunning] = useState(false);
   const [isTabletMode, setIsTabletMode] = useState(false);
+  const [isUploadingAudio, setIsUploadingAudio] = useState(false);
   const [scheduleTitle, setScheduleTitle] = useState('Thông báo mới');
   const [scheduleTime, setScheduleTime] = useState('09:00');
   const [scheduleText, setScheduleText] = useState('');
@@ -749,33 +751,39 @@ export const InteractiveDeviceManager: React.FC<InteractiveDeviceManagerProps> =
     playAnnouncement(due);
   }, [announcements, device.isAutomationEnabled, isRunning, now]);
 
-  const handleUpload = (file?: File | null) => {
+  const handleUpload = async (file?: File | null) => {
     if (!file || !canEdit) return;
     if (!file.type.startsWith('audio/')) {
       alert('Vui lòng chọn file âm thanh phổ biến như mp3, wav, m4a.');
       return;
     }
-    if (file.size > 700 * 1024) {
-      alert('File này khá lớn để lưu trực tiếp vào Firestore. Vui lòng dùng file thông báo ngắn dưới 700KB hoặc dán URL âm thanh ngoài.');
+    if (file.size > 20 * 1024 * 1024) {
+      alert('File âm thanh quá lớn. Vui lòng dùng file dưới 20MB hoặc dán URL âm thanh ngoài.');
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = () => {
+    const assetId = makeId('bc-audio');
+    setIsUploadingAudio(true);
+    try {
+      const uploaded = await uploadBroadcastAudioFile(file, assetId);
       const asset: BroadcastAudioAsset = {
-        id: makeId('bc-audio'),
+        id: assetId,
         title: assetTitle.trim() || file.name.replace(/\.[^.]+$/, ''),
         source: 'UPLOAD',
         category: 'ANNOUNCEMENT',
-        dataUrl: String(reader.result || ''),
+        url: uploaded.url,
         fileName: file.name,
         mimeType: file.type,
         createdAt: new Date().toISOString()
       };
       commitDevice({ audioAssets: [asset, ...(device.audioAssets || [])] });
       setAssetTitle('');
-    };
-    reader.readAsDataURL(file);
+    } catch (error) {
+      console.error('Failed to upload broadcast audio:', error);
+      alert('Không upload được file âm thanh lên Firebase Storage. Vui lòng kiểm tra Storage Rules hoặc dùng Audio URL tạm thời.');
+    } finally {
+      setIsUploadingAudio(false);
+    }
   };
 
   const addUrlAsset = () => {
@@ -1136,9 +1144,10 @@ export const InteractiveDeviceManager: React.FC<InteractiveDeviceManagerProps> =
               <input value={assetTitle} onChange={e => setAssetTitle(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" placeholder="Tên âm thanh" disabled={!canEdit} />
               <label className={`flex items-center justify-center gap-2 border border-dashed rounded-lg px-3 py-5 text-sm font-semibold ${canEdit ? 'cursor-pointer hover:bg-slate-50 text-slate-600' : 'opacity-60 cursor-not-allowed text-slate-400'}`}>
                 <Upload size={18} />
-                Chọn MP3/WAV
-                <input type="file" accept="audio/*" className="hidden" onChange={e => handleUpload(e.target.files?.[0])} disabled={!canEdit} />
+                {isUploadingAudio ? 'Đang upload...' : 'Chọn MP3/WAV'}
+                <input type="file" accept="audio/*" className="hidden" onChange={e => void handleUpload(e.target.files?.[0])} disabled={!canEdit || isUploadingAudio} />
               </label>
+              <p className="text-xs text-slate-500">File upload được lưu ở Firebase Storage để không mất khi reload.</p>
             </div>
 
             <div className="border border-slate-200 rounded-lg p-3 space-y-2">

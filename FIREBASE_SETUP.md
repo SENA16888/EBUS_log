@@ -97,7 +97,25 @@
    ```
    - Click **"Publish"**
 
-4. **Restart dev server:**
+4. **Bật Firebase Storage cho file âm thanh phát thanh:**
+   - Tại Firebase Console → **Storage**
+   - Click **"Get started"** / **"Bắt đầu"**
+   - Chọn region gần Việt Nam nếu được hỏi
+   - Vào tab **"Rules"**
+   - Dùng rules phát triển:
+   ```firestore
+   rules_version = '2';
+   service firebase.storage {
+     match /b/{bucket}/o {
+       match /{allPaths=**} {
+         allow read, write: if true;
+       }
+     }
+   }
+   ```
+   - Click **"Publish"**
+
+5. **Restart dev server:**
    ```bash
    npm run dev
    ```
