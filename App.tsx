@@ -754,10 +754,6 @@ const App: React.FC = () => {
     setActiveTab('elearning');
   };
 
-  const handleOpenEducationContent = () => {
-    setActiveTab('education');
-  };
-
   const handleDeleteLearningProfile = (profileId: string) => {
     if (!currentUser) return;
     if (learningProfilesState[0]?.id !== profileId) return;
@@ -2146,8 +2142,8 @@ const App: React.FC = () => {
           employees={appState.employees}
           packages={appState.packages}
           educationActivities={appState.educationActivities || []}
+          learningTracks={appState.learningTracks || []}
           canEdit={can('EVENTS_EDIT')}
-          onOpenEducationContent={handleOpenEducationContent}
           onUpdateEvent={guard('EVENTS_EDIT', handleUpdateEvent)}
         />
       )}
