@@ -46,6 +46,7 @@ import {
   EducationActivity,
   EducationTheme,
   Event,
+  HouseOperationEducationLink,
   HouseOperationFeedback,
   HouseOperationIncident,
   HouseOperationInstance,
@@ -489,6 +490,24 @@ const getCountdownLabel = (block: GroupTimelineBlock | undefined, now: Date) => 
   return 'Đã kết thúc';
 };
 
+const getEducationLinkKey = (link: HouseOperationEducationLink) => `${link.activityId}::${link.themeId}`;
+
+const dedupeEducationLinks = (links: HouseOperationEducationLink[]) => {
+  const seen = new Set<string>();
+  return links.filter(link => {
+    const key = getEducationLinkKey(link);
+    if (!link.activityId || !link.themeId || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+};
+
+const getStationManualEducationLinks = (station: HouseOperationStation) =>
+  dedupeEducationLinks([
+    ...(station.educationLinks || []),
+    ...(station.educationLink ? [station.educationLink] : [])
+  ]);
+
 const createStationInstances = (inventory: InventoryItem[]) =>
   STATION_TEMPLATES.map((template, index) => {
     const matchedEquipment = template.equipment.map(item => {
@@ -714,7 +733,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
   const [liveNow, setLiveNow] = useState(new Date());
   const [liveViewMode, setLiveViewMode] = useState<LiveViewMode>('CONTROL');
   const [expandedEquipmentStationId, setExpandedEquipmentStationId] = useState<string | null>(null);
-  const [viewingEducationLink, setViewingEducationLink] = useState<{ activityId: string; themeId: string } | null>(null);
+  const [viewingEducationContext, setViewingEducationContext] = useState<{ stationName: string; links: HouseOperationEducationLink[]; activeIndex: number } | null>(null);
 
   const selectedEvent = events.find(event => event.id === selectedEventId) || events[0];
   const operation = useMemo(
@@ -939,13 +958,56 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
     });
   };
 
-  const updateStationEducationLink = (stationId: string, value: string) => {
+  const getAutoEducationLinksForStation = (station: HouseOperationStation) => {
+    const stationPackageIds = new Set(getStationPackageIds(station));
+    const stationItemIds = new Set((station.equipment || []).map(item => item.itemId).filter(Boolean) as string[]);
+    return dedupeEducationLinks(educationActivities.flatMap(activity =>
+      activity.themes
+        .filter(theme => {
+          const themePackageLinks = theme.equipment.filter(item => item.type === 'PACKAGE');
+          const packageMatch = themePackageLinks.some(item => stationPackageIds.has(item.id));
+          if (packageMatch) return true;
+          if (themePackageLinks.length > 0) return false;
+          return theme.equipment.some(item => item.type === 'ITEM' && stationItemIds.has(item.id));
+        })
+        .map(theme => ({ activityId: activity.id, themeId: theme.id }))
+    ));
+  };
+
+  const getStationEducationViews = (station: HouseOperationStation) => {
+    const autoLinks = getAutoEducationLinksForStation(station);
+    const autoKeys = new Set(autoLinks.map(getEducationLinkKey));
+    const manualLinks = getStationManualEducationLinks(station);
+    return [
+      ...autoLinks.map(link => ({ link, source: 'AUTO' as const })),
+      ...manualLinks.filter(link => !autoKeys.has(getEducationLinkKey(link))).map(link => ({ link, source: 'MANUAL' as const }))
+    ].map(view => {
+      const activity = educationActivities.find(item => item.id === view.link.activityId);
+      const theme = activity?.themes.find(item => item.id === view.link.themeId);
+      return { ...view, activity, theme };
+    });
+  };
+
+  const addStationEducationLink = (stationId: string, value: string) => {
     const [activityId, themeId] = value.split('::');
+    if (!activityId || !themeId) return;
     saveOperation(current => ({
       ...current,
       stations: current.stations.map(station =>
         station.id === stationId
-          ? { ...station, educationLink: activityId && themeId ? { activityId, themeId } : undefined }
+          ? { ...station, educationLink: undefined, educationLinks: dedupeEducationLinks([...getStationManualEducationLinks(station), { activityId, themeId }]) }
+          : station
+      )
+    }));
+  };
+
+  const removeStationEducationLink = (stationId: string, link: HouseOperationEducationLink) => {
+    const key = getEducationLinkKey(link);
+    saveOperation(current => ({
+      ...current,
+      stations: current.stations.map(station =>
+        station.id === stationId
+          ? { ...station, educationLink: undefined, educationLinks: getStationManualEducationLinks(station).filter(item => getEducationLinkKey(item) !== key) }
           : station
       )
     }));
@@ -1256,10 +1318,15 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
   const scheduledArrival = operation.timeline.find(block => block.kind === 'OPENING')?.startTime || getProgramStart(selectedEvent);
   const actualArrival = operation.live?.actualArrivalTime || scheduledArrival;
   const liveDelta = timeToMinutes(actualArrival) - timeToMinutes(scheduledArrival);
-  const viewingEducationActivity = viewingEducationLink
-    ? educationActivities.find(activity => activity.id === viewingEducationLink.activityId)
-    : undefined;
-  const viewingEducationTheme = viewingEducationActivity?.themes.find(theme => theme.id === viewingEducationLink?.themeId);
+  const viewingEducationItems = (viewingEducationContext?.links || []).map(link => {
+    const activity = educationActivities.find(item => item.id === link.activityId);
+    const theme = activity?.themes.find(item => item.id === link.themeId);
+    return { link, activity, theme };
+  });
+  const viewingEducationActiveIndex = Math.min(viewingEducationContext?.activeIndex || 0, Math.max(0, viewingEducationItems.length - 1));
+  const viewingEducationItem = viewingEducationItems[viewingEducationActiveIndex];
+  const viewingEducationActivity = viewingEducationItem?.activity;
+  const viewingEducationTheme = viewingEducationItem?.theme;
   const getEducationEquipmentName = (link: EducationTheme['equipment'][number]) => {
     if (link.type === 'PACKAGE') return packages.find(pkg => pkg.id === link.id)?.name || link.id;
     return inventory.find(item => item.id === link.id)?.name || link.id;
@@ -1833,11 +1900,16 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
             <div className="space-y-4">
               <section className="bg-white border border-slate-200 rounded-lg p-4">
                 <h3 className="font-black text-slate-900 flex items-center gap-2"><Library size={18} />SOP Center + Station Library</h3>
+                <p className="mt-1 text-xs text-slate-500">
+                  Knowledge tự lấy nội dung giáo dục theo gói/giáo cụ đã gắn ở Design và module Nội dung GD. Chỉ thêm thủ công khi khu vực có bài phụ hoặc ngoại lệ.
+                </p>
                 <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-3">
                   {operation.stations.map(station => {
-                    const selectedEducationValue = station.educationLink ? `${station.educationLink.activityId}::${station.educationLink.themeId}` : '';
-                    const selectedEducationActivity = station.educationLink ? educationActivities.find(activity => activity.id === station.educationLink?.activityId) : undefined;
-                    const selectedEducationTheme = selectedEducationActivity?.themes.find(theme => theme.id === station.educationLink?.themeId);
+                    const educationViews = getStationEducationViews(station);
+                    const manualEducationKeys = new Set(getStationManualEducationLinks(station).map(getEducationLinkKey));
+                    const linkedEducationKeys = new Set(educationViews.map(view => getEducationLinkKey(view.link)));
+                    const availableEducationOptions = educationActivities.flatMap(activity => activity.themes.map(theme => ({ activity, theme })))
+                      .filter(option => !linkedEducationKeys.has(`${option.activity.id}::${option.theme.id}`));
                     return (
                     <div key={station.id} className="border border-slate-100 rounded-lg p-3 bg-slate-50">
                       <div className="flex items-start justify-between gap-3">
@@ -1868,7 +1940,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                           }}
                           className="w-full border rounded-lg px-2 py-2 text-xs font-bold bg-white"
                         >
-                          <option value="">Thêm gói thiết bị</option>
+                          <option value="">Bổ sung gói ngoài Design</option>
                           {packages.map(pkg => <option key={pkg.id} value={pkg.id}>{pkg.name} ({pkg.items.length})</option>)}
                         </select>
                         <select
@@ -1881,21 +1953,25 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                           }}
                           className="w-full border rounded-lg px-2 py-2 text-xs font-bold bg-white"
                         >
-                          <option value="">Thêm thiết bị lẻ</option>
+                          <option value="">Bổ sung thiết bị lẻ ngoài gói</option>
                           {inventory.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
                         </select>
                       </div>
                       <div className="mt-2 grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_auto_auto] gap-2">
                         <select
-                          value={selectedEducationValue}
-                          disabled={!canEdit || educationActivities.length === 0}
-                          onChange={event => updateStationEducationLink(station.id, event.target.value)}
+                          value=""
+                          disabled={!canEdit || availableEducationOptions.length === 0}
+                          onChange={event => {
+                            if (!event.target.value) return;
+                            addStationEducationLink(station.id, event.target.value);
+                            event.currentTarget.value = '';
+                          }}
                           className="w-full border rounded-lg px-2 py-2 text-xs font-bold bg-white"
                         >
-                          <option value="">Gắn nội dung giáo dục</option>
-                          {educationActivities.flatMap(activity => activity.themes.map(theme => (
+                          <option value="">Thêm bài GD bổ sung</option>
+                          {availableEducationOptions.map(({ activity, theme }) => (
                             <option key={`${activity.id}::${theme.id}`} value={`${activity.id}::${theme.id}`}>{activity.name} • {theme.name}</option>
-                          )))}
+                          ))}
                         </select>
                         <button
                           onClick={() => setExpandedEquipmentStationId(expandedEquipmentStationId === station.id ? null : station.id)}
@@ -1904,19 +1980,39 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                           {expandedEquipmentStationId === station.id ? 'Ẩn thiết bị' : 'Xem thiết bị'}
                         </button>
                         <button
-                          onClick={() => station.educationLink && setViewingEducationLink(station.educationLink)}
-                          disabled={!station.educationLink}
+                          onClick={() => setViewingEducationContext({ stationName: station.name, links: educationViews.map(view => view.link), activeIndex: 0 })}
+                          disabled={educationViews.length === 0}
                           className="px-3 py-2 rounded-lg border border-indigo-100 bg-indigo-50 text-xs font-black text-indigo-700 disabled:bg-slate-100 disabled:text-slate-400 disabled:border-slate-200"
                         >
-                          Xem nội dung GD
+                          {educationViews.length > 0 ? `Xem ${educationViews.length} nội dung GD` : 'Chưa có nội dung GD'}
                         </button>
                       </div>
-                      {selectedEducationTheme && (
-                        <div className="mt-2 rounded-lg border border-indigo-100 bg-indigo-50 p-2 text-xs text-indigo-900">
-                          <p className="font-black">{selectedEducationActivity?.name} • {selectedEducationTheme.name}</p>
-                          <p className="mt-1">{selectedEducationTheme.pedagogyContent}</p>
-                        </div>
-                      )}
+                      <div className="mt-2 space-y-2">
+                        {educationViews.map(view => {
+                          const canRemoveManual = canEdit && manualEducationKeys.has(getEducationLinkKey(view.link)) && view.source === 'MANUAL';
+                          return (
+                            <div key={`${view.source}-${getEducationLinkKey(view.link)}`} className="rounded-lg border border-indigo-100 bg-indigo-50 p-2 text-xs text-indigo-900">
+                              <div className="flex items-start justify-between gap-2">
+                                <div>
+                                  <p className="font-black">{view.activity?.name || 'Nội dung không còn tồn tại'} • {view.theme?.name || 'Chủ đề không còn tồn tại'}</p>
+                                  <p className="mt-1 text-[11px] font-bold uppercase text-indigo-600">{view.source === 'AUTO' ? 'Tự động từ gói/giáo cụ' : 'Bổ sung thủ công'}</p>
+                                </div>
+                                {canRemoveManual && (
+                                  <button onClick={() => removeStationEducationLink(station.id, view.link)} className="text-indigo-400 hover:text-rose-600">
+                                    <Trash2 size={14} />
+                                  </button>
+                                )}
+                              </div>
+                              {view.theme?.pedagogyContent && <p className="mt-1">{view.theme.pedagogyContent}</p>}
+                            </div>
+                          );
+                        })}
+                        {educationViews.length === 0 && (
+                          <div className="rounded-lg border border-amber-100 bg-amber-50 p-2 text-xs font-bold text-amber-800">
+                            Chưa có nội dung GD khớp với gói/giáo cụ. Gắn giáo cụ cho bài trong module Nội dung GD hoặc thêm bài bổ sung tại đây.
+                          </div>
+                        )}
+                      </div>
                       {expandedEquipmentStationId === station.id && (
                         <div className="mt-3 rounded-lg border border-slate-200 bg-white p-3">
                           <p className="text-xs font-black uppercase text-slate-500">Danh mục thiết bị của phòng/khu vực</p>
@@ -2185,17 +2281,17 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
         </main>
       </div>
 
-      {viewingEducationLink && (
+      {viewingEducationContext && (
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-sm">
           <div className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xl">
             <div className="flex items-start justify-between gap-4 border-b border-slate-100 p-4">
               <div>
                 <p className="text-xs font-black uppercase text-indigo-700">Nội dung giáo dục</p>
-                <h2 className="mt-1 text-xl font-black text-slate-900">{viewingEducationActivity?.name || 'Chưa tìm thấy hoạt động'}</h2>
-                <p className="mt-1 text-sm font-bold text-slate-500">{viewingEducationTheme?.name || 'Chủ đề không còn tồn tại'}</p>
+                <h2 className="mt-1 text-xl font-black text-slate-900">{viewingEducationContext.stationName}</h2>
+                <p className="mt-1 text-sm font-bold text-slate-500">{viewingEducationItems.length} nội dung đã gắn/tự động khớp</p>
               </div>
               <button
-                onClick={() => setViewingEducationLink(null)}
+                onClick={() => setViewingEducationContext(null)}
                 className="rounded-lg border border-slate-200 bg-white p-2 text-slate-500 hover:bg-slate-50 hover:text-slate-900"
                 aria-label="Đóng cửa sổ nội dung giáo dục"
               >
@@ -2204,8 +2300,32 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
             </div>
 
             <div className="overflow-auto p-4">
+              {viewingEducationItems.length > 1 && (
+                <div className="mb-4 flex gap-2 overflow-x-auto pb-1">
+                  {viewingEducationItems.map((item, index) => {
+                    const active = index === viewingEducationActiveIndex;
+                    return (
+                      <button
+                        key={getEducationLinkKey(item.link)}
+                        onClick={() => setViewingEducationContext(current => current ? { ...current, activeIndex: index } : current)}
+                        className={`shrink-0 rounded-lg border px-3 py-2 text-left text-xs font-black ${active ? 'border-indigo-300 bg-indigo-50 text-indigo-800' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
+                      >
+                        {index + 1}. {item.activity?.name || 'Nội dung lỗi'}
+                        <span className="block max-w-[220px] truncate font-bold opacity-70">{item.theme?.name || 'Chủ đề lỗi'}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
               {viewingEducationTheme ? (
                 <div className="space-y-4">
+                  <section className="rounded-lg border border-indigo-100 bg-indigo-50 p-4">
+                    <p className="text-[11px] font-black uppercase text-indigo-700">Bài đang xem</p>
+                    <h3 className="mt-1 text-lg font-black text-indigo-950">{viewingEducationActivity?.name}</h3>
+                    <p className="mt-1 text-sm font-bold text-indigo-800">{viewingEducationTheme.name}</p>
+                  </section>
+
                   <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
                     <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
                       <p className="text-[11px] font-black uppercase text-slate-500">Nhóm nội dung</p>

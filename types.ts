@@ -415,6 +415,7 @@ export interface HouseOperationStation {
   checklist: string[];
   equipment: HouseOperationEquipment[];
   educationLink?: HouseOperationEducationLink;
+  educationLinks?: HouseOperationEducationLink[];
   script?: string;
   status?: HouseOperationTaskStatus;
 }
