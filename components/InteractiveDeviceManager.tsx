@@ -62,6 +62,15 @@ const timeToMinutes = (time?: string) => {
   return hour * 60 + minute;
 };
 
+const minutesToTime = (minutes: number) => {
+  const safe = Math.max(0, minutes);
+  const hour = Math.floor(safe / 60) % 24;
+  const minute = safe % 60;
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+};
+
+const shiftTime = (time: string, deltaMinutes: number) => minutesToTime(timeToMinutes(time) + deltaMinutes);
+
 const dateAtTime = (dateKey: string, time: string) => {
   const [year, month, day] = dateKey.split('-').map(Number);
   const [hour, minute] = time.split(':').map(Number);
@@ -99,6 +108,29 @@ const getProgramStart = (event: Event) =>
   event.eventProfile?.programTimeStart ||
   event.houseOperation?.timeline?.[0]?.startTime ||
   '09:00';
+
+const getLiveTiming = (event: Event) => {
+  const timeline = event.houseOperation?.timeline || [];
+  const scheduledArrival = timeline.find(block => block.kind === 'OPENING')?.startTime || getProgramStart(event);
+  const actualArrival = event.houseOperation?.live?.actualArrivalTime || scheduledArrival;
+  const delta = timeToMinutes(actualArrival) - timeToMinutes(scheduledArrival);
+  const lunchBlock = timeline.find(block => block.kind === 'LUNCH');
+  const lunchEndMinutes = lunchBlock?.endTime ? timeToMinutes(lunchBlock.endTime) : Number.POSITIVE_INFINITY;
+  return { scheduledArrival, actualArrival, delta, lunchBlock, lunchEndMinutes };
+};
+
+const getLiveAdjustedBlock = (event: Event, block: HouseOperationTimelineBlock): HouseOperationTimelineBlock => {
+  const { delta, lunchBlock, lunchEndMinutes } = getLiveTiming(event);
+  if (!delta) return block;
+  const isMorning = timeToMinutes(block.startTime) < lunchEndMinutes;
+  if (!isMorning) return block;
+  const isLunch = block.id === lunchBlock?.id || block.kind === 'LUNCH';
+  return {
+    ...block,
+    startTime: shiftTime(block.startTime, delta),
+    endTime: isLunch && lunchBlock?.endTime ? lunchBlock.endTime : shiftTime(block.endTime, delta)
+  };
+};
 
 const getBlockTriggerTime = (dateKey: string, block: HouseOperationTimelineBlock, rule: BroadcastEventRule) => {
   if (rule.trigger === 'BLOCK_END' || rule.trigger === 'BEFORE_BLOCK_END') {
@@ -233,7 +265,8 @@ const buildEventAnnouncements = (device: InteractiveDeviceProfile, events: Event
   return activeEvents.flatMap(event => (device.eventRules || []).filter(rule => rule.enabled).flatMap(rule => {
     const asset = (device.audioAssets || []).find(item => item.id === rule.assetId);
     if (rule.trigger === 'EVENT_START') {
-      const time = addMinutes(dateAtTime(dateKey, getProgramStart(event)), rule.offsetMinutes);
+      const { actualArrival, delta } = getLiveTiming(event);
+      const time = addMinutes(dateAtTime(dateKey, actualArrival), rule.offsetMinutes);
       return [{
         id: `event-${event.id}-${rule.id}-${dateKey}`,
         title: rule.title,
@@ -241,23 +274,27 @@ const buildEventAnnouncements = (device: InteractiveDeviceProfile, events: Event
         source: 'EVENT' as const,
         text: asset ? asset.transcript : applyTemplate(rule.messageTemplate, event),
         asset,
-        detail: `${event.name} • ${formatDate(dateKey)}`,
+        detail: `${event.name} • LIVE ${actualArrival}${delta ? ` (${delta > 0 ? '+' : ''}${delta}p)` : ''}`,
         priority: rule.priority || 0
       }];
     }
 
     return (event.houseOperation?.timeline || [])
       .filter(block => !rule.blockKind || block.kind === rule.blockKind)
-      .map(block => ({
-        id: `event-${event.id}-${rule.id}-${block.id}-${dateKey}`,
-        title: rule.title,
-        time: getBlockTriggerTime(dateKey, block, rule),
-        source: 'EVENT' as const,
-        text: asset ? asset.transcript : applyTemplate(rule.messageTemplate, event, block),
-        asset,
-        detail: `${event.name} • ${block.title}`,
-        priority: rule.priority || 0
-      }));
+      .map(block => {
+        const liveBlock = getLiveAdjustedBlock(event, block);
+        const { delta } = getLiveTiming(event);
+        return {
+          id: `event-${event.id}-${rule.id}-${block.id}-${dateKey}`,
+          title: rule.title,
+          time: getBlockTriggerTime(dateKey, liveBlock, rule),
+          source: 'EVENT' as const,
+          text: asset ? asset.transcript : applyTemplate(rule.messageTemplate, event, liveBlock),
+          asset,
+          detail: `${event.name} • ${liveBlock.title}${delta ? ` • LIVE ${delta > 0 ? '+' : ''}${delta}p` : ''}`,
+          priority: rule.priority || 0
+        };
+      });
   }));
 };
 
@@ -398,11 +435,15 @@ export const InteractiveDeviceManager: React.FC<InteractiveDeviceManagerProps> =
     const eventLunchWindows = todayEvents.flatMap(event =>
       (event.houseOperation?.timeline || [])
         .filter(block => block.kind === 'LUNCH')
-        .map(block => ({
-          title: `${event.name} - nghỉ trưa đoàn`,
-          startTime: block.startTime,
-          endTime: block.endTime
-        }))
+        .map(block => {
+          const liveBlock = getLiveAdjustedBlock(event, block);
+          const { delta } = getLiveTiming(event);
+          return {
+            title: `${event.name} - nghỉ trưa đoàn${delta ? ` LIVE ${delta > 0 ? '+' : ''}${delta}p` : ''}`,
+            startTime: liveBlock.startTime,
+            endTime: liveBlock.endTime
+          };
+        })
     );
     const centerSilenceWindows = (device.silenceWindows || [])
       .filter(windowItem => windowItem.enabled)
