@@ -750,6 +750,8 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
   const [draggedStationId, setDraggedStationId] = useState<string | null>(null);
   const [liveNow, setLiveNow] = useState(new Date());
   const [liveViewMode, setLiveViewMode] = useState<LiveViewMode>('CONTROL');
+  const [localLiveGroupId, setLocalLiveGroupId] = useState('');
+  const [localLiveRoom, setLocalLiveRoom] = useState('');
   const [expandedEquipmentStationId, setExpandedEquipmentStationId] = useState<string | null>(null);
   const [viewingEducationContext, setViewingEducationContext] = useState<{ stationName: string; links: HouseOperationEducationLink[]; activeIndex: number } | null>(null);
 
@@ -826,6 +828,26 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
       }))
       .sort((a, b) => a.room.localeCompare(b.room));
   }, [liveGroupTimelines]);
+
+  useEffect(() => {
+    setLocalLiveGroupId(current => {
+      if (!liveGroupTimelines.length) return '';
+      if (current && liveGroupTimelines.some(group => group.id === current)) return current;
+      const saved = operation?.live?.selectedGroupId;
+      if (saved && liveGroupTimelines.some(group => group.id === saved)) return saved;
+      return liveGroupTimelines[0].id;
+    });
+  }, [liveGroupTimelines, operation?.live?.selectedGroupId]);
+
+  useEffect(() => {
+    setLocalLiveRoom(current => {
+      if (!roomTimelines.length) return '';
+      if (current && roomTimelines.some(item => item.room === current)) return current;
+      const saved = operation?.live?.selectedRoom;
+      if (saved && roomTimelines.some(item => item.room === saved)) return saved;
+      return roomTimelines[0].room;
+    });
+  }, [roomTimelines, operation?.live?.selectedRoom]);
 
   const hasGroupStationConflict = operation ? (operation.groupCount || operation.rotations.length || 1) > Math.max(1, operation.stations.length) : false;
 
@@ -1325,15 +1347,25 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
   }
 
   const currentBlock = operation.timeline.find(block => block.id === operation.live?.currentBlockId);
-  const selectedLiveGroup = liveGroupTimelines.find(group => group.id === operation.live?.selectedGroupId) || liveGroupTimelines[0];
+  const selectedLiveGroup = liveGroupTimelines.find(group => group.id === (localLiveGroupId || operation.live?.selectedGroupId)) || liveGroupTimelines[0];
   const selectedLiveBlocks = selectedLiveGroup?.blocks || [];
   const activeGroupBlock = selectedLiveBlocks.find(block => getBlockState(block, liveNow) === 'NOW');
   const nextGroupBlock = selectedLiveBlocks.find(block => getBlockState(block, liveNow) === 'UPCOMING');
   const focusGroupBlock = activeGroupBlock || nextGroupBlock || selectedLiveBlocks[selectedLiveBlocks.length - 1];
-  const selectedRoomTimeline = roomTimelines.find(item => item.room === operation.live?.selectedRoom) || roomTimelines[0];
+  const selectedRoomTimeline = roomTimelines.find(item => item.room === (localLiveRoom || operation.live?.selectedRoom)) || roomTimelines[0];
   const activeRoomBlock = selectedRoomTimeline?.blocks.find(block => getBlockState(block, liveNow) === 'NOW');
   const nextRoomBlock = selectedRoomTimeline?.blocks.find(block => getBlockState(block, liveNow) === 'UPCOMING');
   const focusRoomBlock = activeRoomBlock || nextRoomBlock;
+  const handleLiveGroupSelect = (groupId: string) => {
+    setLocalLiveGroupId(groupId);
+    if (!canEdit || publicMode) return;
+    saveOperation(cur => ({ ...cur, live: { ...cur.live, selectedGroupId: groupId, lastUpdatedAt: new Date().toISOString() } }));
+  };
+  const handleLiveRoomSelect = (room: string) => {
+    setLocalLiveRoom(room);
+    if (!canEdit || publicMode) return;
+    saveOperation(cur => ({ ...cur, live: { ...cur.live, selectedRoom: room, lastUpdatedAt: new Date().toISOString() } }));
+  };
   const scheduledArrival = operation.timeline.find(block => block.kind === 'OPENING')?.startTime || getProgramStart(selectedEvent);
   const actualArrival = operation.live?.actualArrivalTime || scheduledArrival;
   const liveDelta = timeToMinutes(actualArrival) - timeToMinutes(scheduledArrival);
@@ -2153,8 +2185,8 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                 <h3 className="font-black text-slate-900 flex items-center gap-2"><Users size={18} />Màn hình đội dẫn đoàn</h3>
                 <select
                   value={selectedLiveGroup?.id || ''}
-                  disabled={!canEdit}
-                  onChange={event => saveOperation(cur => ({ ...cur, live: { ...cur.live, selectedGroupId: event.target.value, lastUpdatedAt: new Date().toISOString() } }))}
+                  disabled={liveGroupTimelines.length === 0}
+                  onChange={event => handleLiveGroupSelect(event.target.value)}
                   className="mt-4 w-full border rounded-lg px-3 py-2 text-sm font-black"
                 >
                   {liveGroupTimelines.map(group => <option key={group.id} value={group.id}>{group.name}</option>)}
@@ -2179,8 +2211,8 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                 <p className="mt-1 text-xs text-slate-500">Chọn khu vực/phòng để xem lần lượt nhóm nào sẽ đến, đang đến hoặc đã xong.</p>
                 <select
                   value={selectedRoomTimeline?.room || ''}
-                  disabled={!canEdit}
-                  onChange={event => saveOperation(cur => ({ ...cur, live: { ...cur.live, selectedRoom: event.target.value, lastUpdatedAt: new Date().toISOString() } }))}
+                  disabled={roomTimelines.length === 0}
+                  onChange={event => handleLiveRoomSelect(event.target.value)}
                   className="mt-4 w-full border rounded-lg px-3 py-2 text-sm font-black"
                 >
                   {roomTimelines.map(item => <option key={item.room} value={item.room}>{item.room}</option>)}
