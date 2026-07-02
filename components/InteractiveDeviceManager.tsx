@@ -299,9 +299,11 @@ export const InteractiveDeviceManager: React.FC<InteractiveDeviceManagerProps> =
 }) => {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const youtubeIframeRef = useRef<HTMLIFrameElement | null>(null);
+  const wakeLockRef = useRef<any>(null);
   const playedKeysRef = useRef<Set<string>>(new Set());
   const [now, setNow] = useState(new Date());
   const [isRunning, setIsRunning] = useState(false);
+  const [isTabletMode, setIsTabletMode] = useState(false);
   const [scheduleTitle, setScheduleTitle] = useState('Thông báo mới');
   const [scheduleTime, setScheduleTime] = useState('09:00');
   const [scheduleText, setScheduleText] = useState('');
@@ -433,6 +435,45 @@ export const InteractiveDeviceManager: React.FC<InteractiveDeviceManagerProps> =
   const pauseBackgroundMusic = () => sendYoutubeCommand('pauseVideo');
 
   const playBackgroundMusic = () => sendYoutubeCommand('playVideo');
+
+  const requestWakeLock = async () => {
+    try {
+      const wakeLock = (navigator as any).wakeLock;
+      if (!wakeLock?.request) return false;
+      wakeLockRef.current = await wakeLock.request('screen');
+      wakeLockRef.current?.addEventListener?.('release', () => {
+        wakeLockRef.current = null;
+      });
+      return true;
+    } catch (error) {
+      console.warn('Wake Lock is not available for tablet broadcast mode', error);
+      return false;
+    }
+  };
+
+  const releaseWakeLock = async () => {
+    try {
+      await wakeLockRef.current?.release?.();
+    } catch (error) {
+      console.warn('Failed to release Wake Lock', error);
+    } finally {
+      wakeLockRef.current = null;
+    }
+  };
+
+  const toggleTabletMode = async () => {
+    if (isTabletMode) {
+      setIsTabletMode(false);
+      await releaseWakeLock();
+      return;
+    }
+    const locked = await requestWakeLock();
+    if (!locked) {
+      alert('Tablet/trình duyệt này không hỗ trợ giữ web chạy khi tắt màn hình. Hãy dùng chế độ màn hình luôn bật hoặc cài web như PWA/kiosk.');
+    }
+    setIsTabletMode(true);
+    setIsRunning(true);
+  };
 
   const commitDevice = (patch: Partial<InteractiveDeviceProfile>) => {
     if (!canEdit) return;
@@ -581,6 +622,23 @@ export const InteractiveDeviceManager: React.FC<InteractiveDeviceManagerProps> =
       pauseBackgroundMusic();
     }
   }, [broadcastState.shouldPlayBackground, isRunning, youtubeEmbed]);
+
+  useEffect(() => {
+    if (!isTabletMode) return;
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible' && !wakeLockRef.current) {
+        void requestWakeLock();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, [isTabletMode]);
+
+  useEffect(() => {
+    return () => {
+      void releaseWakeLock();
+    };
+  }, []);
 
   useEffect(() => {
     if (!isRunning || !device.isAutomationEnabled) return;
@@ -746,6 +804,15 @@ export const InteractiveDeviceManager: React.FC<InteractiveDeviceManagerProps> =
             >
               <BellRing size={17} />
               {device.isAutomationEnabled ? 'Automation đang bật' : 'Automation đang tắt'}
+            </button>
+            <button
+              onClick={() => void toggleTabletMode()}
+              className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-semibold ${
+                isTabletMode ? 'border-slate-800 bg-slate-900 text-white' : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              <Radio size={17} />
+              {isTabletMode ? 'Đang chạy nền tablet' : 'Chế độ tablet 24/24'}
             </button>
           </div>
         </div>
@@ -1103,6 +1170,18 @@ export const InteractiveDeviceManager: React.FC<InteractiveDeviceManagerProps> =
           </div>
         </section>
       </div>
+
+      {isTabletMode && (
+        <button
+          onClick={() => void toggleTabletMode()}
+          className="fixed inset-0 z-[120] bg-black text-slate-500 flex flex-col items-center justify-center gap-3"
+          title="Chạm để thoát chế độ tablet"
+        >
+          <Radio size={34} className="text-slate-700" />
+          <span className="text-xs font-semibold tracking-wide uppercase">Broadcast mode</span>
+          <span className="text-[11px] text-slate-700">Chạm màn hình để quay lại điều khiển</span>
+        </button>
+      )}
     </div>
   );
 };
