@@ -24,6 +24,7 @@ import {
   BroadcastYoutubeTrack,
   BroadcastEventMusicSetting,
   Event,
+  EventVenueType,
   HouseOperationTimelineBlock,
   InteractiveDeviceProfile
 } from '../types';
@@ -109,6 +110,20 @@ const formatWeekdays = (days?: number[]) => {
   return labels.join(', ') || 'Hằng ngày';
 };
 
+const VENUE_LABELS: Record<EventVenueType, string> = {
+  EH: 'Tại trung tâm EH',
+  EBUS: 'Sự kiện bên ngoài (EBUS)'
+};
+
+const VENUE_LOCATIONS: Record<EventVenueType, string> = {
+  EH: 'Einstein House',
+  EBUS: 'EBUS - sự kiện bên ngoài'
+};
+
+const getEventVenue = (event: Event): EventVenueType => event.organizationVenue || 'EH';
+
+const getDeviceVenue = (device: InteractiveDeviceProfile): EventVenueType => device.broadcastVenue || 'EH';
+
 const getEventDateKeys = (event: Event) => {
   const keys = new Set<string>();
   (event.schedule || []).forEach(item => item.date && keys.add(item.date));
@@ -158,6 +173,44 @@ const getBlockTriggerTime = (dateKey: string, block: HouseOperationTimelineBlock
     return addMinutes(dateAtTime(dateKey, block.endTime), rule.offsetMinutes);
   }
   return addMinutes(dateAtTime(dateKey, block.startTime), rule.offsetMinutes);
+};
+
+const expandExperienceRounds = (block: HouseOperationTimelineBlock): HouseOperationTimelineBlock[] => {
+  if (block.kind !== 'EXPERIENCE_AM' && block.kind !== 'EXPERIENCE_PM') return [block];
+  const roundCount = Math.max(1, block.stationCount || 1);
+  const startMinutes = timeToMinutes(block.startTime);
+  const endMinutes = timeToMinutes(block.endTime);
+  const totalMinutes = Math.max(roundCount, endMinutes - startMinutes);
+  const roundDuration = Math.max(1, Math.round(totalMinutes / roundCount));
+
+  return Array.from({ length: roundCount }).map((_, index) => {
+    const roundStart = startMinutes + index * roundDuration;
+    const roundEnd = index === roundCount - 1 ? endMinutes : roundStart + roundDuration;
+    return {
+      ...block,
+      id: `${block.id}-round-${index + 1}`,
+      title: `${block.title} - lượt ${index + 1}`,
+      startTime: minutesToTime(roundStart),
+      endTime: minutesToTime(roundEnd),
+      note: [block.note, `Lượt ${index + 1}/${roundCount}`].filter(Boolean).join(' • ')
+    };
+  });
+};
+
+const getBlocksForRule = (event: Event, rule: BroadcastEventRule) => {
+  const timeline = event.houseOperation?.timeline || [];
+  const onlyExperienceWarning = rule.trigger === 'BEFORE_BLOCK_END' && !rule.blockKind;
+  return timeline
+    .filter(block => onlyExperienceWarning
+      ? block.kind === 'EXPERIENCE_AM' || block.kind === 'EXPERIENCE_PM'
+      : !rule.blockKind || block.kind === rule.blockKind
+    )
+    .flatMap(block => {
+      const liveBlock = getLiveAdjustedBlock(event, block);
+      return (liveBlock.kind === 'EXPERIENCE_AM' || liveBlock.kind === 'EXPERIENCE_PM')
+        ? expandExperienceRounds(liveBlock)
+        : [liveBlock];
+    });
 };
 
 const applyTemplate = (template: string, event: Event, block?: HouseOperationTimelineBlock) =>
@@ -233,6 +286,7 @@ const createDefaultDevice = (): InteractiveDeviceProfile => ({
   name: 'Phát thanh trung tâm Einstein House',
   type: 'BROADCAST_CENTER',
   location: 'Einstein House',
+  broadcastVenue: 'EH',
   isAutomationEnabled: true,
   volume: 0.82,
   backgroundVolume: 0.35,
@@ -266,6 +320,7 @@ const createDefaultDevice = (): InteractiveDeviceProfile => ({
 });
 
 const buildDailyAnnouncements = (device: InteractiveDeviceProfile, dateKey: string): PendingAnnouncement[] => {
+  if (getDeviceVenue(device) !== 'EH') return [];
   const today = new Date(dateAtTime(dateKey, '00:00')).getDay();
   return (device.schedules || [])
     .filter(schedule => schedule.enabled)
@@ -286,7 +341,8 @@ const buildDailyAnnouncements = (device: InteractiveDeviceProfile, dateKey: stri
 };
 
 const buildEventAnnouncements = (device: InteractiveDeviceProfile, events: Event[], dateKey: string): PendingAnnouncement[] => {
-  const activeEvents = events.filter(event => isEventActiveOnDate(event, dateKey));
+  const venue = getDeviceVenue(device);
+  const activeEvents = events.filter(event => isEventActiveOnDate(event, dateKey) && getEventVenue(event) === venue);
   return activeEvents.flatMap(event => (device.eventRules || []).filter(rule => rule.enabled).flatMap(rule => {
     const asset = (device.audioAssets || []).find(item => item.id === rule.assetId);
     if (rule.trigger === 'EVENT_START') {
@@ -304,19 +360,17 @@ const buildEventAnnouncements = (device: InteractiveDeviceProfile, events: Event
       }];
     }
 
-    return (event.houseOperation?.timeline || [])
-      .filter(block => !rule.blockKind || block.kind === rule.blockKind)
+    return getBlocksForRule(event, rule)
       .map(block => {
-        const liveBlock = getLiveAdjustedBlock(event, block);
         const { delta } = getLiveTiming(event);
         return {
           id: `event-${event.id}-${rule.id}-${block.id}-${dateKey}`,
           title: rule.title,
-          time: getBlockTriggerTime(dateKey, liveBlock, rule),
+          time: getBlockTriggerTime(dateKey, block, rule),
           source: 'EVENT' as const,
-          text: asset ? asset.transcript : applyTemplate(rule.messageTemplate, event, liveBlock),
+          text: asset ? asset.transcript : applyTemplate(rule.messageTemplate, event, block),
           asset,
-          detail: `${event.name} • ${liveBlock.title}${delta ? ` • LIVE ${delta > 0 ? '+' : ''}${delta}p` : ''}`,
+          detail: `${event.name} • ${block.title}${delta ? ` • LIVE ${delta > 0 ? '+' : ''}${delta}p` : ''}`,
           priority: rule.priority || 0
         };
       });
@@ -354,6 +408,7 @@ const buildEventAnnouncements = (device: InteractiveDeviceProfile, events: Event
   return {
     ...defaults,
     ...input,
+    broadcastVenue: input.broadcastVenue || defaults.broadcastVenue,
     backgroundVolume: typeof input.backgroundVolume === 'number' ? input.backgroundVolume : defaults.backgroundVolume,
     announcementVolume: typeof input.announcementVolume === 'number' ? input.announcementVolume : (typeof input.volume === 'number' ? input.volume : defaults.announcementVolume),
     duckVolume: typeof input.duckVolume === 'number' ? input.duckVolume : defaults.duckVolume,
@@ -404,6 +459,11 @@ export const InteractiveDeviceManager: React.FC<InteractiveDeviceManagerProps> =
   const storedDevice = devices.find(item => item.type === 'BROADCAST_CENTER') || devices[0];
   const device = normalizeBroadcastDevice(storedDevice);
   const todayKey = getLocalDateKey(now);
+  const broadcastVenue = getDeviceVenue(device);
+  const broadcastVenueLabel = VENUE_LABELS[broadcastVenue];
+  const broadcastTitle = broadcastVenue === 'EH'
+    ? 'Phát thanh trung tâm Einstein House'
+    : 'Phát thanh sự kiện bên ngoài EBUS';
   const backgroundTracks = useMemo<BroadcastYoutubeTrack[]>(() => {
     if (device.youtubePlaylist && device.youtubePlaylist.length > 0) return device.youtubePlaylist;
     if (device.youtubeFallbackUrl) {
@@ -413,8 +473,8 @@ export const InteractiveDeviceManager: React.FC<InteractiveDeviceManagerProps> =
   }, [device.youtubeFallbackUrl, device.youtubePlaylist]);
 
   const todayEvents = useMemo(
-    () => events.filter(event => isEventActiveOnDate(event, todayKey)),
-    [events, todayKey]
+    () => events.filter(event => isEventActiveOnDate(event, todayKey) && getEventVenue(event) === broadcastVenue),
+    [broadcastVenue, events, todayKey]
   );
 
   const activeEventMusic = useMemo(() => {
@@ -944,13 +1004,28 @@ export const InteractiveDeviceManager: React.FC<InteractiveDeviceManagerProps> =
               <Radio size={20} />
               <span>Thiết bị tương tác</span>
             </div>
-            <h2 className="text-2xl font-bold text-slate-900 mt-2">{device.name}</h2>
+            <h2 className="text-2xl font-bold text-slate-900 mt-2">{broadcastTitle}</h2>
             <p className="text-sm text-slate-500 mt-1">
-              Phát thanh tự động tại {device.location || 'trung tâm'} • {todayEvents.length} sự kiện hôm nay • {nextAnnouncements.length} thông báo sắp tới
+              Phát thanh tự động: {broadcastVenueLabel} • {todayEvents.length} sự kiện hôm nay • {nextAnnouncements.length} thông báo sắp tới
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1">
+              {(['EH', 'EBUS'] as EventVenueType[]).map(venue => (
+                <button
+                  key={venue}
+                  type="button"
+                  onClick={() => commitDevice({ broadcastVenue: venue, location: VENUE_LOCATIONS[venue] })}
+                  disabled={!canEdit}
+                  className={`px-3 py-1.5 rounded-md text-xs font-black transition ${
+                    broadcastVenue === venue ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'
+                  } disabled:opacity-50`}
+                >
+                  {venue === 'EH' ? 'Phát tại EH' : 'Phát EBUS'}
+                </button>
+              ))}
+            </div>
             <button
               onClick={() => setIsRunning(value => !value)}
               className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition ${
@@ -1301,7 +1376,11 @@ export const InteractiveDeviceManager: React.FC<InteractiveDeviceManagerProps> =
         <section className="bg-white border border-slate-200 rounded-lg p-4 space-y-4">
           <div>
             <h3 className="font-bold text-slate-900 flex items-center gap-2"><CalendarClock size={18} className="text-emerald-600" /> Lịch phát cố định</h3>
-            <p className="text-xs text-slate-500 mt-1">Dùng cho nghỉ trưa, đóng cửa, chào đầu ngày, kết thúc ca.</p>
+            <p className="text-xs text-slate-500 mt-1">
+              {broadcastVenue === 'EH'
+                ? 'Dùng cho nghỉ trưa, đóng cửa, chào đầu ngày, kết thúc ca tại trung tâm.'
+                : 'Khu EBUS chỉ phát rule theo timeline sự kiện; lịch cố định nội bộ EH sẽ không vào hàng đợi.'}
+            </p>
           </div>
 
           <div className="border border-slate-200 rounded-lg p-3 space-y-2">

@@ -46,6 +46,7 @@ import {
   EducationActivity,
   EducationTheme,
   Event,
+  EventVenueType,
   HouseOperationEducationLink,
   HouseOperationFeedback,
   HouseOperationIncident,
@@ -76,6 +77,13 @@ interface EinsteinHouseOSProps {
 
 type ModuleTab = 'CONTROL' | 'DESIGN' | 'TIMELINE' | 'TASKS' | 'KNOWLEDGE' | 'LIVE' | 'REPORT';
 type LiveViewMode = 'CONTROL' | 'GUIDE' | 'ROOM';
+
+const EVENT_VENUE_OPTIONS: { value: EventVenueType; label: string; description: string }[] = [
+  { value: 'EH', label: 'Tại EH', description: 'Phát tại trung tâm Einstein House' },
+  { value: 'EBUS', label: 'Bên ngoài EBUS', description: 'Phát cho sự kiện ngoài trung tâm' }
+];
+
+const getEventVenue = (event?: Pick<Event, 'organizationVenue'>): EventVenueType => event?.organizationVenue || 'EH';
 
 const STATION_TEMPLATES: Omit<HouseOperationStation, 'id' | 'room' | 'status'>[] = [
   {
@@ -1440,6 +1448,26 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                   <span className="inline-flex items-center gap-1"><Users size={16} />{operation.studentCount} HS / {operation.teacherCount} GV</span>
                   <span className="inline-flex items-center gap-1"><Clock3 size={16} />{getProgramStart(selectedEvent)}</span>
                 </div>
+                {!publicMode && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {EVENT_VENUE_OPTIONS.map(option => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => canEdit && onUpdateEvent(selectedEvent.id, { organizationVenue: option.value })}
+                        disabled={!canEdit}
+                        className={`rounded-lg border px-3 py-2 text-left transition ${
+                          getEventVenue(selectedEvent) === option.value
+                            ? 'border-teal-500 bg-teal-50 text-teal-800'
+                            : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                        } disabled:opacity-60`}
+                      >
+                        <span className="block text-xs font-black">{option.label}</span>
+                        <span className="block text-[10px] font-semibold text-slate-500">{option.description}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
                 {!publicMode && (
                 <div className="mt-3 max-w-xl">
                   <select

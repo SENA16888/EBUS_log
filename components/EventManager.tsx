@@ -1,6 +1,6 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { Event, InventoryItem, EventStatus, ComboPackage, Employee, EventExpense, EventAdvanceRequest, EventStaffAllocation, Quotation, EventLayout, EventLayoutBlock, LayoutPackageSource, ChecklistDirection, ChecklistStatus, ChecklistSignature, EventTimelineEntry, EventTimelinePhase, EventProfile } from '../types';
+import { Event, InventoryItem, EventStatus, ComboPackage, Employee, EventExpense, EventAdvanceRequest, EventStaffAllocation, Quotation, EventLayout, EventLayoutBlock, LayoutPackageSource, ChecklistDirection, ChecklistStatus, ChecklistSignature, EventTimelineEntry, EventTimelinePhase, EventProfile, EventVenueType } from '../types';
 import { 
   Calendar, MapPin, Box, ArrowLeft, Plus, Minus, X, Layers, 
   Users, DollarSign, Trash2, Truck, BookOpen, 
@@ -125,6 +125,16 @@ const AUDIENCE_OPTIONS: { value: NonNullable<EventProfile['audience']>[number]; 
   { value: 'THPT', label: 'THPT' },
   { value: 'PH', label: 'Phụ huynh' },
 ];
+
+const EVENT_VENUE_OPTIONS: { value: EventVenueType; label: string; description: string }[] = [
+  { value: 'EH', label: 'Tại EH', description: 'Phát tại trung tâm Einstein House' },
+  { value: 'EBUS', label: 'Bên ngoài EBUS', description: 'Phát cho sự kiện bên ngoài trung tâm' }
+];
+
+const getEventVenue = (event?: Pick<Event, 'organizationVenue'>): EventVenueType => event?.organizationVenue || 'EH';
+
+const getEventVenueLabel = (venue?: EventVenueType) =>
+  EVENT_VENUE_OPTIONS.find(option => option.value === (venue || 'EH'))?.label || 'Tại EH';
 
 const getStaffSessions = (staff?: Pick<EventStaffAllocation, 'session' | 'sessions'>): EventSession[] => {
   if (!staff) return [];
@@ -299,7 +309,8 @@ export const EventManager: React.FC<EventManagerProps> = ({
   const [newEventData, setNewEventData] = useState({
     name: '',
     client: '',
-    location: ''
+    location: '',
+    organizationVenue: 'EH' as EventVenueType
   });
   const [newEventSchedule, setNewEventSchedule] = useState<EventScheduleItem[]>([]);
   const [newScheduleDate, setNewScheduleDate] = useState('');
@@ -571,6 +582,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
       name: newEventData.name,
       client: newEventData.client,
       location: newEventData.location,
+      organizationVenue: newEventData.organizationVenue,
       startDate,
       endDate,
       session: primarySession,
@@ -600,7 +612,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
     };
     onCreateEvent(newEvent);
     setShowCreateEventModal(false);
-    setNewEventData({ name: '', client: '', location: '' });
+    setNewEventData({ name: '', client: '', location: '', organizationVenue: 'EH' });
     setNewEventSchedule([]);
     setNewScheduleDate('');
     setSelectedEventId(newEvent.id);
@@ -1607,7 +1619,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
               <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-4">
                 <div>
                   <h2 className="text-2xl font-black text-gray-800">{selectedEvent.name}</h2>
-                  <p className="text-sm text-gray-500">{selectedEvent.client} • {selectedEvent.location}</p>
+                  <p className="text-sm text-gray-500">{selectedEvent.client} • {selectedEvent.location} • {getEventVenueLabel(getEventVenue(selectedEvent))}</p>
                 </div>
                 <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
                   {isAdmin && onDeleteEvent && (
@@ -2331,6 +2343,27 @@ export const EventManager: React.FC<EventManagerProps> = ({
                               <option key={opt.value} value={opt.value}>{opt.label}</option>
                             ))}
                           </select>
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Loại tổ chức</label>
+                          <div className="grid grid-cols-2 gap-2">
+                            {EVENT_VENUE_OPTIONS.map(option => (
+                              <button
+                                key={option.value}
+                                type="button"
+                                onClick={() => onUpdateEvent?.(selectedEvent.id, { organizationVenue: option.value })}
+                                disabled={!canEditProfile}
+                                className={`rounded-xl border px-3 py-2 text-left transition ${
+                                  getEventVenue(selectedEvent) === option.value
+                                    ? 'border-blue-500 bg-blue-50 text-blue-800'
+                                    : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                                } disabled:opacity-60`}
+                              >
+                                <span className="block text-sm font-black">{option.label}</span>
+                                <span className="block text-[10px] font-semibold text-slate-500">{option.description}</span>
+                              </button>
+                            ))}
+                          </div>
                         </div>
                         <div>
                           <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Ngày tổ chức + Thứ</label>
@@ -3084,6 +3117,23 @@ export const EventManager: React.FC<EventManagerProps> = ({
               <input type="text" className="w-full border border-slate-300 rounded-xl p-3" value={newEventData.name} onChange={e => setNewEventData({...newEventData, name: e.target.value})} placeholder="Tên sự kiện" />
               <input type="text" className="w-full border border-slate-300 rounded-xl p-3" value={newEventData.client} onChange={e => setNewEventData({...newEventData, client: e.target.value})} placeholder="Khách hàng" />
               <input type="text" className="w-full border border-slate-300 rounded-xl p-3" value={newEventData.location} onChange={e => setNewEventData({...newEventData, location: e.target.value})} placeholder="Địa điểm" />
+              <div className="grid grid-cols-2 gap-2">
+                {EVENT_VENUE_OPTIONS.map(option => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => setNewEventData({ ...newEventData, organizationVenue: option.value })}
+                    className={`rounded-xl border px-3 py-2 text-left transition ${
+                      newEventData.organizationVenue === option.value
+                        ? 'border-blue-500 bg-blue-50 text-blue-800'
+                        : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    <span className="block text-sm font-black">{option.label}</span>
+                    <span className="block text-[10px] font-semibold text-slate-500">{option.description}</span>
+                  </button>
+                ))}
+              </div>
               <div className="space-y-2">
                 <label className="text-[12px] font-bold text-gray-600 block">Ngày tổ chức (chọn trên lịch)</label>
                 <div className="flex gap-2">

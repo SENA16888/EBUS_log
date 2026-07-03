@@ -15,6 +15,8 @@ export enum EventStatus {
   CANCELLED = 'CANCELLED'
 }
 
+export type EventVenueType = 'EH' | 'EBUS';
+
 export enum TransactionType {
   IMPORT = 'IMPORT',
   EXPORT_EVENT = 'EXPORT_EVENT',
@@ -517,6 +519,7 @@ export interface Event {
   name: string;
   client: string;
   location: string;
+  organizationVenue?: EventVenueType;
   startDate: string;
   endDate: string;
   status: EventStatus;
@@ -886,6 +889,7 @@ export interface InteractiveDeviceProfile {
   name: string;
   type: InteractiveDeviceType;
   location: string;
+  broadcastVenue?: EventVenueType;
   isAutomationEnabled: boolean;
   volume: number;
   backgroundVolume?: number;

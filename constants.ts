@@ -14,6 +14,7 @@ export const MOCK_INTERACTIVE_DEVICES: InteractiveDeviceProfile[] = [
     name: 'Phát thanh trung tâm Einstein House',
     type: 'BROADCAST_CENTER',
     location: 'Einstein House',
+    broadcastVenue: 'EH',
     isAutomationEnabled: true,
     volume: 0.82,
     backgroundVolume: 0.35,
