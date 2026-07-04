@@ -2,15 +2,15 @@
 import React from 'react';
 import { 
   LayoutDashboard, Package, CalendarDays, 
-  Settings, Layers, Users, FileText, BookOpen, ShoppingBag, LucideIcon, GraduationCap, LogOut, ClipboardList, ScanBarcode, Building2, LibraryBig, RadioTower
+  Settings, Layers, Users, FileText, BookOpen, ShoppingBag, LucideIcon, GraduationCap, LogOut, ClipboardList, ScanBarcode, LibraryBig, RadioTower
 } from 'lucide-react';
 import { ActivityLog } from './ActivityLog';
 import { LogEntry, UserAccount } from '../types';
 
 interface LayoutProps {
   children: React.ReactNode;
-  activeTab: 'dashboard' | 'inventory' | 'stocktake' | 'events' | 'house' | 'education' | 'interactiveDevices' | 'packages' | 'employees' | 'quotations' | 'sales' | 'elearning' | 'logs';
-  onTabChange: (tab: 'dashboard' | 'inventory' | 'stocktake' | 'events' | 'house' | 'education' | 'interactiveDevices' | 'packages' | 'employees' | 'quotations' | 'sales' | 'elearning' | 'logs') => void;
+  activeTab: 'dashboard' | 'inventory' | 'stocktake' | 'events' | 'education' | 'interactiveDevices' | 'packages' | 'employees' | 'quotations' | 'sales' | 'elearning' | 'logs';
+  onTabChange: (tab: 'dashboard' | 'inventory' | 'stocktake' | 'events' | 'education' | 'interactiveDevices' | 'packages' | 'employees' | 'quotations' | 'sales' | 'elearning' | 'logs') => void;
   logs: LogEntry[];
   currentUser?: UserAccount | null;
   canManageAccess?: boolean;
@@ -22,7 +22,6 @@ interface LayoutProps {
   canViewQuotations?: boolean;
   canViewSales?: boolean;
   canViewEvents?: boolean;
-  canViewHouseOS?: boolean;
   canViewEducation?: boolean;
   canViewInteractiveDevices?: boolean;
   canViewElearning?: boolean;
@@ -46,7 +45,6 @@ export const Layout: React.FC<LayoutProps> = ({
   canViewQuotations = true,
   canViewSales = true,
   canViewEvents = true,
-  canViewHouseOS = true,
   canViewEducation = true,
   canViewInteractiveDevices = true,
   canViewElearning = true,
@@ -61,8 +59,7 @@ export const Layout: React.FC<LayoutProps> = ({
     { key: 'packages', label: 'Gói thiết bị', icon: Layers },
     { key: 'quotations', label: 'Báo giá', icon: FileText },
     { key: 'sales', label: 'Hàng bán', icon: ShoppingBag },
-    { key: 'events', label: 'Sự kiện', icon: CalendarDays },
-    { key: 'house', label: 'Einstein House OS', icon: Building2 },
+    { key: 'events', label: 'Sự kiện & vận hành', icon: CalendarDays },
     { key: 'education', label: 'Nội dung GD', icon: LibraryBig },
     { key: 'interactiveDevices', label: 'Thiết bị tương tác', icon: RadioTower },
     { key: 'employees', label: 'Nhân sự', icon: Users },
@@ -75,7 +72,6 @@ export const Layout: React.FC<LayoutProps> = ({
     (tab.key !== 'quotations' || canViewQuotations) &&
     (tab.key !== 'sales' || canViewSales) &&
     (tab.key !== 'events' || canViewEvents) &&
-    (tab.key !== 'house' || canViewHouseOS) &&
     (tab.key !== 'education' || canViewEducation) &&
     (tab.key !== 'interactiveDevices' || canViewInteractiveDevices) &&
     (tab.key !== 'elearning' || canViewElearning) &&

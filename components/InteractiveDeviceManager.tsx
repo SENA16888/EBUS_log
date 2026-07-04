@@ -1458,7 +1458,7 @@ export const InteractiveDeviceManager: React.FC<InteractiveDeviceManagerProps> =
       <div className="grid xl:grid-cols-2 gap-4">
         <section className="bg-white border border-slate-200 rounded-lg p-4">
           <h3 className="font-bold text-slate-900 flex items-center gap-2"><BellRing size={18} className="text-amber-600" /> Rule theo sự kiện</h3>
-          <p className="text-xs text-slate-500 mt-1">Nếu hôm nay có sự kiện và có timeline Einstein House OS, hệ thống tự phát thông báo đoàn.</p>
+          <p className="text-xs text-slate-500 mt-1">Nếu hôm nay có sự kiện và có timeline vận hành Einstein House, hệ thống tự phát thông báo đoàn.</p>
           <div className="mt-3 border border-blue-100 bg-blue-50 rounded-lg p-3">
             <div className="flex items-center gap-2 font-bold text-sm text-blue-800">
               <Music2 size={17} />

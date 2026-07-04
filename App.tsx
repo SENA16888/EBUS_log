@@ -17,7 +17,7 @@ import { EducationContentManager } from './components/EducationContentManager';
 import { InteractiveDeviceManager } from './components/InteractiveDeviceManager';
 import { AppState, InventoryItem, Event, EventStatus, Transaction, TransactionType, ComboPackage, Employee, Quotation, EventStaffAllocation, EventExpense, EventAdvanceRequest, LogEntry, ChecklistDirection, ChecklistStatus, ChecklistSignature, EventChecklist, LearningAttempt, LearningProfile, AccessPermission, UserAccount, LearningTrack, InventoryReceipt, InventoryReceiptItem, ActiveSession, PayrollAdjustment, InventoryAuditSession, InventoryAuditItem, InventoryAuditBaseline, EducationActivity, EducationLessonLink, InteractiveDeviceProfile } from './types';
 import { MOCK_INVENTORY, MOCK_EVENTS, MOCK_TRANSACTIONS, MOCK_PACKAGES, MOCK_EMPLOYEES, MOCK_LEARNING_TRACKS, MOCK_CAREER_RANKS, DEFAULT_USER_ACCOUNTS, MOCK_INVENTORY_RECEIPTS, MOCK_EDUCATION_ACTIVITIES, MOCK_INTERACTIVE_DEVICES } from './constants';
-import { MessageSquare } from 'lucide-react';
+import { Building2, CalendarDays, MessageSquare } from 'lucide-react';
 import { ensureCollectionModelInitialized, initializeAuth, loadCollectionState, subscribeToSessions, setSessionOnline, setSessionOffline, syncCollectionStateDiff, saveLearningUserState, subscribeToLearningUserState, deleteLearningUserState, subscribeToLearningUsers } from './services/firebaseService';
 import { ensureInventoryBarcodes, ensureItemBarcode, findDuplicateBarcodeItem, findItemByBarcode, generateBarcode, normalizeBarcode } from './services/barcodeService';
 import { normalizeChecklist } from './services/checklistService';
@@ -27,7 +27,13 @@ import { LoginModal } from './components/LoginModal';
 
 const generateId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-type AppTab = 'dashboard' | 'inventory' | 'stocktake' | 'events' | 'house' | 'education' | 'interactiveDevices' | 'packages' | 'employees' | 'quotations' | 'sales' | 'elearning' | 'logs';
+const EVENT_MODULE_TABS = [
+  { key: 'EVENTS', label: 'Quản lý sự kiện', Icon: CalendarDays },
+  { key: 'HOUSE_OS', label: 'Vận hành Einstein House', Icon: Building2 }
+] as const;
+
+type EventModuleView = typeof EVENT_MODULE_TABS[number]['key'];
+type AppTab = 'dashboard' | 'inventory' | 'stocktake' | 'events' | 'education' | 'interactiveDevices' | 'packages' | 'employees' | 'quotations' | 'sales' | 'elearning' | 'logs';
 
 const getSessionId = () => {
   try {
@@ -134,6 +140,7 @@ const App: React.FC = () => {
   console.log('localStorage available:', typeof localStorage !== 'undefined');
   console.log('sessionStorage available:', typeof sessionStorage !== 'undefined');
   const [activeTab, setActiveTab] = useState<AppTab>('dashboard');
+  const [eventModuleView, setEventModuleView] = useState<EventModuleView>('EVENTS');
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isAccessOpen, setIsAccessOpen] = useState(false);
@@ -229,7 +236,6 @@ const App: React.FC = () => {
   const canViewQuotations = can('QUOTATIONS_VIEW');
   const canViewSales = can('SALES_VIEW');
   const canViewEvents = can('EVENTS_VIEW');
-  const canViewHouseOS = canViewEvents;
   const canViewElearning = can('ELEARNING_VIEW');
   const canViewEducation = can('EDUCATION_VIEW');
   const canViewInteractiveDevices = can('INTERACTIVE_DEVICES_VIEW');
@@ -238,7 +244,6 @@ const App: React.FC = () => {
   const firstAccessibleTab: AppTab =
     (canViewDashboard && 'dashboard') ||
     (canViewEvents && 'events') ||
-    (canViewHouseOS && 'house') ||
     (canViewEducation && 'education') ||
     (canViewInteractiveDevices && 'interactiveDevices') ||
     (canViewInventory && 'inventory') ||
@@ -339,7 +344,6 @@ const App: React.FC = () => {
       inventory: canViewInventory,
       stocktake: canViewStocktake,
       events: canViewEvents,
-      house: canViewHouseOS,
       education: canViewEducation,
       interactiveDevices: canViewInteractiveDevices,
       packages: canViewPackages,
@@ -360,7 +364,6 @@ const App: React.FC = () => {
     canViewInventory,
     canViewStocktake,
     canViewEvents,
-    canViewHouseOS,
     canViewEducation,
     canViewInteractiveDevices,
     canViewPackages,
@@ -2002,7 +2005,6 @@ const App: React.FC = () => {
       canViewQuotations={canViewQuotations}
       canViewSales={canViewSales}
       canViewEvents={canViewEvents}
-      canViewHouseOS={canViewHouseOS}
       canViewEducation={canViewEducation}
       canViewInteractiveDevices={canViewInteractiveDevices}
       canViewElearning={canViewElearning}
@@ -2135,52 +2137,76 @@ const App: React.FC = () => {
       {activeTab === 'logs' && canViewLogs && (
         <AdminLogPage logs={appState.logs} accounts={appState.userAccounts || []} activeSessions={activeSessions} />
       )}
-      {activeTab === 'house' && canViewHouseOS && (
-        <EinsteinHouseOS
-          events={appState.events}
-          inventory={appState.inventory}
-          employees={appState.employees}
-          packages={appState.packages}
-          educationActivities={appState.educationActivities || []}
-          learningTracks={appState.learningTracks || []}
-          canEdit={can('EVENTS_EDIT')}
-          onUpdateEvent={guard('EVENTS_EDIT', handleUpdateEvent)}
-        />
-      )}
       {activeTab === 'events' && canViewEvents && (
-        <EventManager 
-          events={appState.events} 
-          inventory={appState.inventory} 
-          packages={appState.packages} 
-          employees={appState.employees} 
-          quotations={appState.quotations}
-          saleOrders={appState.saleOrders || []}
-          canEdit={can('EVENTS_EDIT')}
-          isAdmin={currentUser?.role === 'ADMIN'}
-          onExportToEvent={guard('EVENTS_EDIT', handleExportToEvent)} 
-          onExportPackageToEvent={guard('EVENTS_EDIT', handleExportPackageToEvent)}
-          onSyncQuotation={guard('EVENTS_EDIT', handleSyncQuotation)}
-          onReturnFromEvent={guard('EVENTS_EDIT', handleReturnFromEvent)} 
-          onUpdateEventItemQuantity={guard('EVENTS_EDIT', handleUpdateEventItemQuantity)}
-          onRemoveEventItems={guard('EVENTS_EDIT', handleRemoveEventItems)}
-          onCreateEvent={guard('EVENTS_EDIT', handleCreateEvent)} 
-          onDeleteEvent={isAdmin ? guard('EVENTS_DELETE', handleDeleteEvent) : undefined}
-          onAssignStaff={guard('EVENTS_EDIT', handleAssignStaff)}
-          onRemoveStaff={guard('EVENTS_EDIT', handleRemoveStaff)}
-          onAddExpense={guard('EVENTS_EDIT', handleAddExpense)}
-          onRemoveExpense={guard('EVENTS_EDIT', handleRemoveExpense)}
-          onAddAdvanceRequest={guard('EVENTS_EDIT', handleAddAdvanceRequest)}
-          onRemoveAdvanceRequest={guard('EVENTS_EDIT', handleRemoveAdvanceRequest)}
-          onLinkQuotation={guard('EVENTS_EDIT', handleLinkQuotation)}
-          onFinalizeOrder={guard('EVENTS_EDIT', handleFinalizeOrder)}
-          onToggleItemDone={guard('EVENTS_EDIT', handleToggleEventItemDone)}
-          onToggleStaffDone={guard('EVENTS_EDIT', handleToggleEventStaffDone)}
-          onUpdateEvent={guard('EVENTS_EDIT', handleUpdateEvent)}
-          onLinkSaleOrder={guard('EVENTS_EDIT', handleLinkSaleOrderToEvent)}
-          onChecklistScan={guard('EVENTS_EDIT', handleChecklistScan)}
-          onUpdateChecklistNote={guard('EVENTS_EDIT', handleUpdateChecklistNote)}
-          onSaveChecklistSignature={guard('EVENTS_EDIT', handleSaveChecklistSignature)}
-        />
+        <div className="space-y-4">
+          <div className="flex justify-end">
+            <div className="inline-flex w-full rounded-lg border border-slate-200 bg-white p-1 shadow-sm sm:w-auto">
+              {EVENT_MODULE_TABS.map(({ key, label, Icon }) => {
+                const isSelected = eventModuleView === key;
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setEventModuleView(key)}
+                    className={`flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-bold transition sm:flex-none ${
+                      isSelected ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    <Icon size={16} />
+                    <span>{label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {eventModuleView === 'EVENTS' ? (
+            <EventManager 
+              events={appState.events} 
+              inventory={appState.inventory} 
+              packages={appState.packages} 
+              employees={appState.employees} 
+              quotations={appState.quotations}
+              saleOrders={appState.saleOrders || []}
+              canEdit={can('EVENTS_EDIT')}
+              isAdmin={currentUser?.role === 'ADMIN'}
+              onExportToEvent={guard('EVENTS_EDIT', handleExportToEvent)} 
+              onExportPackageToEvent={guard('EVENTS_EDIT', handleExportPackageToEvent)}
+              onSyncQuotation={guard('EVENTS_EDIT', handleSyncQuotation)}
+              onReturnFromEvent={guard('EVENTS_EDIT', handleReturnFromEvent)} 
+              onUpdateEventItemQuantity={guard('EVENTS_EDIT', handleUpdateEventItemQuantity)}
+              onRemoveEventItems={guard('EVENTS_EDIT', handleRemoveEventItems)}
+              onCreateEvent={guard('EVENTS_EDIT', handleCreateEvent)} 
+              onDeleteEvent={isAdmin ? guard('EVENTS_DELETE', handleDeleteEvent) : undefined}
+              onAssignStaff={guard('EVENTS_EDIT', handleAssignStaff)}
+              onRemoveStaff={guard('EVENTS_EDIT', handleRemoveStaff)}
+              onAddExpense={guard('EVENTS_EDIT', handleAddExpense)}
+              onRemoveExpense={guard('EVENTS_EDIT', handleRemoveExpense)}
+              onAddAdvanceRequest={guard('EVENTS_EDIT', handleAddAdvanceRequest)}
+              onRemoveAdvanceRequest={guard('EVENTS_EDIT', handleRemoveAdvanceRequest)}
+              onLinkQuotation={guard('EVENTS_EDIT', handleLinkQuotation)}
+              onFinalizeOrder={guard('EVENTS_EDIT', handleFinalizeOrder)}
+              onToggleItemDone={guard('EVENTS_EDIT', handleToggleEventItemDone)}
+              onToggleStaffDone={guard('EVENTS_EDIT', handleToggleEventStaffDone)}
+              onUpdateEvent={guard('EVENTS_EDIT', handleUpdateEvent)}
+              onLinkSaleOrder={guard('EVENTS_EDIT', handleLinkSaleOrderToEvent)}
+              onChecklistScan={guard('EVENTS_EDIT', handleChecklistScan)}
+              onUpdateChecklistNote={guard('EVENTS_EDIT', handleUpdateChecklistNote)}
+              onSaveChecklistSignature={guard('EVENTS_EDIT', handleSaveChecklistSignature)}
+            />
+          ) : (
+            <EinsteinHouseOS
+              events={appState.events}
+              inventory={appState.inventory}
+              employees={appState.employees}
+              packages={appState.packages}
+              educationActivities={appState.educationActivities || []}
+              learningTracks={appState.learningTracks || []}
+              canEdit={can('EVENTS_EDIT')}
+              onUpdateEvent={guard('EVENTS_EDIT', handleUpdateEvent)}
+            />
+          )}
+        </div>
       )}
       
       <div className="fixed right-4 md:right-6 bottom-24 md:bottom-6 z-40">

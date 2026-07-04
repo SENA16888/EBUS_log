@@ -26,10 +26,10 @@ export const ACCESS_PERMISSION_GROUPS: { group: string; items: { key: AccessPerm
     ]
   },
   {
-    group: 'Su kien',
+    group: 'Su kien & van hanh',
     items: [
-      { key: 'EVENTS_VIEW', label: 'Xem su kien' },
-      { key: 'EVENTS_EDIT', label: 'Cap nhat su kien' },
+      { key: 'EVENTS_VIEW', label: 'Xem su kien & van hanh' },
+      { key: 'EVENTS_EDIT', label: 'Cap nhat su kien & van hanh' },
       { key: 'EVENTS_DELETE', label: 'Xoa su kien' }
     ]
   },
