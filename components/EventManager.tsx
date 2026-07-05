@@ -477,6 +477,7 @@ type AutoStaffSlotStation = {
 
 type AutoStaffSlot = {
   key: string;
+  baseKey: string;
   station: AutoStaffSlotStation;
   date: string;
   sessions: EventSession[];
@@ -537,28 +538,42 @@ const getAutoStaffSlotStations = (event: Event): AutoStaffSlotStation[] => {
 const getStaffSlotAutoKey = (stationId: string, date: string, sessions: EventSession[]) =>
   `staff-slot-${stationId}-${date}-${sessions.join('-') || 'SESSION'}`;
 
-const getAutoStaffSlots = (event: Event): AutoStaffSlot[] => {
+const getAutoStaffSlots = (event: Event, splitKeys: Set<string>): AutoStaffSlot[] => {
   const stations = getAutoStaffSlotStations(event);
   const schedule = getEventSchedule(event);
   const safeSchedule = schedule.length > 0
     ? schedule
     : [{ date: event.startDate, sessions: event.session ? [event.session] : ['MORNING' as EventSession] }];
-  return stations.flatMap(station => safeSchedule.map(item => {
+  return stations.flatMap(station => safeSchedule.flatMap(item => {
     const sessions = item.sessions.length > 0 ? item.sessions : (event.session ? [event.session] : ['MORNING' as EventSession]);
-    const key = getStaffSlotAutoKey(station.id, item.date, sessions);
-    const hours = getStaffWorkHours(sessions);
-    const { allowance, total } = calculateStaffCompensation(hours);
-    const assigned = (event.staff || []).find(staff => staff.autoKey === key || (staff.stationId === station.id && staff.shiftDate === item.date));
-    return {
-      key,
-      station,
-      date: item.date,
-      sessions,
-      hours,
-      salary: total,
-      allowance,
-      assigned
-    };
+    const baseKey = getStaffSlotAutoKey(station.id, item.date, sessions);
+    const hasSplitAssignment = sessions.length > 1 && sessions.some(session =>
+      (event.staff || []).some(staff => staff.autoKey === getStaffSlotAutoKey(station.id, item.date, [session]))
+    );
+    const slotSessionGroups = sessions.length > 1 && (splitKeys.has(baseKey) || hasSplitAssignment)
+      ? sessions.map(session => [session])
+      : [sessions];
+    return slotSessionGroups.map(slotSessions => {
+      const isSplitChild = slotSessions.length === 1 && sessions.length > 1;
+      const slotKey = isSplitChild ? getStaffSlotAutoKey(station.id, item.date, slotSessions) : baseKey;
+      const slotHours = getStaffWorkHours(slotSessions);
+      const slotCompensation = calculateStaffCompensation(slotHours);
+      const assigned = (event.staff || []).find(staff =>
+        staff.autoKey === slotKey ||
+        (!staff.autoKey && staff.stationId === station.id && staff.shiftDate === item.date && getStaffSessions(staff).join('|') === slotSessions.join('|'))
+      );
+      return {
+        key: slotKey,
+        baseKey,
+        station,
+        date: item.date,
+        sessions: slotSessions,
+        hours: slotHours,
+        salary: slotCompensation.total,
+        allowance: slotCompensation.allowance,
+        assigned
+      };
+    });
   }));
 };
 
@@ -832,6 +847,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
   const [staffRate, setStaffRate] = useState(String(STAFF_HOURLY_RATE));
   const [selectedSessions, setSelectedSessions] = useState<EventSession[]>([]);
   const [selectedShiftDate, setSelectedShiftDate] = useState<string | null>(null);
+  const [splitAutoStaffSlotKeys, setSplitAutoStaffSlotKeys] = useState<Set<string>>(() => new Set());
   const [layoutForm, setLayoutForm] = useState({
     name: '',
     packageId: '',
@@ -876,8 +892,8 @@ export const EventManager: React.FC<EventManagerProps> = ({
     [selectedEvent]
   );
   const autoStaffSlots = useMemo(
-    () => selectedEvent ? getAutoStaffSlots(selectedEvent) : [],
-    [selectedEvent]
+    () => selectedEvent ? getAutoStaffSlots(selectedEvent, splitAutoStaffSlotKeys) : [],
+    [selectedEvent, splitAutoStaffSlotKeys]
   );
   const filledAutoStaffSlots = autoStaffSlots.filter(slot => slot.assigned).length;
   const linkedQuotation = selectedEvent?.quotationId ? quotations.find(q => q.id === selectedEvent.quotationId) : null;
@@ -966,6 +982,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
     setAdvanceNote('');
     setAdvanceAmount('');
     cancelEditAdvanceRequest();
+    setSplitAutoStaffSlotKeys(new Set());
   }, [selectedEvent]);
   useEffect(() => {
     if (eventScreenMode === 'DETAIL' && !selectedEvent) {
@@ -1326,6 +1343,39 @@ export const EventManager: React.FC<EventManagerProps> = ({
     const nextStaff = replaced
       ? currentStaff.map(staff => staff.autoKey === slot.key ? allocation : staff)
       : [...currentStaff, allocation];
+    onUpdateEvent(selectedEvent.id, { staff: nextStaff });
+  };
+
+  const splitStaffSlotBySession = (slot: AutoStaffSlot) => {
+    if (!selectedEvent || !canEdit) return;
+    if (slot.sessions.length <= 1) return;
+    setSplitAutoStaffSlotKeys(prev => {
+      const next = new Set(prev);
+      next.add(slot.baseKey);
+      return next;
+    });
+    if (!slot.assigned || !onUpdateEvent) return;
+    const firstSession = slot.sessions[0];
+    const firstKey = getStaffSlotAutoKey(slot.station.id, slot.date, [firstSession]);
+    const hours = getStaffWorkHours([firstSession]);
+    const compensation = calculateStaffCompensation(hours);
+    const converted: EventStaffAllocation = {
+      ...slot.assigned,
+      id: slot.assigned.id || makeEventManagerId('staff-slot'),
+      task: `Phụ trách trạm ${slot.station.name}`,
+      unit: 'HOUR',
+      quantity: hours,
+      rate: STAFF_HOURLY_RATE,
+      salary: compensation.total,
+      session: firstSession,
+      sessions: [firstSession],
+      shiftDate: slot.date,
+      stationId: slot.station.id,
+      stationName: slot.station.name,
+      source: AUTO_STAFF_SLOT_SOURCE,
+      autoKey: firstKey
+    };
+    const nextStaff = (selectedEvent.staff || []).map(staff => staff.autoKey === slot.key ? converted : staff);
     onUpdateEvent(selectedEvent.id, { staff: nextStaff });
   };
 
@@ -2619,16 +2669,29 @@ export const EventManager: React.FC<EventManagerProps> = ({
                                     ))}
                                   </div>
                                 </div>
-                                {slot.assigned && (
-                                  <label className="inline-flex items-center gap-2 text-[11px] font-bold text-teal-700">
-                                    <input
-                                      type="checkbox"
-                                      checked={!!slot.assigned.done}
-                                      onChange={e => onToggleStaffDone?.(selectedEvent.id, slot.assigned!.employeeId, e.target.checked, slot.assigned!.id || slot.assigned!.autoKey)}
-                                    />
-                                    Xong
-                                  </label>
-                                )}
+                                <div className="flex flex-col items-end gap-2">
+                                  {slot.sessions.length > 1 && (
+                                    <button
+                                      type="button"
+                                      onClick={() => splitStaffSlotBySession(slot)}
+                                      disabled={!canEdit}
+                                      className="inline-flex items-center gap-1 rounded-lg border border-teal-200 bg-white px-2 py-1 text-[11px] font-black text-teal-700 hover:bg-teal-50 disabled:opacity-50"
+                                      title="Tách thành từng buổi riêng"
+                                    >
+                                      <ArrowRightLeft size={13}/> Tách 2 buổi
+                                    </button>
+                                  )}
+                                  {slot.assigned && (
+                                    <label className="inline-flex items-center gap-2 text-[11px] font-bold text-teal-700">
+                                      <input
+                                        type="checkbox"
+                                        checked={!!slot.assigned.done}
+                                        onChange={e => onToggleStaffDone?.(selectedEvent.id, slot.assigned!.employeeId, e.target.checked, slot.assigned!.id || slot.assigned!.autoKey)}
+                                      />
+                                      Xong
+                                    </label>
+                                  )}
+                                </div>
                               </div>
                               <div className="mt-3 grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3 items-center">
                                 <select
