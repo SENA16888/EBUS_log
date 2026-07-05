@@ -903,6 +903,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
     return { year: now.getFullYear(), month: now.getMonth() };
   });
   const [activeContentProgramId, setActiveContentProgramId] = useState(PRIMARY_CONTENT_PROGRAM_ID);
+  const [isContentProgramEditorOpen, setIsContentProgramEditorOpen] = useState(false);
   const calendarMonthLabel = useMemo(
     () => new Date(calendarView.year, calendarView.month, 1).toLocaleDateString('vi-VN', { month: 'long', year: 'numeric' }),
     [calendarView]
@@ -1121,6 +1122,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
     setDetailSection('PROGRAM_CONTENT');
     setDetailTab('EH_CONTROL');
     setActiveContentProgramId(id);
+    setIsContentProgramEditorOpen(true);
   };
 
   const groupedEventsByMonth = useMemo(() => {
@@ -2353,7 +2355,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
         </div>
       )}
 
-      <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-100 flex flex-col lg:h-full overflow-visible lg:overflow-hidden">
+      <div className="flex-1 min-h-0 bg-white rounded-xl shadow-sm border border-slate-100 flex flex-col lg:h-full overflow-visible lg:overflow-hidden">
         {eventScreenMode === 'HOME' ? (
           <>
             <div className="p-4 md:p-6 border-b border-slate-100 bg-slate-50/40">
@@ -2446,7 +2448,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
           </>
         ) : selectedEvent ? (
           <>
-            <div className="p-4 md:p-6 border-b border-slate-100 space-y-3">
+            <div className="p-3 md:p-4 border-b border-slate-100 space-y-3 shrink-0">
               <div>
                 <button
                   onClick={() => setEventScreenMode('HOME')}
@@ -2508,7 +2510,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
                 </div>
               </div>
               
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-4">
                 {DETAIL_SECTIONS.map(section => {
                   const SectionIcon = section.Icon;
                   const isSelected = detailSection === section.key;
@@ -2517,7 +2519,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
                       key={section.key}
                       type="button"
                       onClick={() => handleDetailSectionChange(section.key)}
-                      className={`rounded-xl border p-4 text-left transition ${
+                      className={`rounded-xl border p-3 text-left transition ${
                         isSelected
                           ? 'border-blue-500 bg-blue-50 text-blue-800 shadow-sm'
                           : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50'
@@ -2538,20 +2540,31 @@ export const EventManager: React.FC<EventManagerProps> = ({
               </div>
 
               {detailSection === 'PROGRAM_CONTENT' && (
-                <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm space-y-3">
+                <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm space-y-2">
                   <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                     <div>
                       <p className="text-[11px] font-black uppercase tracking-widest text-slate-400">Chương trình nội dung</p>
-                      <p className="text-sm font-semibold text-slate-700">Hồ sơ dùng chung, mỗi chương trình có Sơ đồ, Design, Agenda, Knowledge, Live và Report riêng.</p>
+                      {isContentProgramEditorOpen && (
+                        <p className="text-xs font-semibold text-slate-600">Hồ sơ dùng chung, mỗi chương trình có Sơ đồ, Design, Agenda, Knowledge, Live và Report riêng.</p>
+                      )}
                     </div>
-                    <button
-                      type="button"
-                      onClick={createContentProgramClone}
-                      disabled={!canEdit || !onUpdateEvent}
-                      className="inline-flex items-center justify-center gap-2 rounded-lg bg-teal-600 px-4 py-2 text-sm font-black text-white hover:bg-teal-700 disabled:bg-slate-200 disabled:text-slate-500"
-                    >
-                      <Plus size={16}/> {contentProgramViews.length > 1 ? 'Clone chương trình' : 'Bật chế độ nâng cao'}
-                    </button>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setIsContentProgramEditorOpen(prev => !prev)}
+                        className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-600 hover:bg-slate-50"
+                      >
+                        {isContentProgramEditorOpen ? 'Thu gọn' : 'Mở chỉnh sửa'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={createContentProgramClone}
+                        disabled={!canEdit || !onUpdateEvent}
+                        className="inline-flex items-center justify-center gap-2 rounded-lg bg-teal-600 px-3 py-2 text-xs font-black text-white hover:bg-teal-700 disabled:bg-slate-200 disabled:text-slate-500"
+                      >
+                        <Plus size={14}/> {contentProgramViews.length > 1 ? 'Clone chương trình' : 'Bật nâng cao'}
+                      </button>
+                    </div>
                   </div>
 
                   <div className="flex gap-2 overflow-x-auto pb-1">
@@ -2563,7 +2576,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
                           key={program.id}
                           type="button"
                           onClick={() => setActiveContentProgramId(program.id)}
-                          className={`min-w-[220px] rounded-xl border p-3 text-left transition ${
+                          className={`min-w-[190px] rounded-lg border p-2 text-left transition ${
                             isSelected
                               ? 'border-teal-500 bg-teal-50 text-teal-900'
                               : 'border-slate-200 bg-slate-50/60 text-slate-600 hover:border-teal-200'
@@ -2575,8 +2588,8 @@ export const EventManager: React.FC<EventManagerProps> = ({
                               <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-black text-slate-500 border border-slate-200">Gốc</span>
                             )}
                           </div>
-                          <p className="mt-1 text-[11px] font-semibold text-slate-500">{getProgramDateLabel(program, selectedEvent)}</p>
-                          <p className="mt-2 text-[11px] text-slate-500">
+                          <p className="mt-1 text-[10px] font-semibold text-slate-500">{getProgramDateLabel(program, selectedEvent)}</p>
+                          <p className="mt-1 text-[10px] text-slate-500">
                             {operation?.stations?.length || 0} trạm • {operation?.agenda?.length || 0} mốc agenda • {program.layout?.blocks?.length || 0} block sơ đồ
                           </p>
                         </button>
@@ -2584,7 +2597,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
                     })}
                   </div>
 
-                  {activeContentProgram && (
+                  {activeContentProgram && isContentProgramEditorOpen && (
                     <div className={`grid grid-cols-1 gap-3 rounded-xl border border-teal-100 bg-teal-50/50 p-3 ${
                       activeContentProgram.isPrimary
                         ? 'lg:grid-cols-[1.2fr_0.8fr_1fr]'
@@ -2669,7 +2682,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
               </div>
             </div>
 
-            <div className="flex-1 overflow-visible lg:overflow-y-auto p-4 md:p-6 bg-slate-50/30">
+            <div className="flex-1 min-h-0 overflow-y-auto p-4 md:p-5 bg-slate-50/30">
               {detailTab === 'EQUIPMENT' && (
                 <div className="space-y-4">
                   {/* Sync From Quotation Banner */}
