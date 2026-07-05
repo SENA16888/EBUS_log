@@ -331,6 +331,8 @@ export interface EventAdvanceRequest {
   note?: string;
   amount: number;
   createdAt?: string;
+  source?: 'AUTO_PROFILE' | 'MANUAL';
+  autoKey?: string;
 }
 
 export interface EventItemAllocation {

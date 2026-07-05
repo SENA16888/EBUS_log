@@ -197,6 +197,255 @@ const getEventVenueTone = (venue?: EventVenueType) => {
     };
 };
 
+const AUTO_ADVANCE_SOURCE: EventAdvanceRequest['source'] = 'AUTO_PROFILE';
+const AUTO_ADVANCE_PREFIX = 'profile-auto';
+const HANOI_CENTER = { lat: 21.0278, lng: 105.8342 };
+
+const PROVINCE_ROUTE_ESTIMATES: {
+  label: string;
+  keywords: string[];
+  oneWayKm: number;
+  vetcRoundTrip: number;
+}[] = [
+  { label: 'Quảng Ninh', keywords: ['quang ninh', 'ha long', 'cam pha', 'mong cai', 'uông bi', 'uong bi'], oneWayKm: 170, vetcRoundTrip: 500000 },
+  { label: 'Hải Phòng', keywords: ['hai phong', 'cat ba'], oneWayKm: 120, vetcRoundTrip: 320000 },
+  { label: 'Hải Dương', keywords: ['hai duong'], oneWayKm: 65, vetcRoundTrip: 180000 },
+  { label: 'Hưng Yên', keywords: ['hung yen'], oneWayKm: 45, vetcRoundTrip: 120000 },
+  { label: 'Bắc Ninh', keywords: ['bac ninh'], oneWayKm: 35, vetcRoundTrip: 100000 },
+  { label: 'Bắc Giang', keywords: ['bac giang'], oneWayKm: 60, vetcRoundTrip: 150000 },
+  { label: 'Vĩnh Phúc', keywords: ['vinh phuc', 'vinh yen', 'tam dao'], oneWayKm: 55, vetcRoundTrip: 120000 },
+  { label: 'Thái Nguyên', keywords: ['thai nguyen'], oneWayKm: 80, vetcRoundTrip: 180000 },
+  { label: 'Phú Thọ', keywords: ['phu tho', 'viet tri'], oneWayKm: 90, vetcRoundTrip: 180000 },
+  { label: 'Ninh Bình', keywords: ['ninh binh'], oneWayKm: 95, vetcRoundTrip: 220000 },
+  { label: 'Nam Định', keywords: ['nam dinh'], oneWayKm: 90, vetcRoundTrip: 200000 },
+  { label: 'Thái Bình', keywords: ['thai binh'], oneWayKm: 110, vetcRoundTrip: 240000 },
+  { label: 'Thanh Hóa', keywords: ['thanh hoa'], oneWayKm: 160, vetcRoundTrip: 300000 },
+  { label: 'Hòa Bình', keywords: ['hoa binh'], oneWayKm: 75, vetcRoundTrip: 150000 },
+  { label: 'Lạng Sơn', keywords: ['lang son'], oneWayKm: 155, vetcRoundTrip: 300000 },
+  { label: 'Lào Cai', keywords: ['lao cai', 'sapa', 'sa pa'], oneWayKm: 300, vetcRoundTrip: 450000 }
+];
+
+const normalizeText = (value?: string | null) =>
+  (value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+
+const roundMoney = (value: number, step = 50000) =>
+  Math.max(0, Math.round(value / step) * step);
+
+const getInclusiveDateSpan = (start?: string, end?: string) => {
+  if (!start) return 1;
+  const startDate = new Date(`${start}T00:00:00`);
+  const endDate = new Date(`${end || start}T00:00:00`);
+  if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) return 1;
+  return Math.max(1, Math.floor((endDate.getTime() - startDate.getTime()) / 86400000) + 1);
+};
+
+const getEventDurationInfo = (event: Event) => {
+  const schedule = getEventSchedule(event);
+  const dates = Array.from(new Set(schedule.map(item => item.date).filter(Boolean))).sort();
+  const dayCount = dates.length > 0
+    ? dates.length
+    : getInclusiveDateSpan(event.startDate, event.endDate);
+  const isContinuous = dates.length <= 1
+    ? getInclusiveDateSpan(event.startDate, event.endDate) === dayCount
+    : dates.every((date, index) => {
+      if (index === 0) return true;
+      const prev = new Date(`${dates[index - 1]}T00:00:00`).getTime();
+      const current = new Date(`${date}T00:00:00`).getTime();
+      return current - prev === 86400000;
+    });
+  return { dayCount: Math.max(1, dayCount), isContinuous };
+};
+
+const extractMapLatLng = (text: string) => {
+  const decoded = decodeURIComponent(text || '');
+  const atMatch = decoded.match(/@(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/);
+  const destinationMatch = decoded.match(/[?&](?:destination|query|q)=(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/);
+  const match = atMatch || destinationMatch;
+  if (!match) return null;
+  const lat = Number(match[1]);
+  const lng = Number(match[2]);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  return { lat, lng };
+};
+
+const haversineKm = (from: { lat: number; lng: number }, to: { lat: number; lng: number }) => {
+  const radius = 6371;
+  const toRad = (value: number) => value * Math.PI / 180;
+  const dLat = toRad(to.lat - from.lat);
+  const dLng = toRad(to.lng - from.lng);
+  const lat1 = toRad(from.lat);
+  const lat2 = toRad(to.lat);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  return radius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+};
+
+const estimateEventRoute = (event: Event) => {
+  const profile: Partial<EventProfile> = event.eventProfile || {};
+  const rawText = [
+    event.client,
+    event.location,
+    profile.organization,
+    profile.addressDetail,
+    profile.mapLink,
+    profile.setupArea
+  ].filter(Boolean).join(' ');
+  const normalized = normalizeText(rawText);
+  const isHanoi = normalized.includes('ha noi') || normalized.includes('hanoi') || normalized.includes('hà noi');
+  const matchedProvince = PROVINCE_ROUTE_ESTIMATES.find(item =>
+    item.keywords.some(keyword => normalized.includes(keyword))
+  );
+
+  if (matchedProvince) {
+    return {
+      label: matchedProvince.label,
+      isOutOfProvince: matchedProvince.label !== 'Hà Nội',
+      roundTripKm: matchedProvince.oneWayKm * 2,
+      vetcRoundTrip: matchedProvince.vetcRoundTrip,
+      basis: `ước tính theo khu vực ${matchedProvince.label}`
+    };
+  }
+
+  const coords = extractMapLatLng(profile.mapLink || rawText);
+  if (coords) {
+    const oneWay = haversineKm(HANOI_CENTER, coords) * 1.25;
+    const roundTripKm = Math.max(20, Math.round(oneWay * 2));
+    return {
+      label: isHanoi || roundTripKm <= 80 ? 'Hà Nội' : 'Ngoại tỉnh',
+      isOutOfProvince: !isHanoi && roundTripKm > 80,
+      roundTripKm,
+      vetcRoundTrip: !isHanoi && roundTripKm > 80 ? 250000 : 0,
+      basis: 'ước tính từ tọa độ Google Maps'
+    };
+  }
+
+  return {
+    label: isHanoi ? 'Hà Nội' : 'Chưa rõ địa bàn',
+    isOutOfProvince: !isHanoi,
+    roundTripKm: isHanoi ? 30 : 180,
+    vetcRoundTrip: isHanoi ? 0 : 250000,
+    basis: isHanoi ? 'mặc định nội thành Hà Nội' : 'chưa nhận diện tỉnh, dùng mức ngoại tỉnh mặc định'
+  };
+};
+
+const getAutoAdvanceId = (eventId: string, key: string) => `auto-advance-${eventId}-${key}`;
+
+const makeAutoAdvanceRequest = (
+  event: Event,
+  key: string,
+  title: string,
+  amount: number,
+  note: string
+): EventAdvanceRequest | null => {
+  const rounded = roundMoney(amount);
+  if (rounded <= 0) return null;
+  return {
+    id: getAutoAdvanceId(event.id, key),
+    title,
+    amount: rounded,
+    note,
+    createdAt: event.startDate || new Date().toISOString().slice(0, 10),
+    source: AUTO_ADVANCE_SOURCE,
+    autoKey: key
+  };
+};
+
+const getAutoAdvancePlan = (event: Event) => {
+  const venue = getEventVenue(event);
+  const { dayCount, isContinuous } = getEventDurationInfo(event);
+  const route = estimateEventRoute(event);
+  const staffCount = Math.max(1, new Set((event.staff || []).map(item => item.employeeId).filter(Boolean)).size || (event.staff || []).length);
+  const carCount = Math.max(1, Math.ceil(staffCount / 4));
+  const rooms = staffCount <= 1 ? 1 : Math.max(2, Math.ceil(staffCount / 3));
+  const nights = Math.max(0, dayCount - 1);
+  const isExternal = venue === 'EBUS';
+  const requests = [
+    isExternal ? makeAutoAdvanceRequest(
+      event,
+      'fuel',
+      'Dầu xe EBUS',
+      route.roundTripKm / 100 * 250000,
+      `${Math.round(route.roundTripKm)}km khứ hồi • 250.000đ/100km • ${route.basis}`
+    ) : null,
+    isExternal ? makeAutoAdvanceRequest(
+      event,
+      'driver',
+      'Thuê tài xế',
+      (route.isOutOfProvince ? 1000000 : 600000) * dayCount,
+      `${dayCount} ngày • ${route.isOutOfProvince ? 'ngoại tỉnh 1.000.000đ/ngày' : 'nội thành Hà Nội 600.000đ/ngày'}`
+    ) : null,
+    isExternal ? makeAutoAdvanceRequest(
+      event,
+      'staff-transport',
+      'Chở nhân sự',
+      route.isOutOfProvince
+        ? staffCount * 2 * 275000
+        : carCount * route.roundTripKm * 20000,
+      route.isOutOfProvince
+        ? `${staffCount} nhân sự • vé tỉnh 275.000đ/lượt x 2 lượt`
+        : `${staffCount} nhân sự • ${carCount} xe • ${Math.round(route.roundTripKm)}km x 20.000đ/km`
+    ) : null,
+    isExternal && route.isOutOfProvince ? makeAutoAdvanceRequest(
+      event,
+      'vetc',
+      'VETC / phí đường bộ',
+      route.vetcRoundTrip,
+      `${route.label} • phí khứ hồi ước tính, có thể chỉnh theo hóa đơn thực tế`
+    ) : null,
+    isExternal && route.isOutOfProvince && isContinuous && dayCount >= 2 ? makeAutoAdvanceRequest(
+      event,
+      'accommodation',
+      'Lưu trú',
+      rooms * nights * 350000,
+      `${rooms} phòng x ${nights} đêm • 350.000đ/phòng/đêm • ${staffCount} nhân sự`
+    ) : null,
+    makeAutoAdvanceRequest(
+      event,
+      'contingency',
+      'Phát sinh dự phòng',
+      1000000,
+      'Mặc định 1.000.000đ cho vật tư tiêu hao, mua bổ sung hoặc sự cố xe'
+    )
+  ].filter(Boolean) as EventAdvanceRequest[];
+
+  return {
+    requests,
+    summary: {
+      venue,
+      dayCount,
+      isContinuous,
+      staffCount,
+      rooms,
+      nights,
+      route
+    }
+  };
+};
+
+const isAutoAdvanceRequest = (request: EventAdvanceRequest) =>
+  request.source === AUTO_ADVANCE_SOURCE || (request.autoKey || '').startsWith(AUTO_ADVANCE_PREFIX) || request.id.startsWith('auto-advance-');
+
+const areAdvanceRequestsEquivalent = (left: EventAdvanceRequest[], right: EventAdvanceRequest[]) =>
+  JSON.stringify(left.map(item => ({
+    id: item.id,
+    title: item.title,
+    note: item.note || '',
+    amount: item.amount || 0,
+    source: item.source || 'MANUAL',
+    autoKey: item.autoKey || '',
+    createdAt: item.createdAt || ''
+  }))) === JSON.stringify(right.map(item => ({
+    id: item.id,
+    title: item.title,
+    note: item.note || '',
+    amount: item.amount || 0,
+    source: item.source || 'MANUAL',
+    autoKey: item.autoKey || '',
+    createdAt: item.createdAt || ''
+  })));
+
 const getStaffSessions = (staff?: Pick<EventStaffAllocation, 'session' | 'sessions'>): EventSession[] => {
   if (!staff) return [];
   if (staff.sessions && staff.sessions.length > 0) return staff.sessions as EventSession[];
@@ -508,6 +757,10 @@ export const EventManager: React.FC<EventManagerProps> = ({
   const selectedEvent = events.find(e => e.id === selectedEventId);
   const eventProfile = selectedEvent?.eventProfile || {};
   const canEditProfile = canEdit && isAdmin;
+  const autoAdvancePlan = useMemo(
+    () => selectedEvent ? getAutoAdvancePlan(selectedEvent) : null,
+    [selectedEvent]
+  );
   const linkedQuotation = selectedEvent?.quotationId ? quotations.find(q => q.id === selectedEvent.quotationId) : null;
   const linkedSaleOrders = useMemo(() => {
     if (!selectedEvent) return [];
@@ -517,6 +770,16 @@ export const EventManager: React.FC<EventManagerProps> = ({
     if (!selectedEvent) return [];
     return saleOrders.filter(o => o.eventId === undefined || o.eventId === selectedEvent.id || (selectedEvent.saleOrderIds || []).includes(o.id));
   }, [saleOrders, selectedEvent]);
+
+  useEffect(() => {
+    if (!selectedEvent || !autoAdvancePlan || !onUpdateEvent || !canEdit) return;
+    const manualRequests = (selectedEvent.advanceRequests || []).filter(req => !isAutoAdvanceRequest(req));
+    const nextRequests = [...autoAdvancePlan.requests, ...manualRequests];
+    if (!areAdvanceRequestsEquivalent(selectedEvent.advanceRequests || [], nextRequests)) {
+      onUpdateEvent(selectedEvent.id, { advanceRequests: nextRequests });
+    }
+  }, [autoAdvancePlan, canEdit, onUpdateEvent, selectedEvent]);
+
   const groupedEventsByMonth = useMemo(() => {
     const buckets: Record<string, Event[]> = {};
     const others: Event[] = [];
@@ -920,7 +1183,8 @@ export const EventManager: React.FC<EventManagerProps> = ({
       title: advanceTitle.trim(),
       note: advanceNote.trim() || undefined,
       amount: parsedAmount,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      source: 'MANUAL'
     };
     onAddAdvanceRequest(selectedEventId, payload);
     setAdvanceTitle('');
@@ -2871,6 +3135,28 @@ export const EventManager: React.FC<EventManagerProps> = ({
                       </h4>
                       <span className="text-[11px] text-slate-500 font-semibold">Tổng yêu cầu: {totalAdvanceAmount.toLocaleString()}đ</span>
                     </div>
+                    {autoAdvancePlan && (
+                      <div className="rounded-xl border border-amber-100 bg-amber-50/70 p-4">
+                        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                          <div>
+                            <p className="text-[11px] font-black uppercase tracking-widest text-amber-700">Tạm ứng tự động từ Hồ sơ sự kiện</p>
+                            <p className="mt-1 text-sm text-amber-900">
+                              {autoAdvancePlan.summary.venue === 'EBUS' ? 'Bên ngoài EBUS' : 'Tại EH'} • {autoAdvancePlan.summary.route.label} • {Math.round(autoAdvancePlan.summary.route.roundTripKm)}km khứ hồi • {autoAdvancePlan.summary.dayCount} ngày
+                            </p>
+                            <p className="mt-1 text-[11px] text-amber-700">
+                              {autoAdvancePlan.summary.route.basis} • {autoAdvancePlan.summary.staffCount} nhân sự
+                              {autoAdvancePlan.summary.nights > 0 ? ` • ${autoAdvancePlan.summary.rooms} phòng x ${autoAdvancePlan.summary.nights} đêm` : ''}
+                            </p>
+                          </div>
+                          <div className="text-left md:text-right">
+                            <p className="text-[11px] font-bold text-amber-700">Tự sinh</p>
+                            <p className="text-2xl font-black text-amber-800">
+                              {autoAdvancePlan.requests.reduce((sum, req) => sum + (req.amount || 0), 0).toLocaleString()}đ
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                     <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
                       <div className="md:col-span-4">
                         <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Hạng mục</label>
@@ -2922,7 +3208,14 @@ export const EventManager: React.FC<EventManagerProps> = ({
                               <tr key={req.id} className="border-t border-slate-100 hover:bg-amber-50/40">
                                 <td className="px-4 py-2 text-xs text-slate-500">{idx + 1}</td>
                                 <td className="px-4 py-2">
-                                  <p className="font-bold text-slate-800">{req.title}</p>
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <p className="font-bold text-slate-800">{req.title}</p>
+                                    {isAutoAdvanceRequest(req) && (
+                                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-black text-amber-700">
+                                        Tự động
+                                      </span>
+                                    )}
+                                  </div>
                                   {req.createdAt && (
                                     <p className="text-[11px] text-slate-400">Ngày yêu cầu: {new Date(req.createdAt).toLocaleDateString('vi-VN')}</p>
                                   )}
