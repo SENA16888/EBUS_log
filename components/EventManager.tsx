@@ -1716,6 +1716,29 @@ export const EventManager: React.FC<EventManagerProps> = ({
                   <p className="text-sm text-gray-500">{selectedEvent.client} • {selectedEvent.location} • {getEventVenueLabel(getEventVenue(selectedEvent))}</p>
                 </div>
                 <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+                  <div className="inline-flex rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
+                    {EVENT_VENUE_OPTIONS.map(option => {
+                      const isSelected = getEventVenue(selectedEvent) === option.value;
+                      const tone = getEventVenueTone(option.value);
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          onClick={() => onUpdateEvent?.(selectedEvent.id, { organizationVenue: option.value })}
+                          disabled={!canEdit || !onUpdateEvent}
+                          title={option.description}
+                          className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-black transition sm:flex-none ${
+                            isSelected
+                              ? `${tone.chip} border-transparent`
+                              : 'text-slate-500 hover:bg-slate-50'
+                          } disabled:opacity-60 disabled:cursor-not-allowed`}
+                        >
+                          <span className={`h-1.5 w-1.5 rounded-full ${tone.dot}`}></span>
+                          {option.value === 'EH' ? 'Tại EH' : 'EBUS'}
+                        </button>
+                      );
+                    })}
+                  </div>
                   {isAdmin && onDeleteEvent && (
                     <button
                       onClick={() => setShowDeleteConfirm(true)}
@@ -1737,35 +1760,6 @@ export const EventManager: React.FC<EventManagerProps> = ({
                       <><FileText size={16}/> Chốt Đơn & In</>
                     )}
                   </button>
-                </div>
-              </div>
-
-              <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3">
-                <p className="mb-2 text-[11px] font-black uppercase tracking-widest text-slate-400">Loại tổ chức</p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {EVENT_VENUE_OPTIONS.map(option => {
-                    const isSelected = getEventVenue(selectedEvent) === option.value;
-                    const tone = getEventVenueTone(option.value);
-                    return (
-                      <button
-                        key={option.value}
-                        type="button"
-                        onClick={() => onUpdateEvent?.(selectedEvent.id, { organizationVenue: option.value })}
-                        disabled={!canEdit || !onUpdateEvent}
-                        className={`rounded-xl border px-4 py-3 text-left transition ${
-                          isSelected
-                            ? `${tone.chip} shadow-sm`
-                            : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
-                        } disabled:opacity-60 disabled:cursor-not-allowed`}
-                      >
-                        <span className="flex items-center gap-2 text-sm font-black">
-                          <span className={`h-2 w-2 rounded-full ${tone.dot}`}></span>
-                          {option.label}
-                        </span>
-                        <span className="mt-1 block text-[11px] font-semibold text-slate-500">{option.description}</span>
-                      </button>
-                    );
-                  })}
                 </div>
               </div>
               
