@@ -7,7 +7,7 @@ import {
   Utensils, Wallet, Printer, Coffee, AlertCircle,
   TrendingUp, ArrowRightLeft, UserCheck, Link as LinkIcon, Clock3,
   Calculator, ChevronRight, ChevronLeft, PieChart as PieIcon, FileText, CheckCircle, RefreshCw, Upload, Download, ScanBarcode,
-  Radio, Wand2, TimerReset, ClipboardCheck, Library, PlayCircle, BarChart3
+  Radio, Wand2, TimerReset, ClipboardCheck, Library, PlayCircle, BarChart3, Pencil
 } from 'lucide-react';
 import { EventExportModal } from './EventExportModal';
 import { EventChecklist } from './EventChecklist';
@@ -425,7 +425,11 @@ const getAutoAdvancePlan = (event: Event) => {
 };
 
 const isAutoAdvanceRequest = (request: EventAdvanceRequest) =>
-  request.source === AUTO_ADVANCE_SOURCE || (request.autoKey || '').startsWith(AUTO_ADVANCE_PREFIX) || request.id.startsWith('auto-advance-');
+  request.source !== 'MANUAL' && (
+    request.source === AUTO_ADVANCE_SOURCE ||
+    (request.autoKey || '').startsWith(AUTO_ADVANCE_PREFIX) ||
+    request.id.startsWith('auto-advance-')
+  );
 
 const areAdvanceRequestsEquivalent = (left: EventAdvanceRequest[], right: EventAdvanceRequest[]) =>
   JSON.stringify(left.map(item => ({
@@ -745,6 +749,10 @@ export const EventManager: React.FC<EventManagerProps> = ({
   const [advanceTitle, setAdvanceTitle] = useState('');
   const [advanceNote, setAdvanceNote] = useState('');
   const [advanceAmount, setAdvanceAmount] = useState('');
+  const [editingAdvanceId, setEditingAdvanceId] = useState<string | null>(null);
+  const [editingAdvanceTitle, setEditingAdvanceTitle] = useState('');
+  const [editingAdvanceNote, setEditingAdvanceNote] = useState('');
+  const [editingAdvanceAmount, setEditingAdvanceAmount] = useState('');
   const [advancePaidAmountInput, setAdvancePaidAmountInput] = useState('');
   const [advancePaidDateInput, setAdvancePaidDateInput] = useState('');
   const [advancePaidConfirmed, setAdvancePaidConfirmed] = useState(false);
@@ -774,7 +782,9 @@ export const EventManager: React.FC<EventManagerProps> = ({
   useEffect(() => {
     if (!selectedEvent || !autoAdvancePlan || !onUpdateEvent || !canEdit) return;
     const manualRequests = (selectedEvent.advanceRequests || []).filter(req => !isAutoAdvanceRequest(req));
-    const nextRequests = [...autoAdvancePlan.requests, ...manualRequests];
+    const manualAutoKeys = new Set(manualRequests.map(req => req.autoKey).filter(Boolean));
+    const nextAutoRequests = autoAdvancePlan.requests.filter(req => !req.autoKey || !manualAutoKeys.has(req.autoKey));
+    const nextRequests = [...nextAutoRequests, ...manualRequests];
     if (!areAdvanceRequestsEquivalent(selectedEvent.advanceRequests || [], nextRequests)) {
       onUpdateEvent(selectedEvent.id, { advanceRequests: nextRequests });
     }
@@ -844,6 +854,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
     setAdvanceTitle('');
     setAdvanceNote('');
     setAdvanceAmount('');
+    cancelEditAdvanceRequest();
   }, [selectedEvent]);
   useEffect(() => {
     if (eventScreenMode === 'DETAIL' && !selectedEvent) {
@@ -1190,6 +1201,46 @@ export const EventManager: React.FC<EventManagerProps> = ({
     setAdvanceTitle('');
     setAdvanceNote('');
     setAdvanceAmount('');
+  };
+
+  const beginEditAdvanceRequest = (request: EventAdvanceRequest) => {
+    setEditingAdvanceId(request.id);
+    setEditingAdvanceTitle(request.title);
+    setEditingAdvanceNote(request.note || '');
+    setEditingAdvanceAmount(String(request.amount || 0));
+  };
+
+  const cancelEditAdvanceRequest = () => {
+    setEditingAdvanceId(null);
+    setEditingAdvanceTitle('');
+    setEditingAdvanceNote('');
+    setEditingAdvanceAmount('');
+  };
+
+  const saveEditedAdvanceRequest = () => {
+    if (!selectedEvent || !onUpdateEvent || !editingAdvanceId) return;
+    if (!editingAdvanceTitle.trim()) {
+      alert('Vui lòng nhập hạng mục tạm ứng.');
+      return;
+    }
+    const parsedAmount = Number(editingAdvanceAmount);
+    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+      alert('Số tiền tạm ứng không hợp lệ.');
+      return;
+    }
+    const nextRequests = (selectedEvent.advanceRequests || []).map(request => {
+      if (request.id !== editingAdvanceId) return request;
+      return {
+        ...request,
+        title: editingAdvanceTitle.trim(),
+        note: editingAdvanceNote.trim() || undefined,
+        amount: parsedAmount,
+        source: 'MANUAL' as const,
+        autoKey: request.autoKey
+      };
+    });
+    onUpdateEvent(selectedEvent.id, { advanceRequests: nextRequests });
+    cancelEditAdvanceRequest();
   };
 
   const persistAdvancePaid = (updates: Partial<Event>) => {
@@ -3204,35 +3255,110 @@ export const EventManager: React.FC<EventManagerProps> = ({
                             </tr>
                           </thead>
                           <tbody>
-                            {advanceRequests.map((req, idx) => (
-                              <tr key={req.id} className="border-t border-slate-100 hover:bg-amber-50/40">
-                                <td className="px-4 py-2 text-xs text-slate-500">{idx + 1}</td>
-                                <td className="px-4 py-2">
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    <p className="font-bold text-slate-800">{req.title}</p>
-                                    {isAutoAdvanceRequest(req) && (
-                                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-black text-amber-700">
-                                        Tự động
-                                      </span>
-                                    )}
-                                  </div>
-                                  {req.createdAt && (
-                                    <p className="text-[11px] text-slate-400">Ngày yêu cầu: {new Date(req.createdAt).toLocaleDateString('vi-VN')}</p>
+                            {advanceRequests.map((req, idx) => {
+                              const isEditing = editingAdvanceId === req.id;
+                              const isEditedAutoRequest = req.source === 'MANUAL' && !!req.autoKey;
+                              return (
+                                <tr key={req.id} className="border-t border-slate-100 hover:bg-amber-50/40">
+                                  <td className="px-4 py-2 text-xs text-slate-500">{idx + 1}</td>
+                                  {isEditing ? (
+                                    <>
+                                      <td className="px-4 py-2">
+                                        <input
+                                          className="w-full min-w-[180px] rounded-lg border border-amber-200 px-3 py-2 text-sm font-bold text-slate-800 outline-none focus:ring-2 focus:ring-amber-500"
+                                          value={editingAdvanceTitle}
+                                          onChange={e => setEditingAdvanceTitle(e.target.value)}
+                                          autoFocus
+                                        />
+                                        {req.createdAt && (
+                                          <p className="mt-1 text-[11px] text-slate-400">Ngày yêu cầu: {new Date(req.createdAt).toLocaleDateString('vi-VN')}</p>
+                                        )}
+                                      </td>
+                                      <td className="px-4 py-2">
+                                        <input
+                                          className="w-full min-w-[220px] rounded-lg border border-amber-200 px-3 py-2 text-sm text-slate-700 outline-none focus:ring-2 focus:ring-amber-500"
+                                          value={editingAdvanceNote}
+                                          onChange={e => setEditingAdvanceNote(e.target.value)}
+                                          placeholder="Ghi chú"
+                                        />
+                                      </td>
+                                      <td className="px-4 py-2 text-right">
+                                        <input
+                                          type="number"
+                                          className="w-36 rounded-lg border border-amber-200 px-3 py-2 text-right text-sm font-bold text-amber-700 outline-none focus:ring-2 focus:ring-amber-500"
+                                          value={editingAdvanceAmount}
+                                          onChange={e => setEditingAdvanceAmount(e.target.value)}
+                                          placeholder="0"
+                                        />
+                                      </td>
+                                      <td className="px-4 py-2">
+                                        <div className="flex items-center justify-end gap-2">
+                                          <button
+                                            type="button"
+                                            onClick={saveEditedAdvanceRequest}
+                                            className="inline-flex items-center gap-1 rounded-lg bg-amber-600 px-3 py-2 text-xs font-black text-white hover:bg-amber-700"
+                                            title="Lưu thay đổi"
+                                          >
+                                            <CheckCircle size={14}/> Lưu
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={cancelEditAdvanceRequest}
+                                            className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-100"
+                                            title="Hủy sửa"
+                                          >
+                                            <X size={14}/>
+                                          </button>
+                                        </div>
+                                      </td>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <td className="px-4 py-2">
+                                        <div className="flex flex-wrap items-center gap-2">
+                                          <p className="font-bold text-slate-800">{req.title}</p>
+                                          {isAutoAdvanceRequest(req) && (
+                                            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-black text-amber-700">
+                                              Tự động
+                                            </span>
+                                          )}
+                                          {isEditedAutoRequest && (
+                                            <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-black text-blue-700">
+                                              Đã chỉnh
+                                            </span>
+                                          )}
+                                        </div>
+                                        {req.createdAt && (
+                                          <p className="text-[11px] text-slate-400">Ngày yêu cầu: {new Date(req.createdAt).toLocaleDateString('vi-VN')}</p>
+                                        )}
+                                      </td>
+                                      <td className="px-4 py-2 text-sm text-slate-600">{req.note || '—'}</td>
+                                      <td className="px-4 py-2 text-right font-bold text-amber-700">{(req.amount || 0).toLocaleString()}đ</td>
+                                      <td className="px-4 py-2 text-right">
+                                        <div className="flex items-center justify-end gap-2">
+                                          <button
+                                            type="button"
+                                            onClick={() => beginEditAdvanceRequest(req)}
+                                            className="text-gray-300 hover:text-amber-600"
+                                            title="Sửa yêu cầu"
+                                          >
+                                            <Pencil size={16}/>
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => onRemoveAdvanceRequest?.(selectedEvent.id, req.id)}
+                                            className="text-gray-300 hover:text-red-500"
+                                            title="Xóa yêu cầu"
+                                          >
+                                            <Trash2 size={16}/>
+                                          </button>
+                                        </div>
+                                      </td>
+                                    </>
                                   )}
-                                </td>
-                                <td className="px-4 py-2 text-sm text-slate-600">{req.note || '—'}</td>
-                                <td className="px-4 py-2 text-right font-bold text-amber-700">{(req.amount || 0).toLocaleString()}đ</td>
-                                <td className="px-4 py-2 text-right">
-                                  <button 
-                                    onClick={() => onRemoveAdvanceRequest?.(selectedEvent.id, req.id)}
-                                    className="text-gray-300 hover:text-red-500"
-                                    title="Xóa yêu cầu"
-                                  >
-                                    <Trash2 size={16}/>
-                                  </button>
-                                </td>
-                              </tr>
-                            ))}
+                                </tr>
+                              );
+                            })}
                           </tbody>
                           <tfoot className="bg-slate-50 border-t border-slate-200">
                             <tr>
