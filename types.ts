@@ -534,6 +534,14 @@ export interface EventContentProgram {
   updatedAt?: string;
 }
 
+export interface EventPrimaryContentProgram {
+  name?: string;
+  description?: string;
+  date?: string;
+  sessions?: ('MORNING' | 'AFTERNOON' | 'EVENING')[];
+  updatedAt?: string;
+}
+
 export interface Event {
   id: string;
   name: string;
@@ -565,6 +573,7 @@ export interface Event {
   checklist?: EventChecklist;
   timeline?: EventTimelineEntry[];
   houseOperation?: HouseOperationInstance;
+  primaryContentProgram?: EventPrimaryContentProgram;
   contentPrograms?: EventContentProgram[];
 }
 

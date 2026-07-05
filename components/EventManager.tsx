@@ -682,12 +682,13 @@ const getProgramDefaultSessions = (event: Event): EventSession[] =>
   getEventSchedule(event)[0]?.sessions || (event.session ? [event.session] : ['MORNING']);
 
 const getContentProgramViews = (event: Event): ContentProgramView[] => {
+  const primaryMeta = event.primaryContentProgram || {};
   const primary: ContentProgramView = {
     id: PRIMARY_CONTENT_PROGRAM_ID,
-    name: 'Chương trình chính',
-    description: 'Dữ liệu nội dung mặc định của sự kiện',
-    date: getProgramDefaultDate(event),
-    sessions: getProgramDefaultSessions(event),
+    name: primaryMeta.name || 'Chương trình chính',
+    description: primaryMeta.description || 'Dữ liệu nội dung mặc định của sự kiện',
+    date: primaryMeta.date || getProgramDefaultDate(event),
+    sessions: primaryMeta.sessions as EventSession[] | undefined || getProgramDefaultSessions(event),
     layout: event.layout,
     houseOperation: event.houseOperation,
     isPrimary: true
@@ -1022,7 +1023,23 @@ export const EventManager: React.FC<EventManagerProps> = ({
   }, [activeContentProgramId, contentProgramViews, selectedEvent]);
 
   const updateContentProgram = (programId: string, patch: Partial<EventContentProgram>) => {
-    if (!selectedEvent || !onUpdateEvent || programId === PRIMARY_CONTENT_PROGRAM_ID) return;
+    if (!selectedEvent || !onUpdateEvent) return;
+    if (programId === PRIMARY_CONTENT_PROGRAM_ID) {
+      const primaryPatch = {
+        ...(patch.name !== undefined ? { name: patch.name } : {}),
+        ...(patch.description !== undefined ? { description: patch.description } : {}),
+        ...(patch.date !== undefined ? { date: patch.date } : {}),
+        ...(patch.sessions !== undefined ? { sessions: patch.sessions } : {}),
+        updatedAt: new Date().toISOString()
+      };
+      onUpdateEvent(selectedEvent.id, {
+        primaryContentProgram: {
+          ...(selectedEvent.primaryContentProgram || {}),
+          ...primaryPatch
+        }
+      });
+      return;
+    }
     const nextPrograms = (selectedEvent.contentPrograms || []).map(program =>
       program.id === programId
         ? { ...program, ...patch, updatedAt: new Date().toISOString() }
@@ -1040,7 +1057,6 @@ export const EventManager: React.FC<EventManagerProps> = ({
   };
 
   const toggleContentProgramSession = (program: ContentProgramView, session: EventSession) => {
-    if (program.isPrimary) return;
     const current = program.sessions && program.sessions.length > 0 ? program.sessions : getProgramDefaultSessions(selectedEvent!);
     const next = current.includes(session)
       ? current.filter(item => item !== session)
@@ -2568,8 +2584,12 @@ export const EventManager: React.FC<EventManagerProps> = ({
                     })}
                   </div>
 
-                  {activeContentProgram && !activeContentProgram.isPrimary && (
-                    <div className="grid grid-cols-1 lg:grid-cols-[1.2fr_0.8fr_1fr_auto] gap-3 rounded-xl border border-teal-100 bg-teal-50/50 p-3">
+                  {activeContentProgram && (
+                    <div className={`grid grid-cols-1 gap-3 rounded-xl border border-teal-100 bg-teal-50/50 p-3 ${
+                      activeContentProgram.isPrimary
+                        ? 'lg:grid-cols-[1.2fr_0.8fr_1fr]'
+                        : 'lg:grid-cols-[1.2fr_0.8fr_1fr_auto]'
+                    }`}>
                       <div>
                         <label className="block text-[10px] font-black text-teal-700 uppercase mb-1">Tên chương trình</label>
                         <input
@@ -2615,17 +2635,19 @@ export const EventManager: React.FC<EventManagerProps> = ({
                           })}
                         </div>
                       </div>
-                      <div className="flex items-end">
-                        <button
-                          type="button"
-                          onClick={() => removeContentProgram(activeContentProgram.id)}
-                          disabled={!canEdit}
-                          className="inline-flex h-10 items-center justify-center rounded-lg border border-red-200 bg-white px-3 text-red-500 hover:bg-red-50 disabled:opacity-50"
-                          title="Xóa chương trình clone"
-                        >
-                          <Trash2 size={16}/>
-                        </button>
-                      </div>
+                      {!activeContentProgram.isPrimary && (
+                        <div className="flex items-end">
+                          <button
+                            type="button"
+                            onClick={() => removeContentProgram(activeContentProgram.id)}
+                            disabled={!canEdit}
+                            className="inline-flex h-10 items-center justify-center rounded-lg border border-red-200 bg-white px-3 text-red-500 hover:bg-red-50 disabled:opacity-50"
+                            title="Xóa chương trình clone"
+                          >
+                            <Trash2 size={16}/>
+                          </button>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
