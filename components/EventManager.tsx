@@ -1,8 +1,8 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { Event, InventoryItem, EventStatus, ComboPackage, Employee, EventExpense, EventAdvanceRequest, EventStaffAllocation, Quotation, EventLayout, EventLayoutBlock, LayoutPackageSource, ChecklistDirection, ChecklistStatus, ChecklistSignature, EventTimelineEntry, EventTimelinePhase, EventProfile, EventVenueType } from '../types';
-import { 
-  Calendar, MapPin, Box, ArrowLeft, Plus, Minus, X, Layers, 
+import { Event, InventoryItem, EventStatus, ComboPackage, Employee, EventExpense, EventAdvanceRequest, EventStaffAllocation, Quotation, EventLayout, EventLayoutBlock, LayoutPackageSource, ChecklistDirection, ChecklistStatus, ChecklistSignature, EventTimelineEntry, EventTimelinePhase, EventProfile, EventVenueType, EducationActivity, LearningTrack } from '../types';
+import {
+  Calendar, MapPin, Box, ArrowLeft, Plus, Minus, X, Layers, Building2,
   Users, DollarSign, Trash2, Truck, BookOpen, 
   Utensils, Wallet, Printer, Coffee, AlertCircle,
   TrendingUp, ArrowRightLeft, UserCheck, Link as LinkIcon, Clock3,
@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { EventExportModal } from './EventExportModal';
 import { EventChecklist } from './EventChecklist';
+import { EinsteinHouseOS } from './EinsteinHouseOS';
 import { calcLineTotal } from '../services/pricing';
 
 interface EventManagerProps {
@@ -19,6 +20,8 @@ interface EventManagerProps {
   employees?: Employee[];
   quotations?: Quotation[];
   saleOrders?: any[];
+  educationActivities?: EducationActivity[];
+  learningTracks?: LearningTrack[];
   canEdit?: boolean;
   isAdmin?: boolean;
   onExportToEvent: (eventId: string, itemId: string, qty: number) => void;
@@ -76,6 +79,35 @@ const PROCESS_STEPS_TEMPLATE = [
 
 type EventSession = NonNullable<Event['session']>;
 type EventScheduleItem = { date: string; sessions: EventSession[] };
+type EventDetailSection = 'PREP_LOGISTICS' | 'PROGRAM_CONTENT';
+type EventDetailTab = 'EQUIPMENT' | 'STAFF' | 'PROFILE' | 'COSTS' | 'LAYOUT' | 'CHECKLIST' | 'TIMELINE' | 'OPERATIONS';
+type DetailIcon = React.ComponentType<{ size?: number; className?: string }>;
+
+const DETAIL_SECTIONS: { key: EventDetailSection; label: string; description: string; Icon: DetailIcon }[] = [
+  {
+    key: 'PREP_LOGISTICS',
+    label: 'Chuẩn bị/Hậu cần',
+    description: 'Thiết bị, barcode, nhân sự, tạm ứng và chi phí triển khai.',
+    Icon: Truck
+  },
+  {
+    key: 'PROGRAM_CONTENT',
+    label: 'Tổ chức/Nội dung',
+    description: 'Hồ sơ chương trình, sơ đồ trạm và vận hành EH/EBUS trong ngày.',
+    Icon: Building2
+  }
+];
+
+const DETAIL_TABS: { key: EventDetailTab; section: EventDetailSection; label: string; icon: DetailIcon; requireEdit?: boolean }[] = [
+  { key: 'EQUIPMENT', section: 'PREP_LOGISTICS', label: 'Order Thiết Bị', icon: Box },
+  { key: 'CHECKLIST', section: 'PREP_LOGISTICS', label: 'Checklist Barcode', icon: ScanBarcode },
+  { key: 'TIMELINE', section: 'PREP_LOGISTICS', label: 'Timeline hậu cần', icon: Clock3 },
+  { key: 'STAFF', section: 'PREP_LOGISTICS', label: 'Nhân Sự', icon: Users, requireEdit: true },
+  { key: 'COSTS', section: 'PREP_LOGISTICS', label: 'Chi Phí & Lợi Nhuận', icon: DollarSign, requireEdit: true },
+  { key: 'PROFILE', section: 'PROGRAM_CONTENT', label: 'Hồ sơ sự kiện', icon: BookOpen },
+  { key: 'LAYOUT', section: 'PROGRAM_CONTENT', label: 'Sơ đồ trạm', icon: MapPin },
+  { key: 'OPERATIONS', section: 'PROGRAM_CONTENT', label: 'Vận hành/Nội dung', icon: Building2 }
+];
 
 const SESSION_LABELS: Record<EventSession, string> = {
   MORNING: 'SÁNG',
@@ -267,6 +299,8 @@ export const EventManager: React.FC<EventManagerProps> = ({
   employees = [],
   quotations = [],
   saleOrders = [],
+  educationActivities = [],
+  learningTracks = [],
   canEdit = true,
   isAdmin = false,
   onExportToEvent,
@@ -295,7 +329,8 @@ export const EventManager: React.FC<EventManagerProps> = ({
 }) => {
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [eventScreenMode, setEventScreenMode] = useState<'HOME' | 'DETAIL'>('HOME');
-  const [detailTab, setDetailTab] = useState<'EQUIPMENT' | 'STAFF' | 'PROFILE' | 'COSTS' | 'LAYOUT' | 'CHECKLIST' | 'TIMELINE'>('EQUIPMENT');
+  const [detailSection, setDetailSection] = useState<EventDetailSection>('PREP_LOGISTICS');
+  const [detailTab, setDetailTab] = useState<EventDetailTab>('EQUIPMENT');
   const [selectedLayoutBlockId, setSelectedLayoutBlockId] = useState<string | null>(null);
   
   // Modals
@@ -374,18 +409,23 @@ export const EventManager: React.FC<EventManagerProps> = ({
     }
   }, [showExportModal]);
 
-  const allowedDetailTabs = useMemo(
-    () => canEdit
-      ? ['EQUIPMENT', 'CHECKLIST', 'TIMELINE', 'STAFF', 'PROFILE', 'LAYOUT', 'COSTS'] as const
-      : ['EQUIPMENT', 'CHECKLIST', 'TIMELINE', 'PROFILE', 'LAYOUT'] as const,
-    [canEdit]
+  const visibleDetailTabs = useMemo(
+    () => DETAIL_TABS.filter(tab => tab.section === detailSection && (!tab.requireEdit || canEdit)),
+    [canEdit, detailSection]
   );
 
+  const handleDetailSectionChange = (section: EventDetailSection) => {
+    setDetailSection(section);
+    const firstTab = DETAIL_TABS.find(tab => tab.section === section && (!tab.requireEdit || canEdit));
+    if (firstTab) setDetailTab(firstTab.key);
+  };
+
   useEffect(() => {
-    if (!allowedDetailTabs.includes(detailTab)) {
-      setDetailTab(allowedDetailTabs[0]);
+    if (!visibleDetailTabs.some(tab => tab.key === detailTab)) {
+      const fallback = visibleDetailTabs[0] || DETAIL_TABS[0];
+      setDetailTab(fallback.key);
     }
-  }, [allowedDetailTabs, detailTab]);
+  }, [visibleDetailTabs, detailTab]);
   const [calendarView, setCalendarView] = useState(() => {
     const now = new Date();
     return { year: now.getFullYear(), month: now.getMonth() };
@@ -1465,8 +1505,8 @@ export const EventManager: React.FC<EventManagerProps> = ({
         <div className="w-full lg:w-[360px] bg-white rounded-xl shadow-sm border border-slate-100 flex flex-col h-auto lg:h-full overflow-hidden">
           <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
             <div>
-              <h3 className="font-bold text-gray-800 text-lg">Sự Kiện</h3>
-              <p className="text-xs text-slate-500">Danh sách mới nhất được ưu tiên hiển thị trước</p>
+              <h3 className="font-bold text-gray-800 text-lg">Sự kiện & Vận hành</h3>
+              <p className="text-xs text-slate-500">Chọn sự kiện trước khi vào hậu cần hoặc nội dung</p>
             </div>
             {canEdit && (
               <button onClick={() => setShowCreateEventModal(true)} className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">
@@ -1537,8 +1577,8 @@ export const EventManager: React.FC<EventManagerProps> = ({
             <div className="p-4 md:p-6 border-b border-slate-100 bg-slate-50/40">
               <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                 <div>
-                  <h2 className="text-2xl font-black text-slate-800">Trang chủ Sự kiện</h2>
-                  <p className="text-sm text-slate-500">Bên phải là lịch tổng quan, chọn một sự kiện để mở hẳn trang chi tiết.</p>
+                  <h2 className="text-2xl font-black text-slate-800">Danh sách & lịch sự kiện</h2>
+                  <p className="text-sm text-slate-500">Chọn một sự kiện để mở workspace Chuẩn bị/Hậu cần hoặc Tổ chức/Nội dung cho EBUS và EH.</p>
                 </div>
                 <div className="flex items-center gap-2">
                   <button onClick={() => handleCalendarMonthChange(-1)} className="px-3 py-2 bg-slate-100 rounded-lg hover:bg-slate-200 transition">
@@ -1646,24 +1686,45 @@ export const EventManager: React.FC<EventManagerProps> = ({
                 </div>
               </div>
               
-              <div className="flex flex-wrap gap-4 md:gap-8 mt-6">
-                {([
-                  { key: 'EQUIPMENT', label: 'Order Thiết Bị', icon: Box },
-                  { key: 'CHECKLIST', label: 'Checklist Barcode', icon: ScanBarcode },
-                  { key: 'TIMELINE', label: 'Timeline', icon: Clock3 },
-                  { key: 'PROFILE', label: 'Hồ sơ sự kiện', icon: BookOpen },
-                  { key: 'LAYOUT', label: 'Sơ đồ trạm', icon: MapPin },
-                  { key: 'STAFF', label: 'Nhân Sự', icon: Users, requireEdit: true },
-                  { key: 'COSTS', label: 'Chi Phí & Lợi Nhuận', icon: DollarSign, requireEdit: true }
-                ] as const).map(tab => {
-                  if (tab.requireEdit && !canEdit) return null;
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-6">
+                {DETAIL_SECTIONS.map(section => {
+                  const SectionIcon = section.Icon;
+                  const isSelected = detailSection === section.key;
+                  return (
+                    <button
+                      key={section.key}
+                      type="button"
+                      onClick={() => handleDetailSectionChange(section.key)}
+                      className={`rounded-xl border p-4 text-left transition ${
+                        isSelected
+                          ? 'border-blue-500 bg-blue-50 text-blue-800 shadow-sm'
+                          : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50'
+                      }`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className={`rounded-lg p-2 ${isSelected ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-500'}`}>
+                          <SectionIcon size={18} />
+                        </div>
+                        <div>
+                          <p className="text-sm font-black">{section.label}</p>
+                          <p className="mt-1 text-xs font-medium text-slate-500 leading-snug">{section.description}</p>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="flex flex-wrap gap-4 md:gap-8 pt-3 border-t border-slate-100">
+                {visibleDetailTabs.map(tab => {
+                  const TabIcon = tab.icon;
                   return (
                     <button
                       key={tab.key}
                       onClick={() => setDetailTab(tab.key)}
                       className={`pb-3 text-sm font-bold border-b-2 transition flex items-center gap-2 ${detailTab === tab.key ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}
                     >
-                      <tab.icon size={16} /> {tab.label}
+                      <TabIcon size={16} /> {tab.label}
                     </button>
                   );
                 })}
@@ -2289,6 +2350,22 @@ export const EventManager: React.FC<EventManagerProps> = ({
                     {renderLayoutBoard('main')}
                   </div>
                 </div>
+              )}
+
+              {detailTab === 'OPERATIONS' && selectedEvent && (
+                <EinsteinHouseOS
+                  events={events}
+                  inventory={inventory}
+                  employees={employees}
+                  packages={packages}
+                  educationActivities={educationActivities}
+                  learningTracks={learningTracks}
+                  canEdit={canEdit && !!onUpdateEvent}
+                  embedded
+                  lockEventSelection
+                  initialEventId={selectedEvent.id}
+                  onUpdateEvent={onUpdateEvent || (() => {})}
+                />
               )}
 
               {detailTab === 'PROFILE' && selectedEvent && (

@@ -71,6 +71,8 @@ interface EinsteinHouseOSProps {
   canEdit?: boolean;
   liveOnly?: boolean;
   publicMode?: boolean;
+  embedded?: boolean;
+  lockEventSelection?: boolean;
   initialEventId?: string;
   onUpdateEvent: (eventId: string, updates: Partial<Event>) => void;
 }
@@ -746,6 +748,8 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
   canEdit = true,
   liveOnly = false,
   publicMode = false,
+  embedded = false,
+  lockEventSelection = false,
   initialEventId,
   onUpdateEvent
 }) => {
@@ -1408,7 +1412,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
 
   return (
     <div className="space-y-4">
-      {!liveOnly && (
+      {!liveOnly && !embedded && (
       <section className="bg-white border border-slate-200 rounded-lg p-4">
         <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
           <div>
@@ -1468,7 +1472,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                     ))}
                   </div>
                 )}
-                {!publicMode && (
+                {!publicMode && !lockEventSelection && (
                 <div className="mt-3 max-w-xl">
                   <select
                     value={selectedEvent.id}
