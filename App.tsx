@@ -1587,10 +1587,17 @@ const App: React.FC = () => {
     }));
   };
 
-  const handleToggleEventStaffDone = (eventId: string, employeeId: string, done: boolean) => {
+  const handleToggleEventStaffDone = (eventId: string, employeeId: string, done: boolean, staffKey?: string) => {
     setAppState(prev => ({
       ...prev,
-      events: prev.events.map(e => e.id !== eventId ? e : { ...e, staff: (e.staff || []).map(s => s.employeeId === employeeId ? { ...s, done } : s) })
+      events: prev.events.map(e => e.id !== eventId ? e : {
+        ...e,
+        staff: (e.staff || []).map(s => {
+          const keyMatch = staffKey ? s.id === staffKey || s.autoKey === staffKey : false;
+          const legacyMatch = !staffKey && s.employeeId === employeeId;
+          return keyMatch || legacyMatch ? { ...s, done } : s;
+        })
+      })
     }));
   };
 
@@ -1907,10 +1914,17 @@ const App: React.FC = () => {
     }));
   };
 
-  const handleRemoveStaff = (eventId: string, employeeId: string) => {
+  const handleRemoveStaff = (eventId: string, employeeId: string, staffKey?: string) => {
     setAppState(prev => ({
       ...prev,
-      events: prev.events.map(e => e.id !== eventId ? e : { ...e, staff: (e.staff || []).filter(s => s.employeeId !== employeeId) })
+      events: prev.events.map(e => e.id !== eventId ? e : {
+        ...e,
+        staff: (e.staff || []).filter(s => {
+          const keyMatch = staffKey ? s.id === staffKey || s.autoKey === staffKey : false;
+          const legacyMatch = !staffKey && s.employeeId === employeeId;
+          return !(keyMatch || legacyMatch);
+        })
+      })
     }));
   };
 

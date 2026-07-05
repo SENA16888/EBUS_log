@@ -35,8 +35,8 @@ interface EventManagerProps {
   onCreateEvent: (newEvent: Event) => void;
   onDeleteEvent?: (eventId: string) => void;
   onAssignStaff?: (eventId: string, staffData: EventStaffAllocation) => void;
-  onRemoveStaff?: (eventId: string, employeeId: string) => void;
-  onToggleStaffDone?: (eventId: string, employeeId: string, done: boolean) => void;
+  onRemoveStaff?: (eventId: string, employeeId: string, staffKey?: string) => void;
+  onToggleStaffDone?: (eventId: string, employeeId: string, done: boolean, staffKey?: string) => void;
   onAddExpense?: (eventId: string, expense: EventExpense) => void;
   onRemoveExpense?: (eventId: string, expenseId: string) => void;
   onAddAdvanceRequest?: (eventId: string, request: EventAdvanceRequest) => void;
@@ -456,6 +456,112 @@ const getStaffSessions = (staff?: Pick<EventStaffAllocation, 'session' | 'sessio
   return staff.session ? [staff.session as EventSession] : [];
 };
 
+const STAFF_HOURLY_RATE = 30000;
+const STAFF_WATER_ALLOWANCE_HALF_DAY = 10000;
+const STAFF_WATER_ALLOWANCE_FULL_DAY = 20000;
+const STAFF_MEAL_ALLOWANCE_FULL_DAY = 50000;
+const STAFF_DAILY_CAP = 310000;
+const STAFF_SESSION_HOURS: Record<EventSession, number> = {
+  MORNING: 4,
+  AFTERNOON: 4,
+  EVENING: 4
+};
+const AUTO_STAFF_SLOT_SOURCE = 'AUTO_STATION_SLOT' as const;
+
+type AutoStaffSlotStation = {
+  id: string;
+  name: string;
+  packageName?: string;
+  areaDescription?: string;
+};
+
+type AutoStaffSlot = {
+  key: string;
+  station: AutoStaffSlotStation;
+  date: string;
+  sessions: EventSession[];
+  hours: number;
+  salary: number;
+  allowance: number;
+  assigned?: EventStaffAllocation;
+};
+
+const makeEventManagerId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+
+const getStaffAllocationKey = (staff: EventStaffAllocation, index?: number) =>
+  staff.id || staff.autoKey || `${staff.employeeId}-${staff.shiftDate || 'no-date'}-${getStaffSessions(staff).join('-') || staff.session || 'no-session'}-${index ?? 0}`;
+
+const getStaffWorkHours = (sessions: EventSession[]) =>
+  Math.min(8, Math.max(1, sessions.reduce((sum, session) => sum + (STAFF_SESSION_HOURS[session] || 4), 0)));
+
+const calculateStaffCompensation = (hours: number, rate = STAFF_HOURLY_RATE) => {
+  const normalizedHours = Math.max(0, Number(hours) || 0);
+  const base = normalizedHours * rate;
+  const allowance = normalizedHours >= 8
+    ? STAFF_MEAL_ALLOWANCE_FULL_DAY + STAFF_WATER_ALLOWANCE_FULL_DAY
+    : normalizedHours >= 4
+      ? STAFF_WATER_ALLOWANCE_HALF_DAY
+      : 0;
+  const total = Math.min(STAFF_DAILY_CAP, base + allowance);
+  return { base, allowance, total };
+};
+
+const getStaffCompensationNote = (hours: number, rate = STAFF_HOURLY_RATE) => {
+  const { allowance, total } = calculateStaffCompensation(hours, rate);
+  const allowanceText = hours >= 8
+    ? 'ăn 50.000đ + nước 20.000đ'
+    : hours >= 4
+      ? 'nước 10.000đ'
+      : 'chưa có phụ cấp';
+  return `${hours}h x ${rate.toLocaleString()}đ/h + ${allowanceText}${total >= STAFF_DAILY_CAP ? ' • chạm trần 310.000đ/ngày' : allowance > 0 ? '' : ''}`;
+};
+
+const getAutoStaffSlotStations = (event: Event): AutoStaffSlotStation[] => {
+  const houseStations = event.houseOperation?.stations || [];
+  if (houseStations.length > 0) {
+    return houseStations.map(station => ({
+      id: station.id,
+      name: station.name,
+      packageName: station.packageName,
+      areaDescription: station.areaDescription || station.room
+    }));
+  }
+  return (event.layout?.blocks || []).map(block => ({
+    id: block.id,
+    name: block.name,
+    packageName: block.packageName,
+    areaDescription: block.staffName
+  }));
+};
+
+const getStaffSlotAutoKey = (stationId: string, date: string, sessions: EventSession[]) =>
+  `staff-slot-${stationId}-${date}-${sessions.join('-') || 'SESSION'}`;
+
+const getAutoStaffSlots = (event: Event): AutoStaffSlot[] => {
+  const stations = getAutoStaffSlotStations(event);
+  const schedule = getEventSchedule(event);
+  const safeSchedule = schedule.length > 0
+    ? schedule
+    : [{ date: event.startDate, sessions: event.session ? [event.session] : ['MORNING' as EventSession] }];
+  return stations.flatMap(station => safeSchedule.map(item => {
+    const sessions = item.sessions.length > 0 ? item.sessions : (event.session ? [event.session] : ['MORNING' as EventSession]);
+    const key = getStaffSlotAutoKey(station.id, item.date, sessions);
+    const hours = getStaffWorkHours(sessions);
+    const { allowance, total } = calculateStaffCompensation(hours);
+    const assigned = (event.staff || []).find(staff => staff.autoKey === key || (staff.stationId === station.id && staff.shiftDate === item.date));
+    return {
+      key,
+      station,
+      date: item.date,
+      sessions,
+      hours,
+      salary: total,
+      allowance,
+      assigned
+    };
+  }));
+};
+
 const LAYOUT_COLORS = ['#2563eb', '#0ea5e9', '#16a34a', '#f97316', '#f59e0b', '#a855f7', '#ef4444', '#06b6d4'];
 
 type ResizeDirection = 'right' | 'left' | 'top' | 'bottom' | 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left';
@@ -721,9 +827,9 @@ export const EventManager: React.FC<EventManagerProps> = ({
   const [selectedStaffId, setSelectedStaffId] = useState('');
   const [staffSearchTerm, setStaffSearchTerm] = useState('');
   const [staffTask, setStaffTask] = useState('');
-  const [staffUnit, setStaffUnit] = useState<'HOUR' | 'DAY' | 'FIXED'>('DAY');
-  const [staffQty, setStaffQty] = useState(1);
-  const [staffRate, setStaffRate] = useState('');
+  const [staffUnit, setStaffUnit] = useState<'HOUR' | 'DAY' | 'FIXED'>('HOUR');
+  const [staffQty, setStaffQty] = useState(4);
+  const [staffRate, setStaffRate] = useState(String(STAFF_HOURLY_RATE));
   const [selectedSessions, setSelectedSessions] = useState<EventSession[]>([]);
   const [selectedShiftDate, setSelectedShiftDate] = useState<string | null>(null);
   const [layoutForm, setLayoutForm] = useState({
@@ -769,6 +875,11 @@ export const EventManager: React.FC<EventManagerProps> = ({
     () => selectedEvent ? getAutoAdvancePlan(selectedEvent) : null,
     [selectedEvent]
   );
+  const autoStaffSlots = useMemo(
+    () => selectedEvent ? getAutoStaffSlots(selectedEvent) : [],
+    [selectedEvent]
+  );
+  const filledAutoStaffSlots = autoStaffSlots.filter(slot => slot.assigned).length;
   const linkedQuotation = selectedEvent?.quotationId ? quotations.find(q => q.id === selectedEvent.quotationId) : null;
   const linkedSaleOrders = useMemo(() => {
     if (!selectedEvent) return [];
@@ -1139,24 +1250,83 @@ export const EventManager: React.FC<EventManagerProps> = ({
       return;
     }
 
+    const computedHours = staffUnit === 'HOUR'
+      ? getStaffWorkHours(sessionList)
+      : Number(staffQty);
+    const calculated = staffUnit === 'HOUR'
+      ? calculateStaffCompensation(computedHours, rate).total
+      : staffUnit === 'FIXED'
+        ? rate
+        : Math.min(STAFF_DAILY_CAP * qty, rate * qty);
+
     onAssignStaff(selectedEventId, {
+      id: makeEventManagerId('staff'),
       employeeId: selectedStaffId,
       task: staffTask,
       unit: staffUnit,
-      quantity: qty,
+      quantity: staffUnit === 'HOUR' ? computedHours : qty,
       rate: rate,
-      salary: staffUnit === 'FIXED' ? rate : rate * qty,
+      salary: calculated,
       session: sessionList[0],
       sessions: sessionList,
-      shiftDate: selectedShiftDate || undefined
+      shiftDate: selectedShiftDate || undefined,
+      source: 'MANUAL'
     });
     setSelectedStaffId('');
     setStaffSearchTerm('');
     setStaffTask('');
-    setStaffRate('');
-    setStaffQty(1);
+    setStaffRate(String(STAFF_HOURLY_RATE));
+    setStaffQty(4);
     setSelectedShiftDate(null);
     setSelectedSessions([]);
+  };
+
+  const findStaffScheduleConflict = (employeeId: string, date: string, sessions: EventSession[], ignoreAutoKey?: string) => {
+    return events.flatMap(event => (event.staff || [])
+      .filter(staff => staff.employeeId === employeeId && staff.shiftDate === date && staff.autoKey !== ignoreAutoKey)
+      .filter(staff => getStaffSessions(staff).some(session => sessions.includes(session)))
+      .map(staff => ({ event, staff }))
+    );
+  };
+
+  const assignEmployeeToStaffSlot = (slot: AutoStaffSlot, employeeId: string) => {
+    if (!selectedEvent || !onUpdateEvent || !canEdit) return;
+    const currentStaff = selectedEvent.staff || [];
+    if (!employeeId) {
+      onUpdateEvent(selectedEvent.id, { staff: currentStaff.filter(staff => staff.autoKey !== slot.key) });
+      return;
+    }
+    const employee = activeEmployees.find(emp => emp.id === employeeId);
+    if (!employee) return;
+    const conflicts = findStaffScheduleConflict(employeeId, slot.date, slot.sessions, slot.key)
+      .filter(conflict => conflict.event.id !== selectedEvent.id || conflict.staff.autoKey !== slot.key);
+    if (conflicts.length > 0) {
+      const list = conflicts.map(conflict => `${conflict.event.name} (${conflict.staff.task})`).join('\n');
+      alert(`Nhân sự đã bị phân công trùng ca:\n${list}\n\nVui lòng chọn nhân sự khác hoặc điều chỉnh ca.`);
+      return;
+    }
+    const allocation: EventStaffAllocation = {
+      id: slot.assigned?.id || makeEventManagerId('staff-slot'),
+      employeeId,
+      task: `Phụ trách trạm ${slot.station.name}`,
+      unit: 'HOUR',
+      quantity: slot.hours,
+      rate: STAFF_HOURLY_RATE,
+      salary: slot.salary,
+      session: slot.sessions[0],
+      sessions: slot.sessions,
+      shiftDate: slot.date,
+      stationId: slot.station.id,
+      stationName: slot.station.name,
+      source: AUTO_STAFF_SLOT_SOURCE,
+      autoKey: slot.key,
+      done: slot.assigned?.done
+    };
+    const replaced = currentStaff.some(staff => staff.autoKey === slot.key);
+    const nextStaff = replaced
+      ? currentStaff.map(staff => staff.autoKey === slot.key ? allocation : staff)
+      : [...currentStaff, allocation];
+    onUpdateEvent(selectedEvent.id, { staff: nextStaff });
   };
 
   const handleAddExpenseSubmit = () => {
@@ -1330,7 +1500,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
     const emp = activeEmployees.find(e => e.id === empId);
     if (emp) {
       setStaffTask(emp.role);
-      setStaffRate(emp.baseRate ? emp.baseRate.toString() : '');
+      setStaffRate(emp.baseRate ? emp.baseRate.toString() : String(STAFF_HOURLY_RATE));
     }
   };
 
@@ -1338,6 +1508,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
     if (selectedShiftDate !== date) {
       setSelectedShiftDate(date);
       setSelectedSessions([session]);
+      if (staffUnit === 'HOUR') setStaffQty(getStaffWorkHours([session]));
       return;
     }
     setSelectedSessions(prev => {
@@ -1345,10 +1516,13 @@ export const EventManager: React.FC<EventManagerProps> = ({
       if (exists) {
         const next = prev.filter(s => s !== session);
         if (next.length === 0) setSelectedShiftDate(null);
+        if (staffUnit === 'HOUR') setStaffQty(next.length > 0 ? getStaffWorkHours(next) : 4);
         return next;
       }
       if (prev.length >= 2) return prev;
-      return [...prev, session];
+      const next = [...prev, session];
+      if (staffUnit === 'HOUR') setStaffQty(getStaffWorkHours(next));
+      return next;
     });
   };
 
@@ -2403,10 +2577,105 @@ export const EventManager: React.FC<EventManagerProps> = ({
                 </div>
               )}
 
-              {detailTab === 'STAFF' && (
+              {detailTab === 'STAFF' && selectedEvent && (
                 <div className="space-y-6">
+                  <div className="bg-white p-5 rounded-xl border border-teal-100 shadow-sm space-y-4">
+                    <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                      <div>
+                        <h4 className="font-bold text-gray-700 text-xs uppercase flex items-center gap-2">
+                          <Users size={16} className="text-teal-600"/> Slot nhân sự tự động từ DESIGN
+                        </h4>
+                        <p className="mt-1 text-xs text-slate-500">
+                          Lương tự tính theo 30.000đ/giờ, đủ 4h hỗ trợ nước 10.000đ, đủ 8h cộng ăn 50.000đ + nước 20.000đ, tối đa 310.000đ/ngày.
+                        </p>
+                      </div>
+                      <div className="rounded-lg bg-teal-50 px-3 py-2 text-right">
+                        <p className="text-[10px] font-black uppercase text-teal-600">Đã phân công</p>
+                        <p className="text-lg font-black text-teal-700">{filledAutoStaffSlots}/{autoStaffSlots.length}</p>
+                      </div>
+                    </div>
+
+                    {autoStaffSlots.length > 0 ? (
+                      <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+                        {autoStaffSlots.map(slot => {
+                          const assignedEmployee = slot.assigned ? employees.find(emp => emp.id === slot.assigned?.employeeId) : undefined;
+                          return (
+                            <div key={slot.key} className={`rounded-xl border p-4 transition ${slot.assigned ? 'border-teal-200 bg-teal-50/50' : 'border-slate-200 bg-slate-50/60'}`}>
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <p className="font-black text-slate-800">{slot.station.name}</p>
+                                  <p className="text-xs text-slate-500">
+                                    {slot.station.packageName || 'Trạm/khu vực trong DESIGN'}
+                                    {slot.station.areaDescription ? ` • ${slot.station.areaDescription}` : ''}
+                                  </p>
+                                  <div className="mt-2 flex flex-wrap gap-1">
+                                    <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-bold text-slate-600 border border-slate-200">
+                                      {new Date(slot.date).toLocaleDateString('vi-VN')}
+                                    </span>
+                                    {slot.sessions.map(session => (
+                                      <span key={session} className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-700 border border-blue-100">
+                                        {SESSION_LABELS[session]}
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                                {slot.assigned && (
+                                  <label className="inline-flex items-center gap-2 text-[11px] font-bold text-teal-700">
+                                    <input
+                                      type="checkbox"
+                                      checked={!!slot.assigned.done}
+                                      onChange={e => onToggleStaffDone?.(selectedEvent.id, slot.assigned!.employeeId, e.target.checked, slot.assigned!.id || slot.assigned!.autoKey)}
+                                    />
+                                    Xong
+                                  </label>
+                                )}
+                              </div>
+                              <div className="mt-3 grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3 items-center">
+                                <select
+                                  className="w-full border border-slate-200 rounded-lg p-2.5 text-sm bg-white outline-none focus:ring-2 focus:ring-teal-500 disabled:bg-slate-100"
+                                  value={slot.assigned?.employeeId || ''}
+                                  onChange={e => assignEmployeeToStaffSlot(slot, e.target.value)}
+                                  disabled={!canEdit}
+                                >
+                                  <option value="">-- Chọn nhân sự cho trạm này --</option>
+                                  {activeEmployees.map(emp => (
+                                    <option key={emp.id} value={emp.id}>{emp.name} ({emp.role})</option>
+                                  ))}
+                                </select>
+                                {slot.assigned && (
+                                  <button
+                                    type="button"
+                                    onClick={() => assignEmployeeToStaffSlot(slot, '')}
+                                    disabled={!canEdit}
+                                    className="inline-flex items-center justify-center rounded-lg border border-slate-200 p-2 text-slate-400 hover:text-red-500 disabled:opacity-50"
+                                    title="Gỡ khỏi slot"
+                                  >
+                                    <Trash2 size={16}/>
+                                  </button>
+                                )}
+                              </div>
+                              <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white border border-slate-100 px-3 py-2">
+                                <p className="text-[11px] text-slate-500">{getStaffCompensationNote(slot.hours)}</p>
+                                <p className="text-sm font-black text-teal-700">{slot.salary.toLocaleString()}đ</p>
+                              </div>
+                              {assignedEmployee && (
+                                <p className="mt-2 text-xs font-semibold text-teal-700">
+                                  Đang giao cho {assignedEmployee.name}
+                                </p>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
+                        Chưa có trạm trong DESIGN hoặc Sơ đồ trạm. Khi thêm trạm/khu vực, danh sách slot nhân sự sẽ tự hiện ở đây.
+                      </div>
+                    )}
+                  </div>
+
                    <div className="bg-white p-5 rounded-xl border border-blue-100 shadow-sm space-y-4">
-                    <h4 className="font-bold text-gray-700 text-xs uppercase flex items-center gap-2"><UserCheck size={16} className="text-blue-500"/> Phân công nhân sự sự kiện</h4>
+                    <h4 className="font-bold text-gray-700 text-xs uppercase flex items-center gap-2"><UserCheck size={16} className="text-blue-500"/> Phân công ngoài slot</h4>
                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                       <input
                         className="border border-slate-200 rounded-lg p-2 text-sm"
@@ -2476,10 +2745,11 @@ export const EventManager: React.FC<EventManagerProps> = ({
                           const value = e.target.value as 'HOUR' | 'DAY' | 'FIXED';
                           setStaffUnit(value);
                           if (value === 'FIXED') setStaffQty(1);
+                          if (value === 'HOUR') setStaffQty(selectedSessions.length > 0 ? getStaffWorkHours(selectedSessions) : 4);
                         }}
                       >
-                        <option value="DAY">Theo Ngày</option>
                         <option value="HOUR">Theo Giờ</option>
+                        <option value="DAY">Theo Ngày</option>
                         <option value="FIXED">Trọn gói</option>
                       </select>
                       <div className="border border-slate-200 rounded-lg p-2 bg-slate-50">
@@ -2491,12 +2761,29 @@ export const EventManager: React.FC<EventManagerProps> = ({
                         </p>
                       </div>
                       {staffUnit !== 'FIXED' ? (
-                        <input type="number" className="border border-slate-200 rounded-lg p-2 text-sm text-center" placeholder="SL" value={staffQty} onChange={e => setStaffQty(Number(e.target.value))} />
+                        <input
+                          type="number"
+                          className="border border-slate-200 rounded-lg p-2 text-sm text-center"
+                          placeholder={staffUnit === 'HOUR' ? 'Số giờ' : 'Số ngày'}
+                          value={staffQty}
+                          onChange={e => setStaffQty(Number(e.target.value))}
+                          readOnly={staffUnit === 'HOUR' && selectedSessions.length > 0}
+                        />
                       ) : (
                         <div className="border border-slate-200 rounded-lg p-2 text-sm text-center text-slate-500 bg-slate-50 font-semibold">Trọn gói</div>
                       )}
                       <input type="number" className="border border-slate-200 rounded-lg p-2 text-sm font-bold text-blue-600" placeholder="Đơn giá" value={staffRate} onChange={e => setStaffRate(e.target.value)} />
                     </div>
+                    {staffUnit === 'HOUR' && (
+                      <div className="rounded-xl bg-blue-50 border border-blue-100 px-4 py-3 flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-xs text-blue-700 font-semibold">
+                          {getStaffCompensationNote(Number(staffQty) || 0, Number(staffRate) || STAFF_HOURLY_RATE)}
+                        </p>
+                        <p className="text-sm font-black text-blue-800">
+                          {calculateStaffCompensation(Number(staffQty) || 0, Number(staffRate) || STAFF_HOURLY_RATE).total.toLocaleString()}đ
+                        </p>
+                      </div>
+                    )}
                     <button onClick={handleStaffAssignSubmit} className="w-full bg-slate-800 text-white py-2.5 rounded-lg text-sm font-bold hover:bg-slate-900 transition shadow-sm">Thêm nhân sự</button>
                   </div>
 
@@ -2506,13 +2793,24 @@ export const EventManager: React.FC<EventManagerProps> = ({
                       const unitLabel = s.unit === 'DAY' ? 'ngày' : s.unit === 'HOUR' ? 'giờ' : 'trọn gói';
                       const quantityLabel = s.unit === 'FIXED' ? 'Trọn gói' : `${s.quantity} ${unitLabel}`;
                       const staffSessions = getStaffSessions(s);
+                      const staffKey = getStaffAllocationKey(s, idx);
                       return (
-                        <div key={idx} className="bg-white p-4 rounded-xl border border-slate-200 flex justify-between items-center hover:shadow-md transition">
+                        <div key={staffKey} className="bg-white p-4 rounded-xl border border-slate-200 flex justify-between items-center hover:shadow-md transition">
                            <div className="flex items-center gap-4">
                               <img src={emp?.avatarUrl} className="w-12 h-12 rounded-full border-2 border-slate-100" />
                               <div>
-                                <p className="font-bold text-gray-800">{emp?.name}</p>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <p className="font-bold text-gray-800">{emp?.name}</p>
+                                  {s.source === AUTO_STAFF_SLOT_SOURCE && (
+                                    <span className="rounded-full bg-teal-100 px-2 py-0.5 text-[10px] font-black text-teal-700">
+                                      Tự động từ trạm
+                                    </span>
+                                  )}
+                                </div>
                                 <p className="text-xs font-medium text-blue-600">{s.task} • {quantityLabel}</p>
+                                {s.stationName && (
+                                  <p className="text-[11px] text-teal-700 font-semibold mt-0.5">Trạm: {s.stationName}</p>
+                                )}
                                 {staffSessions.length > 0 && (
                                   <div className="mt-1 flex flex-wrap gap-1">
                                     {staffSessions.map(sess => (
@@ -2529,10 +2827,10 @@ export const EventManager: React.FC<EventManagerProps> = ({
                            </div>
                            <div className="flex items-center gap-6">
                               <div className="flex items-center gap-3">
-                                <input type="checkbox" checked={!!s.done} onChange={e => onToggleStaffDone?.(selectedEvent.id, s.employeeId, e.target.checked)} />
+                                <input type="checkbox" checked={!!s.done} onChange={e => onToggleStaffDone?.(selectedEvent.id, s.employeeId, e.target.checked, staffKey)} />
                                 <p className="font-black text-gray-800">{s.salary.toLocaleString()}đ</p>
                               </div>
-                              <button onClick={() => onRemoveStaff?.(selectedEvent.id, s.employeeId)} className="text-gray-300 hover:text-red-500"><Trash2 size={16}/></button>
+                              <button onClick={() => onRemoveStaff?.(selectedEvent.id, s.employeeId, staffKey)} className="text-gray-300 hover:text-red-500"><Trash2 size={16}/></button>
                            </div>
                         </div>
                       );

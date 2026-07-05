@@ -273,6 +273,7 @@ export interface Employee {
 }
 
 export interface EventStaffAllocation {
+  id?: string;
   employeeId: string;
   task: string;
   unit: 'HOUR' | 'DAY' | 'FIXED';
@@ -282,6 +283,10 @@ export interface EventStaffAllocation {
   session?: 'MORNING' | 'AFTERNOON' | 'EVENING';
   sessions?: ('MORNING' | 'AFTERNOON' | 'EVENING')[];
   shiftDate?: string;
+  stationId?: string;
+  stationName?: string;
+  source?: 'AUTO_STATION_SLOT' | 'MANUAL';
+  autoKey?: string;
   done?: boolean;
 }
 
