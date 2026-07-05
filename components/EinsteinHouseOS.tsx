@@ -75,6 +75,7 @@ interface EinsteinHouseOSProps {
   lockEventSelection?: boolean;
   activeModuleTab?: EinsteinHouseModuleTab;
   initialEventId?: string;
+  liveProgramId?: string;
   onUpdateEvent: (eventId: string, updates: Partial<Event>) => void;
 }
 
@@ -760,6 +761,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
   lockEventSelection = false,
   activeModuleTab,
   initialEventId,
+  liveProgramId,
   onUpdateEvent
 }) => {
   const [selectedEventId, setSelectedEventId] = useState(initialEventId || events[0]?.id || '');
@@ -2194,7 +2196,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                     <p className="text-xs font-black uppercase text-blue-700">Link xem LIVE không cần đăng nhập</p>
                     <input
                       readOnly
-                      value={`${window.location.origin}${window.location.pathname}?ehLive=${selectedEvent.id}`}
+                      value={`${window.location.origin}${window.location.pathname}?ehLive=${selectedEvent.id}${liveProgramId ? `&ehProgram=${encodeURIComponent(liveProgramId)}` : ''}`}
                       className="mt-2 w-full border border-blue-100 rounded-lg px-3 py-2 text-xs font-bold text-blue-900 bg-white"
                       onFocus={event => event.currentTarget.select()}
                     />

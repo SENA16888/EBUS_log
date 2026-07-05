@@ -29,6 +29,50 @@ const generateId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().
 
 type AppTab = 'dashboard' | 'inventory' | 'stocktake' | 'events' | 'education' | 'interactiveDevices' | 'packages' | 'employees' | 'quotations' | 'sales' | 'elearning' | 'logs';
 
+const PRIMARY_CONTENT_PROGRAM_ID = 'primary-content-program';
+
+const getEventScheduleForPublicProgram = (event: Event) => {
+  if (event.schedule && event.schedule.length > 0) return event.schedule;
+  if (event.startDate) return [{ date: event.startDate, sessions: event.session ? [event.session] : ['MORNING' as const] }];
+  return [];
+};
+
+const getPublicProgramEvent = (event: Event, programId?: string): Event => {
+  if (!programId) return event;
+  const defaultSchedule = getEventScheduleForPublicProgram(event);
+  const defaultDate = defaultSchedule[0]?.date || event.startDate || new Date().toISOString().slice(0, 10);
+  const defaultSessions = defaultSchedule[0]?.sessions || (event.session ? [event.session] : ['MORNING' as const]);
+
+  if (programId === PRIMARY_CONTENT_PROGRAM_ID) {
+    const meta = event.primaryContentProgram || {};
+    const date = meta.date || defaultDate;
+    const sessions = meta.sessions && meta.sessions.length > 0 ? meta.sessions : defaultSessions;
+    return {
+      ...event,
+      startDate: date,
+      endDate: date,
+      session: sessions[0],
+      schedule: [{ date, sessions }],
+      layout: event.layout,
+      houseOperation: event.houseOperation
+    };
+  }
+
+  const program = (event.contentPrograms || []).find(item => item.id === programId);
+  if (!program) return event;
+  const date = program.date || defaultDate;
+  const sessions = program.sessions && program.sessions.length > 0 ? program.sessions : defaultSessions;
+  return {
+    ...event,
+    startDate: date,
+    endDate: date,
+    session: sessions[0],
+    schedule: [{ date, sessions }],
+    layout: program.layout,
+    houseOperation: program.houseOperation
+  };
+};
+
 const getSessionId = () => {
   try {
     if (typeof sessionStorage !== 'undefined') {
@@ -216,6 +260,9 @@ const App: React.FC = () => {
   const [activeSessions, setActiveSessions] = useState<ActiveSession[]>([]);
   const publicLiveEventId = typeof window !== 'undefined'
     ? new URLSearchParams(window.location.search).get('ehLive') || ''
+    : '';
+  const publicLiveProgramId = typeof window !== 'undefined'
+    ? new URLSearchParams(window.location.search).get('ehProgram') || ''
     : '';
   const isPublicLiveMode = !!publicLiveEventId;
   const isApplyingRemoteRef = useRef(false);
@@ -2047,7 +2094,8 @@ const App: React.FC = () => {
   };
 
   if (isPublicLiveMode) {
-    const publicEvent = appState.events.find(event => event.id === publicLiveEventId);
+    const publicSourceEvent = appState.events.find(event => event.id === publicLiveEventId);
+    const publicEvent = publicSourceEvent ? getPublicProgramEvent(publicSourceEvent, publicLiveProgramId) : undefined;
     return (
       <div className="min-h-screen bg-slate-50 p-3 md:p-4">
         {isLoading ? (
@@ -2063,6 +2111,7 @@ const App: React.FC = () => {
           liveOnly
           publicMode
             initialEventId={publicLiveEventId}
+            liveProgramId={publicLiveProgramId || undefined}
             onUpdateEvent={() => undefined}
           />
         ) : (

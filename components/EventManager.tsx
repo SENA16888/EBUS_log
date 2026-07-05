@@ -3555,6 +3555,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
                   lockEventSelection
                   activeModuleTab={getHouseModuleTab(detailTab) || undefined}
                   initialEventId={selectedEvent.id}
+                  liveProgramId={activeContentProgram?.id}
                   onUpdateEvent={handleUpdateActiveContentEvent}
                 />
               )}
