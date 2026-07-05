@@ -6,11 +6,12 @@ import {
   Users, DollarSign, Trash2, Truck, BookOpen, 
   Utensils, Wallet, Printer, Coffee, AlertCircle,
   TrendingUp, ArrowRightLeft, UserCheck, Link as LinkIcon, Clock3,
-  Calculator, ChevronRight, ChevronLeft, PieChart as PieIcon, FileText, CheckCircle, RefreshCw, Upload, Download, ScanBarcode
+  Calculator, ChevronRight, ChevronLeft, PieChart as PieIcon, FileText, CheckCircle, RefreshCw, Upload, Download, ScanBarcode,
+  Radio, Wand2, TimerReset, ClipboardCheck, Library, PlayCircle, BarChart3
 } from 'lucide-react';
 import { EventExportModal } from './EventExportModal';
 import { EventChecklist } from './EventChecklist';
-import { EinsteinHouseOS } from './EinsteinHouseOS';
+import { EinsteinHouseOS, EinsteinHouseModuleTab } from './EinsteinHouseOS';
 import { calcLineTotal } from '../services/pricing';
 
 interface EventManagerProps {
@@ -80,7 +81,7 @@ const PROCESS_STEPS_TEMPLATE = [
 type EventSession = NonNullable<Event['session']>;
 type EventScheduleItem = { date: string; sessions: EventSession[] };
 type EventDetailSection = 'PREP_LOGISTICS' | 'PROGRAM_CONTENT';
-type EventDetailTab = 'EQUIPMENT' | 'STAFF' | 'PROFILE' | 'COSTS' | 'LAYOUT' | 'CHECKLIST' | 'TIMELINE' | 'OPERATIONS';
+type EventDetailTab = 'EQUIPMENT' | 'STAFF' | 'PROFILE' | 'COSTS' | 'LAYOUT' | 'CHECKLIST' | 'TIMELINE' | `EH_${EinsteinHouseModuleTab}`;
 type DetailIcon = React.ComponentType<{ size?: number; className?: string }>;
 
 const DETAIL_SECTIONS: { key: EventDetailSection; label: string; description: string; Icon: DetailIcon }[] = [
@@ -106,8 +107,17 @@ const DETAIL_TABS: { key: EventDetailTab; section: EventDetailSection; label: st
   { key: 'COSTS', section: 'PREP_LOGISTICS', label: 'Chi Phí & Lợi Nhuận', icon: DollarSign, requireEdit: true },
   { key: 'PROFILE', section: 'PROGRAM_CONTENT', label: 'Hồ sơ sự kiện', icon: BookOpen },
   { key: 'LAYOUT', section: 'PROGRAM_CONTENT', label: 'Sơ đồ trạm', icon: MapPin },
-  { key: 'OPERATIONS', section: 'PROGRAM_CONTENT', label: 'Vận hành/Nội dung', icon: Building2 }
+  { key: 'EH_CONTROL', section: 'PROGRAM_CONTENT', label: 'CONTROL', icon: Radio },
+  { key: 'EH_DESIGN', section: 'PROGRAM_CONTENT', label: 'DESIGN', icon: Wand2 },
+  { key: 'EH_TIMELINE', section: 'PROGRAM_CONTENT', label: 'TIMELINE', icon: TimerReset },
+  { key: 'EH_TASKS', section: 'PROGRAM_CONTENT', label: 'TASKS', icon: ClipboardCheck },
+  { key: 'EH_KNOWLEDGE', section: 'PROGRAM_CONTENT', label: 'KNOWLEDGE', icon: Library },
+  { key: 'EH_LIVE', section: 'PROGRAM_CONTENT', label: 'LIVE', icon: PlayCircle },
+  { key: 'EH_REPORT', section: 'PROGRAM_CONTENT', label: 'REPORT', icon: BarChart3 }
 ];
+
+const getHouseModuleTab = (tab: EventDetailTab): EinsteinHouseModuleTab | null =>
+  tab.startsWith('EH_') ? tab.replace('EH_', '') as EinsteinHouseModuleTab : null;
 
 const SESSION_LABELS: Record<EventSession, string> = {
   MORNING: 'SÁNG',
@@ -1715,14 +1725,14 @@ export const EventManager: React.FC<EventManagerProps> = ({
                 })}
               </div>
 
-              <div className="flex flex-wrap gap-4 md:gap-8 pt-3 border-t border-slate-100">
+              <div className="flex gap-4 md:gap-6 pt-3 border-t border-slate-100 overflow-x-auto">
                 {visibleDetailTabs.map(tab => {
                   const TabIcon = tab.icon;
                   return (
                     <button
                       key={tab.key}
                       onClick={() => setDetailTab(tab.key)}
-                      className={`pb-3 text-sm font-bold border-b-2 transition flex items-center gap-2 ${detailTab === tab.key ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}
+                      className={`pb-3 text-sm font-bold border-b-2 transition flex items-center gap-2 whitespace-nowrap ${detailTab === tab.key ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}
                     >
                       <TabIcon size={16} /> {tab.label}
                     </button>
@@ -2352,7 +2362,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
                 </div>
               )}
 
-              {detailTab === 'OPERATIONS' && selectedEvent && (
+              {getHouseModuleTab(detailTab) && selectedEvent && (
                 <EinsteinHouseOS
                   events={events}
                   inventory={inventory}
@@ -2363,6 +2373,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
                   canEdit={canEdit && !!onUpdateEvent}
                   embedded
                   lockEventSelection
+                  activeModuleTab={getHouseModuleTab(detailTab) || undefined}
                   initialEventId={selectedEvent.id}
                   onUpdateEvent={onUpdateEvent || (() => {})}
                 />

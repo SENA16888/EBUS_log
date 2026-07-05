@@ -73,11 +73,13 @@ interface EinsteinHouseOSProps {
   publicMode?: boolean;
   embedded?: boolean;
   lockEventSelection?: boolean;
+  activeModuleTab?: EinsteinHouseModuleTab;
   initialEventId?: string;
   onUpdateEvent: (eventId: string, updates: Partial<Event>) => void;
 }
 
-type ModuleTab = 'CONTROL' | 'DESIGN' | 'TIMELINE' | 'TASKS' | 'KNOWLEDGE' | 'LIVE' | 'REPORT';
+export type EinsteinHouseModuleTab = 'CONTROL' | 'DESIGN' | 'TIMELINE' | 'TASKS' | 'KNOWLEDGE' | 'LIVE' | 'REPORT';
+type ModuleTab = EinsteinHouseModuleTab;
 type LiveViewMode = 'CONTROL' | 'GUIDE' | 'ROOM';
 
 const EVENT_VENUE_OPTIONS: { value: EventVenueType; label: string; description: string }[] = [
@@ -750,11 +752,12 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
   publicMode = false,
   embedded = false,
   lockEventSelection = false,
+  activeModuleTab,
   initialEventId,
   onUpdateEvent
 }) => {
   const [selectedEventId, setSelectedEventId] = useState(initialEventId || events[0]?.id || '');
-  const [activeTab, setActiveTab] = useState<ModuleTab>(liveOnly ? 'LIVE' : 'CONTROL');
+  const [activeTab, setActiveTab] = useState<ModuleTab>(activeModuleTab || (liveOnly ? 'LIVE' : 'CONTROL'));
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newIncidentTitle, setNewIncidentTitle] = useState('');
   const [feedbackNote, setFeedbackNote] = useState('');
@@ -779,6 +782,12 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
       setSelectedEventId(initialEventId);
     }
   }, [initialEventId, selectedEventId]);
+
+  useEffect(() => {
+    if (activeModuleTab && activeModuleTab !== activeTab) {
+      setActiveTab(activeModuleTab);
+    }
+  }, [activeModuleTab, activeTab]);
 
   const eventCards = useMemo(() => {
     const today = new Date().toISOString().slice(0, 10);
@@ -1520,7 +1529,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
             </div>
           </section>
 
-          {!liveOnly && (
+          {!liveOnly && !embedded && (
           <div className="bg-white border border-slate-200 rounded-lg p-2">
             <div className="flex overflow-x-auto gap-2">
               {[
