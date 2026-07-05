@@ -2665,24 +2665,27 @@ export const EventManager: React.FC<EventManagerProps> = ({
                   )}
                 </div>
               )}
-
-              <div className="flex gap-4 md:gap-6 pt-3 border-t border-slate-100 overflow-x-auto">
-                {visibleDetailTabs.map(tab => {
-                  const TabIcon = tab.icon;
-                  return (
-                    <button
-                      key={tab.key}
-                      onClick={() => setDetailTab(tab.key)}
-                      className={`pb-3 text-sm font-bold border-b-2 transition flex items-center gap-2 whitespace-nowrap ${detailTab === tab.key ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}
-                    >
-                      <TabIcon size={16} /> {tab.label}
-                    </button>
-                  );
-                })}
-              </div>
             </div>
 
-            <div className="flex-1 min-h-0 overflow-y-auto p-4 md:p-5 bg-slate-50/30">
+            <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain bg-slate-50/30">
+              <div className="sticky top-0 z-20 border-b border-slate-100 bg-slate-50/95 px-4 pt-3 pb-2 backdrop-blur md:px-5">
+                <div className="mx-auto mb-2 h-1 w-12 rounded-full bg-slate-300/80"></div>
+                <div className="flex gap-4 md:gap-6 overflow-x-auto">
+                  {visibleDetailTabs.map(tab => {
+                    const TabIcon = tab.icon;
+                    return (
+                      <button
+                        key={tab.key}
+                        onClick={() => setDetailTab(tab.key)}
+                        className={`pb-3 text-sm font-bold border-b-2 transition flex items-center gap-2 whitespace-nowrap ${detailTab === tab.key ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}
+                      >
+                        <TabIcon size={16} /> {tab.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className="p-4 md:p-5">
               {detailTab === 'EQUIPMENT' && (
                 <div className="space-y-4">
                   {/* Sync From Quotation Banner */}
@@ -4387,6 +4390,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
               )}
 
 
+            </div>
             </div>
           </>
         ) : (
