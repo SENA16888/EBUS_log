@@ -1461,7 +1461,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                   <span className="inline-flex items-center gap-1"><Users size={16} />{operation.studentCount} HS / {operation.teacherCount} GV</span>
                   <span className="inline-flex items-center gap-1"><Clock3 size={16} />{getProgramStart(selectedEvent)}</span>
                 </div>
-                {!publicMode && (
+                {!publicMode && !lockEventSelection && (
                   <div className="mt-3 flex flex-wrap gap-2">
                     {EVENT_VENUE_OPTIONS.map(option => (
                       <button

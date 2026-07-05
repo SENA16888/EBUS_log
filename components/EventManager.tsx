@@ -178,6 +178,25 @@ const getEventVenue = (event?: Pick<Event, 'organizationVenue'>): EventVenueType
 const getEventVenueLabel = (venue?: EventVenueType) =>
   EVENT_VENUE_OPTIONS.find(option => option.value === (venue || 'EH'))?.label || 'Tại EH';
 
+const getEventVenueShortLabel = (venue?: EventVenueType) => (venue || 'EH') === 'EH' ? 'EH' : 'EBUS';
+
+const getEventVenueTone = (venue?: EventVenueType) => {
+  const normalized = venue || 'EH';
+  return normalized === 'EH'
+    ? {
+      chip: 'bg-teal-50 text-teal-700 border-teal-200',
+      card: 'border-teal-200 bg-teal-50/70 hover:bg-teal-100',
+      text: 'text-teal-800',
+      dot: 'bg-teal-500'
+    }
+    : {
+      chip: 'bg-blue-50 text-blue-700 border-blue-200',
+      card: 'border-blue-200 bg-blue-50/70 hover:bg-blue-100',
+      text: 'text-blue-800',
+      dot: 'bg-blue-500'
+    };
+};
+
 const getStaffSessions = (staff?: Pick<EventStaffAllocation, 'session' | 'sessions'>): EventSession[] => {
   if (!staff) return [];
   if (staff.sessions && staff.sessions.length > 0) return staff.sessions as EventSession[];
@@ -1541,9 +1560,17 @@ export const EventManager: React.FC<EventManagerProps> = ({
                       const uniqueSessions = Array.from(new Set(schedule.flatMap(item => item.sessions)));
                       const start = schedule[0]?.date || event.startDate;
                       const end = schedule[schedule.length - 1]?.date || event.endDate;
+                      const venue = getEventVenue(event);
+                      const venueTone = getEventVenueTone(venue);
                       return (
                         <>
-                          <h4 className="font-bold text-gray-800">{event.name}</h4>
+                          <div className="flex items-start justify-between gap-2">
+                            <h4 className="font-bold text-gray-800 leading-snug">{event.name}</h4>
+                            <span className={`shrink-0 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-black ${venueTone.chip}`}>
+                              <span className={`h-1.5 w-1.5 rounded-full ${venueTone.dot}`}></span>
+                              {getEventVenueShortLabel(venue)}
+                            </span>
+                          </div>
                           <p className="text-xs text-gray-500 flex items-center gap-1 mt-1">
                             <Calendar size={12}/> {start}{end && end !== start ? ` → ${end}` : ''}
                           </p>
@@ -1611,8 +1638,17 @@ export const EventManager: React.FC<EventManagerProps> = ({
                 </div>
                 <div className="p-4 md:p-5">
                   <div className="grid grid-cols-7 gap-2 text-sm">
-                    {['CN','T2','T3','T4','T5','T6','T7'].map(d => (
-                      <div key={d} className="text-center font-black text-xs text-slate-500 uppercase">{d}</div>
+                    {['CN','T2','T3','T4','T5','T6','T7'].map((d, weekdayIndex) => (
+                      <div
+                        key={d}
+                        className={`rounded-lg py-2 text-center font-black text-xs uppercase ${
+                          weekdayIndex === 0 || weekdayIndex === 6
+                            ? 'bg-rose-50 text-rose-600 border border-rose-100'
+                            : 'text-slate-500'
+                        }`}
+                      >
+                        {d}
+                      </div>
                     ))}
 
                     {(() => {
@@ -1625,26 +1661,34 @@ export const EventManager: React.FC<EventManagerProps> = ({
                       for (let i = 0; i < startDay; i++) cells.push(null);
                       for (let d = 1; d <= daysInMonth; d++) cells.push(new Date(year, month, d));
                       return cells.map((dt, idx) => {
-                        if (!dt) return <div key={idx} className="min-h-[110px] p-2 border rounded-lg bg-slate-50" />;
+                        const isWeekendCell = idx % 7 === 0 || idx % 7 === 6;
+                        if (!dt) return <div key={idx} className={`min-h-[110px] p-2 border rounded-lg ${isWeekendCell ? 'bg-rose-50/50 border-rose-100' : 'bg-slate-50 border-slate-100'}`} />;
                         const key = dt.toISOString().slice(0, 10);
                         const dayEvents = events.filter(ev => getEventSchedule(ev).some(item => item.date === key));
                         return (
-                          <div key={idx} className="min-h-[110px] p-2 border rounded-lg bg-white flex flex-col">
-                            <div className="text-xs text-slate-400 font-black">{dt.getDate()}</div>
+                          <div key={idx} className={`min-h-[110px] p-2 border rounded-lg flex flex-col ${isWeekendCell ? 'bg-rose-50/35 border-rose-200 ring-1 ring-rose-50' : 'bg-white border-slate-200'}`}>
+                            <div className={`text-xs font-black ${isWeekendCell ? 'text-rose-500' : 'text-slate-400'}`}>{dt.getDate()}</div>
                             <div className="mt-2 space-y-1 overflow-auto text-[12px]">
-                              {dayEvents.map(ev => (
-                                <button
-                                  key={ev.id}
-                                  type="button"
-                                  onClick={() => openEventDetail(ev.id)}
-                                  className="w-full text-left rounded-md border border-blue-100 bg-blue-50/60 px-2 py-1 hover:bg-blue-100 transition"
-                                >
-                                  <span className="block truncate font-semibold text-blue-700">{ev.name}</span>
-                                  <span className="block text-[10px] text-slate-500">
-                                    {(getSessionsForDate(ev, key) || []).map(s => SESSION_LABELS[s]).join(' • ')}
-                                  </span>
-                                </button>
-                              ))}
+                              {dayEvents.map(ev => {
+                                const venue = getEventVenue(ev);
+                                const venueTone = getEventVenueTone(venue);
+                                return (
+                                  <button
+                                    key={ev.id}
+                                    type="button"
+                                    onClick={() => openEventDetail(ev.id)}
+                                    className={`w-full text-left rounded-md border px-2 py-1 transition ${venueTone.card}`}
+                                  >
+                                    <span className={`flex items-center gap-1 truncate font-semibold ${venueTone.text}`}>
+                                      <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${venueTone.dot}`}></span>
+                                      <span className="truncate">{getEventVenueShortLabel(venue)} - {ev.name}</span>
+                                    </span>
+                                    <span className="block text-[10px] text-slate-500">
+                                      {(getSessionsForDate(ev, key) || []).map(s => SESSION_LABELS[s]).join(' • ')}
+                                    </span>
+                                  </button>
+                                );
+                              })}
                             </div>
                           </div>
                         );
@@ -1693,6 +1737,35 @@ export const EventManager: React.FC<EventManagerProps> = ({
                       <><FileText size={16}/> Chốt Đơn & In</>
                     )}
                   </button>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+                <p className="mb-2 text-[11px] font-black uppercase tracking-widest text-slate-400">Loại tổ chức</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {EVENT_VENUE_OPTIONS.map(option => {
+                    const isSelected = getEventVenue(selectedEvent) === option.value;
+                    const tone = getEventVenueTone(option.value);
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => onUpdateEvent?.(selectedEvent.id, { organizationVenue: option.value })}
+                        disabled={!canEdit || !onUpdateEvent}
+                        className={`rounded-xl border px-4 py-3 text-left transition ${
+                          isSelected
+                            ? `${tone.chip} shadow-sm`
+                            : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                        } disabled:opacity-60 disabled:cursor-not-allowed`}
+                      >
+                        <span className="flex items-center gap-2 text-sm font-black">
+                          <span className={`h-2 w-2 rounded-full ${tone.dot}`}></span>
+                          {option.label}
+                        </span>
+                        <span className="mt-1 block text-[11px] font-semibold text-slate-500">{option.description}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
               
@@ -2431,27 +2504,6 @@ export const EventManager: React.FC<EventManagerProps> = ({
                               <option key={opt.value} value={opt.value}>{opt.label}</option>
                             ))}
                           </select>
-                        </div>
-                        <div>
-                          <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Loại tổ chức</label>
-                          <div className="grid grid-cols-2 gap-2">
-                            {EVENT_VENUE_OPTIONS.map(option => (
-                              <button
-                                key={option.value}
-                                type="button"
-                                onClick={() => onUpdateEvent?.(selectedEvent.id, { organizationVenue: option.value })}
-                                disabled={!canEditProfile}
-                                className={`rounded-xl border px-3 py-2 text-left transition ${
-                                  getEventVenue(selectedEvent) === option.value
-                                    ? 'border-blue-500 bg-blue-50 text-blue-800'
-                                    : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
-                                } disabled:opacity-60`}
-                              >
-                                <span className="block text-sm font-black">{option.label}</span>
-                                <span className="block text-[10px] font-semibold text-slate-500">{option.description}</span>
-                              </button>
-                            ))}
-                          </div>
                         </div>
                         <div>
                           <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Ngày tổ chức + Thứ</label>
