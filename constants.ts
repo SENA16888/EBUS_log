@@ -157,7 +157,7 @@ export const MOCK_INTERACTIVE_DEVICES: InteractiveDeviceProfile[] = [
       },
       {
         id: 'bc-lunch-event',
-        title: 'Nghỉ trưa theo timeline sự kiện',
+        title: 'Nghỉ trưa theo agenda sự kiện',
         enabled: true,
         trigger: 'BLOCK_START',
         offsetMinutes: 0,

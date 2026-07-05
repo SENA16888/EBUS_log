@@ -422,7 +422,7 @@ export interface HouseOperationStation {
   status?: HouseOperationTaskStatus;
 }
 
-export interface HouseOperationTimelineBlock {
+export interface HouseOperationAgendaBlock {
   id: string;
   title: string;
   startTime: string;
@@ -504,7 +504,8 @@ export interface HouseOperationInstance {
   teacherCount?: number;
   groupCount?: number;
   stations: HouseOperationStation[];
-  timeline: HouseOperationTimelineBlock[];
+  agenda: HouseOperationAgendaBlock[];
+  timeline?: HouseOperationAgendaBlock[];
   rotations: HouseOperationRotationGroup[];
   tasks: HouseOperationTask[];
   incidents: HouseOperationIncident[];
@@ -836,7 +837,7 @@ export interface BroadcastEventRule {
   enabled: boolean;
   trigger: 'EVENT_START' | 'BLOCK_START' | 'BLOCK_END' | 'BEFORE_BLOCK_END';
   offsetMinutes: number;
-  blockKind?: HouseOperationTimelineBlock['kind'];
+  blockKind?: HouseOperationAgendaBlock['kind'];
   assetId?: string;
   messageTemplate: string;
   priority: number;

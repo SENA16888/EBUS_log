@@ -25,7 +25,7 @@ import {
   BroadcastEventMusicSetting,
   Event,
   EventVenueType,
-  HouseOperationTimelineBlock,
+  HouseOperationAgendaBlock,
   InteractiveDeviceProfile
 } from '../types';
 import { uploadBroadcastAudioFile } from '../services/firebaseService';
@@ -124,6 +124,16 @@ const getEventVenue = (event: Event): EventVenueType => event.organizationVenue 
 
 const getDeviceVenue = (device: InteractiveDeviceProfile): EventVenueType => device.broadcastVenue || 'EH';
 
+const getHouseOperationAgenda = (event: Event): HouseOperationAgendaBlock[] => {
+  const operation = event.houseOperation as (Event['houseOperation'] & { timeline?: HouseOperationAgendaBlock[] }) | undefined;
+  if (!operation) return [];
+  const currentAgenda = Array.isArray(operation.agenda) ? operation.agenda : undefined;
+  const legacyAgenda = Array.isArray(operation.timeline) ? operation.timeline : undefined;
+  return currentAgenda && (currentAgenda.length > 0 || !legacyAgenda)
+    ? currentAgenda
+    : (legacyAgenda || []);
+};
+
 const getEventDateKeys = (event: Event) => {
   const keys = new Set<string>();
   (event.schedule || []).forEach(item => item.date && keys.add(item.date));
@@ -142,20 +152,20 @@ const isEventActiveOnDate = (event: Event, dateKey: string) => {
 
 const getProgramStart = (event: Event) =>
   event.eventProfile?.programTimeStart ||
-  event.houseOperation?.timeline?.[0]?.startTime ||
+  getHouseOperationAgenda(event)[0]?.startTime ||
   '09:00';
 
 const getLiveTiming = (event: Event) => {
-  const timeline = event.houseOperation?.timeline || [];
-  const scheduledArrival = timeline.find(block => block.kind === 'OPENING')?.startTime || getProgramStart(event);
+  const agenda = getHouseOperationAgenda(event);
+  const scheduledArrival = agenda.find(block => block.kind === 'OPENING')?.startTime || getProgramStart(event);
   const actualArrival = event.houseOperation?.live?.actualArrivalTime || scheduledArrival;
   const delta = timeToMinutes(actualArrival) - timeToMinutes(scheduledArrival);
-  const lunchBlock = timeline.find(block => block.kind === 'LUNCH');
+  const lunchBlock = agenda.find(block => block.kind === 'LUNCH');
   const lunchEndMinutes = lunchBlock?.endTime ? timeToMinutes(lunchBlock.endTime) : Number.POSITIVE_INFINITY;
   return { scheduledArrival, actualArrival, delta, lunchBlock, lunchEndMinutes };
 };
 
-const getLiveAdjustedBlock = (event: Event, block: HouseOperationTimelineBlock): HouseOperationTimelineBlock => {
+const getLiveAdjustedBlock = (event: Event, block: HouseOperationAgendaBlock): HouseOperationAgendaBlock => {
   const { delta, lunchBlock, lunchEndMinutes } = getLiveTiming(event);
   if (!delta) return block;
   const isMorning = timeToMinutes(block.startTime) < lunchEndMinutes;
@@ -168,14 +178,14 @@ const getLiveAdjustedBlock = (event: Event, block: HouseOperationTimelineBlock):
   };
 };
 
-const getBlockTriggerTime = (dateKey: string, block: HouseOperationTimelineBlock, rule: BroadcastEventRule) => {
+const getBlockTriggerTime = (dateKey: string, block: HouseOperationAgendaBlock, rule: BroadcastEventRule) => {
   if (rule.trigger === 'BLOCK_END' || rule.trigger === 'BEFORE_BLOCK_END') {
     return addMinutes(dateAtTime(dateKey, block.endTime), rule.offsetMinutes);
   }
   return addMinutes(dateAtTime(dateKey, block.startTime), rule.offsetMinutes);
 };
 
-const expandExperienceRounds = (block: HouseOperationTimelineBlock): HouseOperationTimelineBlock[] => {
+const expandExperienceRounds = (block: HouseOperationAgendaBlock): HouseOperationAgendaBlock[] => {
   if (block.kind !== 'EXPERIENCE_AM' && block.kind !== 'EXPERIENCE_PM') return [block];
   const roundCount = Math.max(1, block.stationCount || 1);
   const startMinutes = timeToMinutes(block.startTime);
@@ -198,9 +208,9 @@ const expandExperienceRounds = (block: HouseOperationTimelineBlock): HouseOperat
 };
 
 const getBlocksForRule = (event: Event, rule: BroadcastEventRule) => {
-  const timeline = event.houseOperation?.timeline || [];
+  const agenda = getHouseOperationAgenda(event);
   const onlyExperienceWarning = rule.trigger === 'BEFORE_BLOCK_END' && !rule.blockKind;
-  return timeline
+  return agenda
     .filter(block => onlyExperienceWarning
       ? block.kind === 'EXPERIENCE_AM' || block.kind === 'EXPERIENCE_PM'
       : !rule.blockKind || block.kind === rule.blockKind
@@ -213,7 +223,7 @@ const getBlocksForRule = (event: Event, rule: BroadcastEventRule) => {
     });
 };
 
-const applyTemplate = (template: string, event: Event, block?: HouseOperationTimelineBlock) =>
+const applyTemplate = (template: string, event: Event, block?: HouseOperationAgendaBlock) =>
   template
     .replace(/\{\{eventName\}\}/g, event.name || 'đoàn trải nghiệm')
     .replace(/\{\{client\}\}/g, event.client || event.eventProfile?.organization || 'đối tác')
@@ -535,7 +545,7 @@ export const InteractiveDeviceManager: React.FC<InteractiveDeviceManagerProps> =
       : true;
 
     const eventLunchWindows = todayEvents.flatMap(event =>
-      (event.houseOperation?.timeline || [])
+      getHouseOperationAgenda(event)
         .filter(block => block.kind === 'LUNCH')
         .map(block => {
           const liveBlock = getLiveAdjustedBlock(event, block);
@@ -1177,7 +1187,7 @@ export const InteractiveDeviceManager: React.FC<InteractiveDeviceManagerProps> =
                   </div>
                 ))}
               </div>
-              <p className="text-xs text-slate-500">Có thể thêm 4-5 link video. Nhạc nền tự dừng khi trung tâm nghỉ trưa, ngoài giờ hoạt động, hoặc theo giờ nghỉ trưa của đoàn trong timeline sự kiện.</p>
+              <p className="text-xs text-slate-500">Có thể thêm 4-5 link video. Nhạc nền tự dừng khi trung tâm nghỉ trưa, ngoài giờ hoạt động, hoặc theo giờ nghỉ trưa của đoàn trong agenda sự kiện.</p>
             </div>
           </div>
         </div>
@@ -1379,7 +1389,7 @@ export const InteractiveDeviceManager: React.FC<InteractiveDeviceManagerProps> =
             <p className="text-xs text-slate-500 mt-1">
               {broadcastVenue === 'EH'
                 ? 'Dùng cho nghỉ trưa, đóng cửa, chào đầu ngày, kết thúc ca tại trung tâm.'
-                : 'Khu EBUS chỉ phát rule theo timeline sự kiện; lịch cố định nội bộ EH sẽ không vào hàng đợi.'}
+                : 'Khu EBUS chỉ phát rule theo agenda sự kiện; lịch cố định nội bộ EH sẽ không vào hàng đợi.'}
             </p>
           </div>
 
@@ -1458,7 +1468,7 @@ export const InteractiveDeviceManager: React.FC<InteractiveDeviceManagerProps> =
       <div className="grid xl:grid-cols-2 gap-4">
         <section className="bg-white border border-slate-200 rounded-lg p-4">
           <h3 className="font-bold text-slate-900 flex items-center gap-2"><BellRing size={18} className="text-amber-600" /> Rule theo sự kiện</h3>
-          <p className="text-xs text-slate-500 mt-1">Nếu hôm nay có sự kiện và có timeline vận hành Einstein House, hệ thống tự phát thông báo đoàn.</p>
+          <p className="text-xs text-slate-500 mt-1">Nếu hôm nay có sự kiện và có agenda vận hành Einstein House, hệ thống tự phát thông báo đoàn.</p>
           <div className="mt-3 border border-blue-100 bg-blue-50 rounded-lg p-3">
             <div className="flex items-center gap-2 font-bold text-sm text-blue-800">
               <Music2 size={17} />

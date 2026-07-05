@@ -15,7 +15,7 @@ import { AdminLogPage } from './components/AdminLogPage';
 import { EinsteinHouseOS } from './components/EinsteinHouseOS';
 import { EducationContentManager } from './components/EducationContentManager';
 import { InteractiveDeviceManager } from './components/InteractiveDeviceManager';
-import { AppState, InventoryItem, Event, EventStatus, Transaction, TransactionType, ComboPackage, Employee, Quotation, EventStaffAllocation, EventExpense, EventAdvanceRequest, LogEntry, ChecklistDirection, ChecklistStatus, ChecklistSignature, EventChecklist, LearningAttempt, LearningProfile, AccessPermission, UserAccount, LearningTrack, InventoryReceipt, InventoryReceiptItem, ActiveSession, PayrollAdjustment, InventoryAuditSession, InventoryAuditItem, InventoryAuditBaseline, EducationActivity, EducationLessonLink, InteractiveDeviceProfile } from './types';
+import { AppState, InventoryItem, Event, EventStatus, Transaction, TransactionType, ComboPackage, Employee, Quotation, EventStaffAllocation, EventExpense, EventAdvanceRequest, LogEntry, ChecklistDirection, ChecklistStatus, ChecklistSignature, EventChecklist, LearningAttempt, LearningProfile, AccessPermission, UserAccount, LearningTrack, InventoryReceipt, InventoryReceiptItem, ActiveSession, PayrollAdjustment, InventoryAuditSession, InventoryAuditItem, InventoryAuditBaseline, EducationActivity, EducationLessonLink, InteractiveDeviceProfile, HouseOperationInstance } from './types';
 import { MOCK_INVENTORY, MOCK_EVENTS, MOCK_TRANSACTIONS, MOCK_PACKAGES, MOCK_EMPLOYEES, MOCK_LEARNING_TRACKS, MOCK_CAREER_RANKS, DEFAULT_USER_ACCOUNTS, MOCK_INVENTORY_RECEIPTS, MOCK_EDUCATION_ACTIVITIES, MOCK_INTERACTIVE_DEVICES } from './constants';
 import { MessageSquare } from 'lucide-react';
 import { ensureCollectionModelInitialized, initializeAuth, loadCollectionState, subscribeToSessions, setSessionOnline, setSessionOffline, syncCollectionStateDiff, saveLearningUserState, subscribeToLearningUserState, deleteLearningUserState, subscribeToLearningUsers } from './services/firebaseService';
@@ -66,6 +66,71 @@ const normalizeInventoryLifecycle = (item: InventoryItem): InventoryItem => {
     : undefined;
   const consumableUnit = lifecycle === 'CONSUMABLE' ? (item.consumableUnit || 'cái') : undefined;
   return { ...item, lifecycle, maxUsage, consumableUnit };
+};
+
+const hasLegacyHouseOperationAgenda = (operation?: HouseOperationInstance | null): boolean => {
+  if (!operation) return false;
+  const legacy = operation as HouseOperationInstance & { timeline?: HouseOperationInstance['agenda'] };
+  return Array.isArray(legacy.timeline);
+};
+
+const normalizeHouseOperationAgenda = (operation?: HouseOperationInstance | null): HouseOperationInstance | undefined => {
+  if (!operation) return undefined;
+  const legacy = operation as HouseOperationInstance & { timeline?: HouseOperationInstance['agenda'] };
+  const { timeline: _legacyTimeline, ...rest } = legacy;
+  const currentAgenda = Array.isArray(legacy.agenda) ? legacy.agenda : undefined;
+  const legacyAgenda = Array.isArray(legacy.timeline) ? legacy.timeline : undefined;
+  return {
+    ...rest,
+    templateVersion: legacy.templateVersion || 1,
+    createdAt: legacy.createdAt || new Date().toISOString(),
+    stations: Array.isArray(legacy.stations) ? legacy.stations : [],
+    agenda: currentAgenda && (currentAgenda.length > 0 || !legacyAgenda)
+      ? currentAgenda
+      : (legacyAgenda || []),
+    rotations: Array.isArray(legacy.rotations) ? legacy.rotations : [],
+    tasks: Array.isArray(legacy.tasks) ? legacy.tasks : [],
+    incidents: Array.isArray(legacy.incidents) ? legacy.incidents : [],
+    mediaTasks: Array.isArray(legacy.mediaTasks) ? legacy.mediaTasks : [],
+    feedback: Array.isArray(legacy.feedback) ? legacy.feedback : []
+  };
+};
+
+const hasLegacyHouseOperationAgendaInState = (state: Partial<AppState>): boolean =>
+  (state.events || []).some(event => hasLegacyHouseOperationAgenda(event.houseOperation));
+
+const normalizeInteractiveDeviceAgendaCopy = (device: InteractiveDeviceProfile): InteractiveDeviceProfile => ({
+  ...device,
+  eventRules: (device.eventRules || []).map(rule => ({
+    ...rule,
+    title: (rule.title || '').replace(/timeline sự kiện/g, 'agenda sự kiện')
+  }))
+});
+
+const hasLegacyInteractiveDeviceAgendaCopy = (device?: InteractiveDeviceProfile | null): boolean =>
+  (device?.eventRules || []).some(rule => (rule.title || '').includes('timeline sự kiện'));
+
+const hasLegacyInteractiveDeviceAgendaCopyInState = (state: Partial<AppState>): boolean =>
+  (state.interactiveDevices || []).some(hasLegacyInteractiveDeviceAgendaCopy);
+
+const buildAgendaMigrationBaseline = (normalizedState: AppState, rawState: Partial<AppState>): AppState => {
+  const rawEventMap = new Map((rawState.events || []).map(event => [event.id, event]));
+  const rawDeviceMap = new Map((rawState.interactiveDevices || []).map(device => [device.id, device]));
+  return {
+    ...normalizedState,
+    events: normalizedState.events.map(event => {
+      const rawEvent = rawEventMap.get(event.id);
+      if (!hasLegacyHouseOperationAgenda(rawEvent?.houseOperation)) return event;
+      return {
+        ...event,
+        houseOperation: rawEvent?.houseOperation
+      };
+    }),
+    interactiveDevices: (normalizedState.interactiveDevices || []).map(device => {
+      const rawDevice = rawDeviceMap.get(device.id);
+      return hasLegacyInteractiveDeviceAgendaCopy(rawDevice) && rawDevice ? rawDevice : device;
+    })
+  };
 };
 
 const stripLearningUserData = (state: AppState): AppState => ({
@@ -186,24 +251,28 @@ const App: React.FC = () => {
     return {
       ...state,
       inventory: normalizedInventory,
-      events: (state.events || []).map(ev => ({
-        ...ev,
-        items: ev.items || [],
-        advanceRequests: ev.advanceRequests || [],
-        advancePaidAmount: ev.advancePaidAmount ?? 0,
-        advancePaidDate: ev.advancePaidDate || '',
-        advancePaidConfirmed: ev.advancePaidConfirmed ?? false,
-        advanceRefundedConfirmed: ev.advanceRefundedConfirmed ?? false,
-        paymentCompleted: ev.paymentCompleted ?? false,
-        advanceSkipped: ev.advanceSkipped ?? false,
-        eventProfile: ev.eventProfile || {
-          code: ev.startDate ? `EB-${ev.startDate.replace(/-/g, '')}-${String(Math.floor(Math.random() * 900 + 100))}` : `EB-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${String(Math.floor(Math.random() * 900 + 100))}`,
-          organization: ev.client,
-          programSession: ev.session,
-        },
-        checklist: normalizeChecklist(ev.checklist),
-        timeline: ev.timeline || []
-      })),
+      events: (state.events || []).map(ev => {
+        const houseOperation = normalizeHouseOperationAgenda(ev.houseOperation);
+        return {
+          ...ev,
+          items: ev.items || [],
+          advanceRequests: ev.advanceRequests || [],
+          advancePaidAmount: ev.advancePaidAmount ?? 0,
+          advancePaidDate: ev.advancePaidDate || '',
+          advancePaidConfirmed: ev.advancePaidConfirmed ?? false,
+          advanceRefundedConfirmed: ev.advanceRefundedConfirmed ?? false,
+          paymentCompleted: ev.paymentCompleted ?? false,
+          advanceSkipped: ev.advanceSkipped ?? false,
+          eventProfile: ev.eventProfile || {
+            code: ev.startDate ? `EB-${ev.startDate.replace(/-/g, '')}-${String(Math.floor(Math.random() * 900 + 100))}` : `EB-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${String(Math.floor(Math.random() * 900 + 100))}`,
+            organization: ev.client,
+            programSession: ev.session,
+          },
+          checklist: normalizeChecklist(ev.checklist),
+          timeline: ev.timeline || [],
+          ...(houseOperation ? { houseOperation } : {})
+        };
+      }),
       learningTracks: state.learningTracks || MOCK_LEARNING_TRACKS,
       learningProfiles: [],
       learningAttempts: [],
@@ -214,7 +283,8 @@ const App: React.FC = () => {
       userAccounts: normalizedAccounts,
       payrollAdjustments: state.payrollAdjustments || [],
       educationActivities: state.educationActivities && state.educationActivities.length > 0 ? state.educationActivities : MOCK_EDUCATION_ACTIVITIES,
-      interactiveDevices: state.interactiveDevices && state.interactiveDevices.length > 0 ? state.interactiveDevices : MOCK_INTERACTIVE_DEVICES
+      interactiveDevices: (state.interactiveDevices && state.interactiveDevices.length > 0 ? state.interactiveDevices : MOCK_INTERACTIVE_DEVICES)
+        .map(normalizeInteractiveDeviceAgendaCopy)
     };
   };
 
@@ -398,22 +468,33 @@ const App: React.FC = () => {
         const collectionState = await loadCollectionState();
         if (cancelled) return;
 
-        const nextState = withDefaults({
+        const loadedState = {
           ...seedState,
           ...collectionState
-        } as AppState);
+        } as AppState;
+        const shouldMigrateAgenda = hasLegacyHouseOperationAgendaInState(collectionState)
+          || hasLegacyInteractiveDeviceAgendaCopyInState(collectionState);
+        const nextState = withDefaults(loadedState);
+        const persistedNextState = stripLearningUserData(nextState);
 
-        isApplyingRemoteRef.current = true;
-        lastPersistedStateRef.current = stripLearningUserData(nextState);
+        isApplyingRemoteRef.current = !shouldMigrateAgenda;
+        lastPersistedStateRef.current = shouldMigrateAgenda
+          ? stripLearningUserData(buildAgendaMigrationBaseline(nextState, collectionState))
+          : persistedNextState;
         setAppState(nextState);
       } catch (error) {
         console.error('Failed to load collection-based data from Firebase:', error);
         try {
           const raw = localStorage.getItem('ebus_app_state');
           if (raw) {
-            const parsed = withDefaults(JSON.parse(raw) as AppState);
-            isApplyingRemoteRef.current = true;
-            lastPersistedStateRef.current = stripLearningUserData(parsed);
+            const rawState = JSON.parse(raw) as AppState;
+            const parsed = withDefaults(rawState);
+            const shouldMigrateAgenda = hasLegacyHouseOperationAgendaInState(rawState)
+              || hasLegacyInteractiveDeviceAgendaCopyInState(rawState);
+            isApplyingRemoteRef.current = !shouldMigrateAgenda;
+            lastPersistedStateRef.current = shouldMigrateAgenda
+              ? stripLearningUserData(buildAgendaMigrationBaseline(parsed, rawState))
+              : stripLearningUserData(parsed);
             setAppState(parsed);
           }
         } catch (err) {

@@ -56,7 +56,7 @@ import {
   HouseOperationStation,
   HouseOperationTask,
   HouseOperationTaskStatus,
-  HouseOperationTimelineBlock,
+  HouseOperationAgendaBlock,
   InventoryItem,
   LearningTrack
 } from '../types';
@@ -78,7 +78,7 @@ interface EinsteinHouseOSProps {
   onUpdateEvent: (eventId: string, updates: Partial<Event>) => void;
 }
 
-export type EinsteinHouseModuleTab = 'CONTROL' | 'DESIGN' | 'TIMELINE' | 'TASKS' | 'KNOWLEDGE' | 'LIVE' | 'REPORT';
+export type EinsteinHouseModuleTab = 'CONTROL' | 'DESIGN' | 'AGENDA' | 'TASKS' | 'KNOWLEDGE' | 'LIVE' | 'REPORT';
 type ModuleTab = EinsteinHouseModuleTab;
 type LiveViewMode = 'CONTROL' | 'GUIDE' | 'ROOM';
 
@@ -233,15 +233,15 @@ const getTeacherCount = (event: Event) => event.houseOperation?.teacherCount || 
 
 const makeId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
-const getExperienceStations = (stations: HouseOperationStation[], timeline: HouseOperationTimelineBlock[] = []) => {
-  const commonStationIds = new Set(timeline.filter(block => block.kind === 'COMMON' && block.stationId).map(block => block.stationId as string));
+const getExperienceStations = (stations: HouseOperationStation[], agenda: HouseOperationAgendaBlock[] = []) => {
+  const commonStationIds = new Set(agenda.filter(block => block.kind === 'COMMON' && block.stationId).map(block => block.stationId as string));
   return stations.filter(station => !commonStationIds.has(station.id));
 };
 
 const getDefaultRoundDuration = (stations: HouseOperationStation[]) =>
   Math.max(20, ...stations.map(station => station.durationMinutes || 20));
 
-const buildTimeline = (event: Event, stations: HouseOperationStation[]): HouseOperationTimelineBlock[] => {
+const buildAgenda = (event: Event, stations: HouseOperationStation[]): HouseOperationAgendaBlock[] => {
   const start = getProgramStart(event);
   let cursor = timeToMinutes(start);
   const commonShow = stations.find(station => station.category === 'SHOW');
@@ -250,7 +250,7 @@ const buildTimeline = (event: Event, stations: HouseOperationStation[]): HouseOp
   const amStationCount = Math.min(3, Math.max(1, experienceStations.length || 1));
   const pmStationCount = Math.min(3, Math.max(0, experienceStations.length - amStationCount));
 
-  const blocks: HouseOperationTimelineBlock[] = [
+  const blocks: HouseOperationAgendaBlock[] = [
     {
       id: makeId('eh-time'),
       sectionCode: 'A',
@@ -287,7 +287,7 @@ const buildTimeline = (event: Event, stations: HouseOperationStation[]): HouseOp
     startTime: minutesToTime(cursor),
     endTime: minutesToTime(cursor + amDuration),
     stationCount: amStationCount,
-    note: 'Các nhóm chạy timeline riêng theo màu, không trùng trạm cùng mốc giờ.'
+    note: 'Các nhóm chạy agenda riêng theo màu, không trùng trạm cùng mốc giờ.'
   });
   cursor += amDuration;
 
@@ -312,7 +312,7 @@ const buildTimeline = (event: Event, stations: HouseOperationStation[]): HouseOp
       startTime: minutesToTime(cursor),
       endTime: minutesToTime(cursor + pmDuration),
       stationCount: pmStationCount,
-      note: 'Các nhóm tiếp tục xoay trạm theo timeline riêng.'
+      note: 'Các nhóm tiếp tục xoay trạm theo agenda riêng.'
     });
     cursor += pmDuration;
   }
@@ -330,12 +330,12 @@ const buildTimeline = (event: Event, stations: HouseOperationStation[]): HouseOp
   return blocks;
 };
 
-const recalcStructuredTimeline = (event: Event, stations: HouseOperationStation[], sourceTimeline: HouseOperationTimelineBlock[]) => {
-  let cursor = timeToMinutes(sourceTimeline[0]?.startTime || getProgramStart(event));
-  const experienceStations = getExperienceStations(stations, sourceTimeline);
+const recalcStructuredAgenda = (event: Event, stations: HouseOperationStation[], sourceAgenda: HouseOperationAgendaBlock[]) => {
+  let cursor = timeToMinutes(sourceAgenda[0]?.startTime || getProgramStart(event));
+  const experienceStations = getExperienceStations(stations, sourceAgenda);
   const roundDuration = getDefaultRoundDuration(experienceStations);
 
-  return sourceTimeline.map(block => {
+  return sourceAgenda.map(block => {
     const next = { ...block };
     next.startTime = minutesToTime(cursor);
     next.warning = undefined;
@@ -383,13 +383,13 @@ const buildRotations = (studentCount: number, stations: HouseOperationStation[],
   }));
 };
 
-const getActivityStartTime = (timeline: HouseOperationTimelineBlock[], event: Event) => {
-  const firstExperience = timeline.find(block => block.kind === 'EXPERIENCE_AM' || block.kind === 'EXPERIENCE_PM');
+const getAgendaActivityStartTime = (agenda: HouseOperationAgendaBlock[], event: Event) => {
+  const firstExperience = agenda.find(block => block.kind === 'EXPERIENCE_AM' || block.kind === 'EXPERIENCE_PM');
   if (firstExperience?.startTime) return firstExperience.startTime;
-  return timeline[0]?.endTime || addMinutes(getProgramStart(event), 15);
+  return agenda[0]?.endTime || addMinutes(getProgramStart(event), 15);
 };
 
-type GroupTimelineBlock = {
+type GroupAgendaBlock = {
   id: string;
   title: string;
   startTime: string;
@@ -399,20 +399,20 @@ type GroupTimelineBlock = {
   note?: string;
 };
 
-type GroupTimelineView = HouseOperationRotationGroup & { blocks: GroupTimelineBlock[] };
+type GroupAgendaView = HouseOperationRotationGroup & { blocks: GroupAgendaBlock[] };
 
-const buildGroupActivityTimelines = (
+const buildGroupActivityAgendas = (
   event: Event,
-  timeline: HouseOperationTimelineBlock[],
+  agenda: HouseOperationAgendaBlock[],
   stations: HouseOperationStation[],
   rotations: HouseOperationRotationGroup[]
 ) => {
   const stationMap = new Map(stations.map(station => [station.id, station]));
-  const experienceStationIds = getExperienceStations(stations, timeline).map(station => station.id);
-  const experienceSlotDuration = getDefaultRoundDuration(getExperienceStations(stations, timeline));
-  const commonBlocks = timeline.filter(block => block.kind === 'COMMON');
-  const sharedBreakBlocks = timeline.filter(block => block.kind === 'BREAK' || block.kind === 'LUNCH');
-  const experienceBlocks = timeline.filter(block => block.kind === 'EXPERIENCE_AM' || block.kind === 'EXPERIENCE_PM');
+  const experienceStationIds = getExperienceStations(stations, agenda).map(station => station.id);
+  const experienceSlotDuration = getDefaultRoundDuration(getExperienceStations(stations, agenda));
+  const commonBlocks = agenda.filter(block => block.kind === 'COMMON');
+  const sharedBreakBlocks = agenda.filter(block => block.kind === 'BREAK' || block.kind === 'LUNCH');
+  const experienceBlocks = agenda.filter(block => block.kind === 'EXPERIENCE_AM' || block.kind === 'EXPERIENCE_PM');
 
   return rotations.map(group => {
     const groupRoute = experienceStationIds.map((_, routeIndex) => experienceStationIds[(routeIndex + rotations.indexOf(group)) % experienceStationIds.length]).filter(Boolean);
@@ -467,17 +467,17 @@ const buildGroupActivityTimelines = (
 
 const shiftTime = (time: string, deltaMinutes: number) => minutesToTime(timeToMinutes(time) + deltaMinutes);
 
-const buildLiveGroupTimelines = (
-  standardGroups: GroupTimelineView[],
+const buildLiveGroupAgendas = (
+  standardGroups: GroupAgendaView[],
   operation: HouseOperationInstance,
   event: Event
-): GroupTimelineView[] => {
-  const scheduledArrival = operation.timeline.find(block => block.kind === 'OPENING')?.startTime || getProgramStart(event);
+): GroupAgendaView[] => {
+  const scheduledArrival = operation.agenda.find(block => block.kind === 'OPENING')?.startTime || getProgramStart(event);
   const actualArrival = operation.live?.actualArrivalTime || scheduledArrival;
   const delta = timeToMinutes(actualArrival) - timeToMinutes(scheduledArrival);
   if (!delta) return standardGroups;
 
-  const lunchBlock = operation.timeline.find(block => block.kind === 'LUNCH');
+  const lunchBlock = operation.agenda.find(block => block.kind === 'LUNCH');
   const lunchEnd = lunchBlock?.endTime;
   const lunchEndMinutes = lunchEnd ? timeToMinutes(lunchEnd) : Number.POSITIVE_INFINITY;
 
@@ -498,7 +498,7 @@ const buildLiveGroupTimelines = (
   }));
 };
 
-const getBlockState = (block: GroupTimelineBlock, now: Date) => {
+const getBlockState = (block: GroupAgendaBlock, now: Date) => {
   const nowMinutes = now.getHours() * 60 + now.getMinutes();
   const start = timeToMinutes(block.startTime);
   const end = timeToMinutes(block.endTime);
@@ -507,7 +507,7 @@ const getBlockState = (block: GroupTimelineBlock, now: Date) => {
   return 'NOW';
 };
 
-const getCountdownLabel = (block: GroupTimelineBlock | undefined, now: Date) => {
+const getCountdownLabel = (block: GroupAgendaBlock | undefined, now: Date) => {
   if (!block) return 'Không có mốc tiếp theo';
   const nowMinutes = now.getHours() * 60 + now.getMinutes();
   const start = timeToMinutes(block.startTime);
@@ -657,7 +657,7 @@ const createDefaultTasks = (event: Event, stations: HouseOperationStation[], emp
   const deadline = eventDate ? `${eventDate}T08:00` : undefined;
   const baseTasks: HouseOperationTask[] = [
     { id: makeId('eh-task'), title: 'Chốt thông tin đoàn, sĩ số, khối, người liên hệ', scope: 'EVENT', status: 'TODO', ownerId: lead?.id, ownerName: lead?.name, deadline },
-    { id: makeId('eh-task'), title: 'Khóa timeline và sơ đồ luân chuyển', scope: 'QUALITY', status: 'TODO', ownerId: lead?.id, ownerName: lead?.name, deadline },
+    { id: makeId('eh-task'), title: 'Khóa agenda và sơ đồ luân chuyển', scope: 'QUALITY', status: 'TODO', ownerId: lead?.id, ownerName: lead?.name, deadline },
     { id: makeId('eh-task'), title: 'Kiểm tra thiết bị, vật tư tiêu hao và phiếu kho', scope: 'ASSET', status: 'TODO', deadline },
     { id: makeId('eh-task'), title: 'Brief nhân sự, rehearsal lỗi thường gặp', scope: 'STAFF', status: 'TODO', ownerId: lead?.id, ownerName: lead?.name, deadline },
     { id: makeId('eh-task'), title: 'Chuẩn bị shot list media và người chụp', scope: 'MEDIA', status: 'TODO', deadline }
@@ -691,7 +691,7 @@ const createDefaultOperation = (event: Event, inventory: InventoryItem[], employ
     teacherCount: getTeacherCount(event),
     groupCount,
     stations,
-    timeline: buildTimeline(event, stations),
+    agenda: buildAgenda(event, stations),
     rotations: buildRotations(studentCount, stations, groupCount),
     tasks: createDefaultTasks(event, stations, employees),
     incidents: [],
@@ -706,11 +706,17 @@ const ensureOperation = (event: Event, inventory: InventoryItem[], employees: Em
   const fallback = createDefaultOperation(event, inventory, employees, packages);
   const current = event.houseOperation;
   if (!current) return fallback;
+  const legacy = current as HouseOperationInstance & { timeline?: HouseOperationInstance['agenda'] };
+  const { timeline: _legacyTimeline, ...currentWithoutLegacy } = legacy;
+  const currentAgenda = Array.isArray(current.agenda) ? current.agenda : undefined;
+  const legacyAgenda = Array.isArray(legacy.timeline) ? legacy.timeline : undefined;
   return {
     ...fallback,
-    ...current,
+    ...currentWithoutLegacy,
     stations: Array.isArray(current.stations) ? current.stations : fallback.stations,
-    timeline: Array.isArray(current.timeline) ? current.timeline : fallback.timeline,
+    agenda: currentAgenda && (currentAgenda.length > 0 || !legacyAgenda)
+      ? currentAgenda
+      : (legacyAgenda || fallback.agenda),
     rotations: Array.isArray(current.rotations) ? current.rotations : fallback.rotations,
     tasks: Array.isArray(current.tasks) ? current.tasks : fallback.tasks,
     incidents: current.incidents || [],
@@ -720,9 +726,9 @@ const ensureOperation = (event: Event, inventory: InventoryItem[], employees: Em
   };
 };
 
-const getOverlapWarnings = (timeline: HouseOperationTimelineBlock[]) => {
+const getOverlapWarnings = (agenda: HouseOperationAgendaBlock[]) => {
   const warnings = new Set<string>();
-  const sorted = [...timeline].sort((a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime));
+  const sorted = [...agenda].sort((a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime));
   sorted.forEach((block, index) => {
     const next = sorted[index + 1];
     if (next && timeToMinutes(block.endTime) > timeToMinutes(next.startTime)) {
@@ -818,23 +824,23 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
     return { done, total, pct: total ? Math.round((done / total) * 100) : 0, missing };
   }, [operation]);
 
-  const overlapWarnings = useMemo(() => operation ? getOverlapWarnings(operation.timeline) : new Set<string>(), [operation]);
+  const overlapWarnings = useMemo(() => operation ? getOverlapWarnings(operation.agenda) : new Set<string>(), [operation]);
 
-  const groupActivityTimelines = useMemo(
+  const groupActivityAgendas = useMemo(
     () => selectedEvent && operation
-      ? buildGroupActivityTimelines(selectedEvent, operation.timeline, operation.stations, operation.rotations)
+      ? buildGroupActivityAgendas(selectedEvent, operation.agenda, operation.stations, operation.rotations)
       : [],
     [selectedEvent, operation]
   );
 
-  const liveGroupTimelines = useMemo(
-    () => selectedEvent && operation ? buildLiveGroupTimelines(groupActivityTimelines, operation, selectedEvent) : [],
-    [groupActivityTimelines, operation, selectedEvent]
+  const liveGroupAgendas = useMemo(
+    () => selectedEvent && operation ? buildLiveGroupAgendas(groupActivityAgendas, operation, selectedEvent) : [],
+    [groupActivityAgendas, operation, selectedEvent]
   );
 
-  const roomTimelines = useMemo(() => {
-    const map = new Map<string, Array<GroupTimelineBlock & { groupName: string; groupColor?: string; groupId: string }>>();
-    liveGroupTimelines.forEach(group => {
+  const roomAgendas = useMemo(() => {
+    const map = new Map<string, Array<GroupAgendaBlock & { groupName: string; groupColor?: string; groupId: string }>>();
+    liveGroupAgendas.forEach(group => {
       group.blocks.forEach(block => {
         const room = block.room || 'Chưa gán vị trí';
         const rows = map.get(room) || [];
@@ -848,27 +854,27 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
         blocks: blocks.sort((a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime))
       }))
       .sort((a, b) => a.room.localeCompare(b.room));
-  }, [liveGroupTimelines]);
+  }, [liveGroupAgendas]);
 
   useEffect(() => {
     setLocalLiveGroupId(current => {
-      if (!liveGroupTimelines.length) return '';
-      if (current && liveGroupTimelines.some(group => group.id === current)) return current;
+      if (!liveGroupAgendas.length) return '';
+      if (current && liveGroupAgendas.some(group => group.id === current)) return current;
       const saved = operation?.live?.selectedGroupId;
-      if (saved && liveGroupTimelines.some(group => group.id === saved)) return saved;
-      return liveGroupTimelines[0].id;
+      if (saved && liveGroupAgendas.some(group => group.id === saved)) return saved;
+      return liveGroupAgendas[0].id;
     });
-  }, [liveGroupTimelines, operation?.live?.selectedGroupId]);
+  }, [liveGroupAgendas, operation?.live?.selectedGroupId]);
 
   useEffect(() => {
     setLocalLiveRoom(current => {
-      if (!roomTimelines.length) return '';
-      if (current && roomTimelines.some(item => item.room === current)) return current;
+      if (!roomAgendas.length) return '';
+      if (current && roomAgendas.some(item => item.room === current)) return current;
       const saved = operation?.live?.selectedRoom;
-      if (saved && roomTimelines.some(item => item.room === saved)) return saved;
-      return roomTimelines[0].room;
+      if (saved && roomAgendas.some(item => item.room === saved)) return saved;
+      return roomAgendas[0].room;
     });
-  }, [roomTimelines, operation?.live?.selectedRoom]);
+  }, [roomAgendas, operation?.live?.selectedRoom]);
 
   const hasGroupStationConflict = operation ? (operation.groupCount || operation.rotations.length || 1) > Math.max(1, operation.stations.length) : false;
 
@@ -922,7 +928,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
       return {
         ...current,
         stations,
-        timeline: recalcStructuredTimeline(selectedEvent!, stations, current.timeline),
+        agenda: recalcStructuredAgenda(selectedEvent!, stations, current.agenda),
         rotations: buildRotations(current.studentCount || getStudentCount(selectedEvent!), stations, current.groupCount)
       };
     });
@@ -934,7 +940,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
       return {
         ...current,
         stations,
-        timeline: recalcStructuredTimeline(selectedEvent!, stations, current.timeline),
+        agenda: recalcStructuredAgenda(selectedEvent!, stations, current.agenda),
         rotations: buildRotations(current.studentCount || getStudentCount(selectedEvent!), stations, current.groupCount)
       };
     });
@@ -946,7 +952,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
       return {
         ...current,
         stations,
-        timeline: recalcStructuredTimeline(selectedEvent!, stations, current.timeline),
+        agenda: recalcStructuredAgenda(selectedEvent!, stations, current.agenda),
         rotations: buildRotations(current.studentCount || getStudentCount(selectedEvent!), stations, current.groupCount)
       };
     });
@@ -964,7 +970,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
       return {
         ...current,
         stations,
-        timeline: recalcStructuredTimeline(selectedEvent!, stations, current.timeline),
+        agenda: recalcStructuredAgenda(selectedEvent!, stations, current.agenda),
         rotations: buildRotations(current.studentCount || getStudentCount(selectedEvent!), stations, current.groupCount)
       };
     });
@@ -993,7 +999,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
       return {
         ...current,
         stations,
-        timeline: recalcStructuredTimeline(selectedEvent!, stations, current.timeline),
+        agenda: recalcStructuredAgenda(selectedEvent!, stations, current.agenda),
         rotations: buildRotations(current.studentCount || getStudentCount(selectedEvent!), stations, current.groupCount)
       };
     });
@@ -1081,24 +1087,24 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
       return {
         ...current,
         stations,
-        timeline: recalcStructuredTimeline(selectedEvent!, stations, current.timeline.filter(block => block.stationId !== stationId)),
+        agenda: recalcStructuredAgenda(selectedEvent!, stations, current.agenda.filter(block => block.stationId !== stationId)),
         rotations: buildRotations(current.studentCount || getStudentCount(selectedEvent!), stations, current.groupCount),
         tasks: current.tasks.filter(task => task.stationId !== stationId)
       };
     });
   };
 
-  const recalcTimeline = () => {
+  const recalcAgenda = () => {
     saveOperation(current => ({
       ...current,
-      timeline: buildTimeline(selectedEvent!, current.stations)
+      agenda: buildAgenda(selectedEvent!, current.stations)
     }));
   };
 
   const insertBreak = () => {
     saveOperation(current => {
-      if (current.timeline.some(block => block.kind === 'BREAK')) return current;
-      const breakBlock: HouseOperationTimelineBlock = {
+      if (current.agenda.some(block => block.kind === 'BREAK')) return current;
+      const breakBlock: HouseOperationAgendaBlock = {
         id: makeId('eh-time'),
         sectionCode: 'D',
         kind: 'BREAK',
@@ -1107,14 +1113,14 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
         endTime: addMinutes(getProgramStart(selectedEvent!), 10),
         note: 'Nếu có mốc này, hoạt động sáng được hiểu là C1 trước nghỉ và C2 sau nghỉ.'
       };
-      const timeline = [...current.timeline];
-      const amIndex = timeline.findIndex(block => block.kind === 'EXPERIENCE_AM');
+      const agenda = [...current.agenda];
+      const amIndex = agenda.findIndex(block => block.kind === 'EXPERIENCE_AM');
       if (amIndex >= 0) {
-        const amBlock = timeline[amIndex];
+        const amBlock = agenda[amIndex];
         const totalStations = Math.max(1, amBlock.stationCount || 1);
         const firstCount = Math.ceil(totalStations / 2);
         const secondCount = Math.max(0, totalStations - firstCount);
-        timeline.splice(
+        agenda.splice(
           amIndex,
           1,
           { ...amBlock, sectionCode: 'C1', title: 'Hoạt động trải nghiệm sáng C1', stationCount: firstCount },
@@ -1129,18 +1135,18 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
           }
         );
       } else {
-        const lunchIndex = timeline.findIndex(block => block.kind === 'LUNCH');
-        const insertAt = lunchIndex >= 0 ? lunchIndex : Math.max(1, timeline.length - 1);
-        timeline.splice(insertAt, 0, breakBlock);
+        const lunchIndex = agenda.findIndex(block => block.kind === 'LUNCH');
+        const insertAt = lunchIndex >= 0 ? lunchIndex : Math.max(1, agenda.length - 1);
+        agenda.splice(insertAt, 0, breakBlock);
       }
-      return { ...current, timeline: recalcStructuredTimeline(selectedEvent!, current.stations, timeline) };
+      return { ...current, agenda: recalcStructuredAgenda(selectedEvent!, current.stations, agenda) };
     });
   };
 
   const addCommonActivity = () => {
     saveOperation(current => {
       const firstStation = current.stations[0];
-      const block: HouseOperationTimelineBlock = {
+      const block: HouseOperationAgendaBlock = {
         id: makeId('eh-time'),
         sectionCode: 'B',
         kind: 'COMMON',
@@ -1151,47 +1157,47 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
         room: firstStation?.areaDescription || firstStation?.room,
         note: 'Toàn bộ nhóm cùng tham gia mốc này.'
       };
-      const firstExperienceIndex = current.timeline.findIndex(item => item.kind === 'EXPERIENCE_AM' || item.kind === 'EXPERIENCE_PM');
-      const insertAt = firstExperienceIndex >= 0 ? firstExperienceIndex : Math.max(1, current.timeline.length - 1);
-      const timeline = [...current.timeline];
-      timeline.splice(insertAt, 0, block);
-      return { ...current, timeline: recalcStructuredTimeline(selectedEvent!, current.stations, timeline) };
+      const firstExperienceIndex = current.agenda.findIndex(item => item.kind === 'EXPERIENCE_AM' || item.kind === 'EXPERIENCE_PM');
+      const insertAt = firstExperienceIndex >= 0 ? firstExperienceIndex : Math.max(1, current.agenda.length - 1);
+      const agenda = [...current.agenda];
+      agenda.splice(insertAt, 0, block);
+      return { ...current, agenda: recalcStructuredAgenda(selectedEvent!, current.stations, agenda) };
     });
   };
 
-  const updateTimeline = (blockId: string, patch: Partial<HouseOperationTimelineBlock>) => {
+  const updateAgendaBlock = (blockId: string, patch: Partial<HouseOperationAgendaBlock>) => {
     saveOperation(current => ({
       ...current,
-      timeline: recalcStructuredTimeline(
+      agenda: recalcStructuredAgenda(
         selectedEvent!,
         current.stations,
-        current.timeline.map(block => block.id === blockId ? { ...block, ...patch } : block)
+        current.agenda.map(block => block.id === blockId ? { ...block, ...patch } : block)
       )
     }));
   };
 
-  const moveTimelineBlock = (blockId: string, delta: number) => {
+  const moveAgendaBlock = (blockId: string, delta: number) => {
     saveOperation(current => {
-      const index = current.timeline.findIndex(block => block.id === blockId);
+      const index = current.agenda.findIndex(block => block.id === blockId);
       const targetIndex = index + delta;
-      if (index < 0 || targetIndex < 0 || targetIndex >= current.timeline.length) return current;
-      const timeline = [...current.timeline];
-      const [moving] = timeline.splice(index, 1);
-      timeline.splice(targetIndex, 0, moving);
-      return { ...current, timeline: recalcStructuredTimeline(selectedEvent!, current.stations, timeline) };
+      if (index < 0 || targetIndex < 0 || targetIndex >= current.agenda.length) return current;
+      const agenda = [...current.agenda];
+      const [moving] = agenda.splice(index, 1);
+      agenda.splice(targetIndex, 0, moving);
+      return { ...current, agenda: recalcStructuredAgenda(selectedEvent!, current.stations, agenda) };
     });
   };
 
-  const removeTimelineBlock = (blockId: string) => {
+  const removeAgendaBlock = (blockId: string) => {
     saveOperation(current => {
-      if (current.timeline.length <= 1) return current;
-      const target = current.timeline.find(block => block.id === blockId);
-      const timeline = current.timeline.filter(block => block.id !== blockId);
-      const normalizedTimeline =
+      if (current.agenda.length <= 1) return current;
+      const target = current.agenda.find(block => block.id === blockId);
+      const agenda = current.agenda.filter(block => block.id !== blockId);
+      const normalizedAgenda =
         target?.sectionCode === 'D'
-          ? timeline.map(block => block.sectionCode === 'C1' ? { ...block, sectionCode: 'C' as const, title: 'Hoạt động trải nghiệm sáng' } : block)
-          : timeline;
-      return { ...current, timeline: recalcStructuredTimeline(selectedEvent!, current.stations, normalizedTimeline) };
+          ? agenda.map(block => block.sectionCode === 'C1' ? { ...block, sectionCode: 'C' as const, title: 'Hoạt động trải nghiệm sáng' } : block)
+          : agenda;
+      return { ...current, agenda: recalcStructuredAgenda(selectedEvent!, current.stations, normalizedAgenda) };
     });
   };
 
@@ -1267,8 +1273,8 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
     setFeedbackNote('');
   };
 
-  const printGroupTimelines = () => {
-    const rows = groupActivityTimelines.map((group, index) => {
+  const printGroupAgendas = () => {
+    const rows = groupActivityAgendas.map((group, index) => {
       const color = group.color || GROUP_COLORS[index % GROUP_COLORS.length];
       const items = group.blocks.map((block, blockIndex) => `
         <div class="block">
@@ -1285,7 +1291,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
             <h2>${group.name}</h2>
             <span>${group.studentCount} HS</span>
           </header>
-          ${items || '<p class="empty">Chưa có timeline hoạt động.</p>'}
+          ${items || '<p class="empty">Chưa có agenda hoạt động.</p>'}
         </section>
       `;
     }).join('');
@@ -1295,7 +1301,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
     printWindow.document.write(`
       <html>
         <head>
-          <title>Timeline nhóm - ${selectedEvent?.name || 'Einstein House'}</title>
+          <title>Agenda nhóm - ${selectedEvent?.name || 'Einstein House'}</title>
           <style>
             body { font-family: Inter, Arial, sans-serif; color: #0f172a; margin: 24px; }
             h1 { font-size: 22px; margin: 0 0 4px; }
@@ -1314,7 +1320,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
           </style>
         </head>
         <body>
-          <h1>Timeline hoạt động theo nhóm</h1>
+          <h1>Agenda hoạt động theo nhóm</h1>
           <div class="subtitle">${selectedEvent?.name || ''} • ${selectedEvent?.client || ''} • ${formatDate(getPrimaryDate(selectedEvent!))}</div>
           <div class="grid">${rows}</div>
           <script>window.onload = () => { window.print(); };</script>
@@ -1367,15 +1373,15 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
     );
   }
 
-  const currentBlock = operation.timeline.find(block => block.id === operation.live?.currentBlockId);
-  const selectedLiveGroup = liveGroupTimelines.find(group => group.id === (localLiveGroupId || operation.live?.selectedGroupId)) || liveGroupTimelines[0];
+  const currentBlock = operation.agenda.find(block => block.id === operation.live?.currentBlockId);
+  const selectedLiveGroup = liveGroupAgendas.find(group => group.id === (localLiveGroupId || operation.live?.selectedGroupId)) || liveGroupAgendas[0];
   const selectedLiveBlocks = selectedLiveGroup?.blocks || [];
   const activeGroupBlock = selectedLiveBlocks.find(block => getBlockState(block, liveNow) === 'NOW');
   const nextGroupBlock = selectedLiveBlocks.find(block => getBlockState(block, liveNow) === 'UPCOMING');
   const focusGroupBlock = activeGroupBlock || nextGroupBlock || selectedLiveBlocks[selectedLiveBlocks.length - 1];
-  const selectedRoomTimeline = roomTimelines.find(item => item.room === (localLiveRoom || operation.live?.selectedRoom)) || roomTimelines[0];
-  const activeRoomBlock = selectedRoomTimeline?.blocks.find(block => getBlockState(block, liveNow) === 'NOW');
-  const nextRoomBlock = selectedRoomTimeline?.blocks.find(block => getBlockState(block, liveNow) === 'UPCOMING');
+  const selectedRoomAgenda = roomAgendas.find(item => item.room === (localLiveRoom || operation.live?.selectedRoom)) || roomAgendas[0];
+  const activeRoomBlock = selectedRoomAgenda?.blocks.find(block => getBlockState(block, liveNow) === 'NOW');
+  const nextRoomBlock = selectedRoomAgenda?.blocks.find(block => getBlockState(block, liveNow) === 'UPCOMING');
   const focusRoomBlock = activeRoomBlock || nextRoomBlock;
   const handleLiveGroupSelect = (groupId: string) => {
     setLocalLiveGroupId(groupId);
@@ -1387,7 +1393,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
     if (!canEdit || publicMode) return;
     saveOperation(cur => ({ ...cur, live: { ...cur.live, selectedRoom: room, lastUpdatedAt: new Date().toISOString() } }));
   };
-  const scheduledArrival = operation.timeline.find(block => block.kind === 'OPENING')?.startTime || getProgramStart(selectedEvent);
+  const scheduledArrival = operation.agenda.find(block => block.kind === 'OPENING')?.startTime || getProgramStart(selectedEvent);
   const actualArrival = operation.live?.actualArrivalTime || scheduledArrival;
   const liveDelta = timeToMinutes(actualArrival) - timeToMinutes(scheduledArrival);
   const viewingEducationItems = (viewingEducationContext?.links || []).map(link => {
@@ -1535,7 +1541,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
               {[
                 ['CONTROL', Radio],
                 ['DESIGN', Wand2],
-                ['TIMELINE', TimerReset],
+                ['AGENDA', TimerReset],
                 ['TASKS', ClipboardCheck],
                 ['KNOWLEDGE', Library],
                 ['LIVE', PlayCircle],
@@ -1564,7 +1570,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                   <Metric title="Incidents open" value={operation.incidents.filter(i => i.status === 'OPEN').length} tone="rose" />
                 </div>
                 <div className="mt-4 space-y-2">
-                  {operation.timeline.slice(0, 5).map(block => (
+                  {operation.agenda.slice(0, 5).map(block => (
                     <div key={block.id} className={`flex items-center justify-between gap-3 rounded-lg border p-3 ${overlapWarnings.has(block.id) ? 'border-rose-200 bg-rose-50' : 'border-slate-100 bg-slate-50'}`}>
                       <div>
                         <p className="font-bold text-slate-800">{block.title}</p>
@@ -1579,7 +1585,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
               <section className="bg-white border border-slate-200 rounded-lg p-4">
                 <h3 className="font-black text-slate-900 flex items-center gap-2"><Sparkles size={18} />AI Assistant Prompt</h3>
                 <div className="mt-3 rounded-lg bg-cyan-50 border border-cyan-100 p-3 text-sm text-cyan-900 whitespace-pre-wrap">
-                  {`Tạo chương trình cho ${operation.studentCount} học sinh, ${operation.grade || 'Tiểu học'}, ${operation.stations.length} trạm: ${operation.stations.map(s => s.name).join(', ')}. Ưu tiên timeline không trùng, đủ thiết bị, có checklist setup và incident fallback.`}
+                  {`Tạo chương trình cho ${operation.studentCount} học sinh, ${operation.grade || 'Tiểu học'}, ${operation.stations.length} trạm: ${operation.stations.map(s => s.name).join(', ')}. Ưu tiên agenda không trùng, đủ thiết bị, có checklist setup và incident fallback.`}
                 </div>
                 <p className="mt-3 text-xs text-slate-500">Prompt này dùng dữ liệu thật của đoàn hiện tại để đưa vào AI Chat khi cần sinh script hoặc tối ưu kế hoạch.</p>
               </section>
@@ -1731,22 +1737,22 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
             </div>
           )}
 
-          {activeTab === 'TIMELINE' && (
+          {activeTab === 'AGENDA' && (
             <div className="grid grid-cols-1 xl:grid-cols-[1.2fr_0.8fr] gap-4">
               <section className="bg-white border border-slate-200 rounded-lg p-4">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                   <div>
-                    <h3 className="font-black text-slate-900 flex items-center gap-2"><TimerReset size={18} />Timeline tổng</h3>
+                    <h3 className="font-black text-slate-900 flex items-center gap-2"><TimerReset size={18} />Agenda tổng</h3>
                     <p className="mt-1 text-xs text-slate-500">Các mốc chung cho toàn đoàn: đến, show chung, nghỉ, ăn, ra về.</p>
                   </div>
                   <div className="flex gap-2">
                     <button onClick={addCommonActivity} disabled={!canEdit} className="px-3 py-2 rounded-lg border border-slate-200 text-sm font-bold disabled:text-slate-300">Thêm hoạt động chung</button>
                     <button onClick={insertBreak} disabled={!canEdit} className="px-3 py-2 rounded-lg border border-slate-200 text-sm font-bold disabled:text-slate-300">Thêm nghỉ giữa giờ</button>
-                    <button onClick={recalcTimeline} disabled={!canEdit} className="px-3 py-2 rounded-lg bg-slate-900 text-white text-sm font-bold disabled:bg-slate-300">Sinh mốc chung</button>
+                    <button onClick={recalcAgenda} disabled={!canEdit} className="px-3 py-2 rounded-lg bg-slate-900 text-white text-sm font-bold disabled:bg-slate-300">Sinh mốc chung</button>
                   </div>
                 </div>
                 <div className="mt-4 space-y-2">
-                  {operation.timeline.map(block => {
+                  {operation.agenda.map(block => {
                     if ((block.sectionCode === 'C2' || block.sectionCode === 'F') && (block.stationCount || 0) <= 0) return null;
                     const isExperience = block.kind === 'EXPERIENCE_AM' || block.kind === 'EXPERIENCE_PM';
                     const isCommon = block.kind === 'COMMON';
@@ -1757,17 +1763,17 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                             <span>{block.sectionCode || '-'}</span>
                             <span className="flex items-center gap-1 leading-none">
                               <span className="flex flex-col">
-                                <button type="button" disabled={!canEdit} onClick={() => moveTimelineBlock(block.id, -1)} className="text-[10px] text-slate-400 hover:text-slate-800 disabled:hover:text-slate-400">↑</button>
-                                <button type="button" disabled={!canEdit} onClick={() => moveTimelineBlock(block.id, 1)} className="text-[10px] text-slate-400 hover:text-slate-800 disabled:hover:text-slate-400">↓</button>
+                                <button type="button" disabled={!canEdit} onClick={() => moveAgendaBlock(block.id, -1)} className="text-[10px] text-slate-400 hover:text-slate-800 disabled:hover:text-slate-400">↑</button>
+                                <button type="button" disabled={!canEdit} onClick={() => moveAgendaBlock(block.id, 1)} className="text-[10px] text-slate-400 hover:text-slate-800 disabled:hover:text-slate-400">↓</button>
                               </span>
-                              <button type="button" disabled={!canEdit || operation.timeline.length <= 1} onClick={() => removeTimelineBlock(block.id)} className="text-slate-300 hover:text-rose-600 disabled:hover:text-slate-300" title="Xóa mốc">
+                              <button type="button" disabled={!canEdit || operation.agenda.length <= 1} onClick={() => removeAgendaBlock(block.id)} className="text-slate-300 hover:text-rose-600 disabled:hover:text-slate-300" title="Xóa mốc">
                                 <Trash2 size={12} />
                               </button>
                             </span>
                           </div>
-                          <input type="time" value={block.startTime} disabled={!canEdit} onChange={e => updateTimeline(block.id, { startTime: e.target.value })} className="border rounded-lg px-2 py-2 text-sm" />
-                          <input type="time" value={block.endTime} disabled={!canEdit} onChange={e => updateTimeline(block.id, { endTime: e.target.value })} className="border rounded-lg px-2 py-2 text-sm" />
-                          <input value={block.title} disabled={!canEdit} onChange={e => updateTimeline(block.id, { title: e.target.value })} className="border rounded-lg px-2 py-2 text-sm font-bold" />
+                          <input type="time" value={block.startTime} disabled={!canEdit} onChange={e => updateAgendaBlock(block.id, { startTime: e.target.value })} className="border rounded-lg px-2 py-2 text-sm" />
+                          <input type="time" value={block.endTime} disabled={!canEdit} onChange={e => updateAgendaBlock(block.id, { endTime: e.target.value })} className="border rounded-lg px-2 py-2 text-sm" />
+                          <input value={block.title} disabled={!canEdit} onChange={e => updateAgendaBlock(block.id, { title: e.target.value })} className="border rounded-lg px-2 py-2 text-sm font-bold" />
                         </div>
                         <div className="mt-2 grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_140px] gap-2">
                           {isCommon ? (
@@ -1776,7 +1782,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                               disabled={!canEdit}
                               onChange={e => {
                                 const station = operation.stations.find(item => item.id === e.target.value);
-                                updateTimeline(block.id, {
+                                updateAgendaBlock(block.id, {
                                   stationId: station?.id,
                                   title: station?.name || block.title,
                                   room: station?.areaDescription || station?.room,
@@ -1789,7 +1795,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                               {operation.stations.map(station => <option key={station.id} value={station.id}>{station.name}</option>)}
                             </select>
                           ) : (
-                            <input value={block.room || ''} disabled={!canEdit} onChange={e => updateTimeline(block.id, { room: e.target.value })} placeholder="Phòng/khu hoặc ghi chú" className="border rounded-lg px-2 py-2 text-sm" />
+                            <input value={block.room || ''} disabled={!canEdit} onChange={e => updateAgendaBlock(block.id, { room: e.target.value })} placeholder="Phòng/khu hoặc ghi chú" className="border rounded-lg px-2 py-2 text-sm" />
                           )}
                           {isExperience ? (
                             <label className="flex items-center gap-2 border rounded-lg px-2 py-2 bg-white">
@@ -1799,12 +1805,12 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                                 min={0}
                                 value={block.stationCount || 0}
                                 disabled={!canEdit}
-                                onChange={e => updateTimeline(block.id, { stationCount: Math.max(0, Number(e.target.value) || 0) })}
+                                onChange={e => updateAgendaBlock(block.id, { stationCount: Math.max(0, Number(e.target.value) || 0) })}
                                 className="min-w-0 flex-1 text-sm font-black outline-none"
                               />
                             </label>
                           ) : (
-                            <input value={block.note || ''} disabled={!canEdit} onChange={e => updateTimeline(block.id, { note: e.target.value })} placeholder="Ghi chú" className="border rounded-lg px-2 py-2 text-sm" />
+                            <input value={block.note || ''} disabled={!canEdit} onChange={e => updateAgendaBlock(block.id, { note: e.target.value })} placeholder="Ghi chú" className="border rounded-lg px-2 py-2 text-sm" />
                           )}
                         </div>
                         {block.warning && (
@@ -1823,7 +1829,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <h3 className="font-black text-slate-900 flex items-center gap-2"><Route size={18} />Thiết lập nhóm</h3>
-                    <p className="mt-1 text-xs text-slate-500">Nhập số nhóm, hệ thống sinh timeline hoạt động riêng để tránh trùng trạm cùng giờ.</p>
+                    <p className="mt-1 text-xs text-slate-500">Nhập số nhóm, hệ thống sinh agenda hoạt động riêng để tránh trùng trạm cùng giờ.</p>
                   </div>
                   <button onClick={regenerateRotations} disabled={!canEdit} className="text-sm font-bold text-teal-700 disabled:text-slate-300">Sinh lại</button>
                 </div>
@@ -1900,19 +1906,19 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
               <section className="xl:col-span-2 bg-white border border-slate-200 rounded-lg p-4">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                   <div>
-                    <h3 className="font-black text-slate-900 flex items-center gap-2"><TimerReset size={18} />Timeline hoạt động theo nhóm</h3>
+                    <h3 className="font-black text-slate-900 flex items-center gap-2"><TimerReset size={18} />Agenda hoạt động theo nhóm</h3>
                     <p className="mt-1 text-xs text-slate-500">Các nhóm chạy song song theo màu. Cùng một round sẽ có cùng mốc giờ, nhưng đi khu vực khác nhau.</p>
                   </div>
                   <div className="flex items-center gap-3">
-                    <span className="text-xs font-bold text-slate-500">Bắt đầu sau: {getActivityStartTime(operation.timeline, selectedEvent)}</span>
-                    <button onClick={printGroupTimelines} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-900 text-white text-xs font-black">
+                    <span className="text-xs font-bold text-slate-500">Bắt đầu sau: {getAgendaActivityStartTime(operation.agenda, selectedEvent)}</span>
+                    <button onClick={printGroupAgendas} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-900 text-white text-xs font-black">
                       <FileText size={15} />
                       Xuất PDF
                     </button>
                   </div>
                 </div>
                 <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-3">
-                  {groupActivityTimelines.map((group, groupIndex) => (
+                  {groupActivityAgendas.map((group, groupIndex) => (
                     <div key={group.id} className="rounded-lg border border-slate-100 bg-slate-50 p-3" style={{ borderTop: `5px solid ${group.color || GROUP_COLORS[groupIndex % GROUP_COLORS.length]}` }}>
                       <div className="flex items-center justify-between gap-3">
                         <h4 className="font-black text-slate-900">{group.name}</h4>
@@ -1928,7 +1934,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                             <p className="mt-1 text-xs text-slate-500">{block.room || 'Chưa gán vị trí'}{block.note ? ` • ${block.note}` : ''}</p>
                           </div>
                         ))}
-                        {group.blocks.length === 0 && <p className="text-sm text-slate-500">Chưa có khu vực/trạm để sinh timeline hoạt động.</p>}
+                        {group.blocks.length === 0 && <p className="text-sm text-slate-500">Chưa có khu vực/trạm để sinh agenda hoạt động.</p>}
                       </div>
                     </div>
                   ))}
@@ -2161,7 +2167,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                 <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3">
                   <div>
                     <h3 className="font-black text-slate-900 flex items-center gap-2"><PlayCircle size={18} />Timing Center</h3>
-                    <p className="mt-1 text-xs text-slate-500">Bản LIVE lấy từ timeline chuẩn. Nhập giờ đoàn đến thực tế để tự đẩy lịch buổi sáng; buổi chiều giữ nguyên.</p>
+                    <p className="mt-1 text-xs text-slate-500">Bản LIVE lấy từ agenda chuẩn. Nhập giờ đoàn đến thực tế để tự đẩy lịch buổi sáng; buổi chiều giữ nguyên.</p>
                   </div>
                   <div className="grid grid-cols-2 gap-2 min-w-full lg:min-w-[300px]">
                     <label className="block">
@@ -2181,7 +2187,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                   </div>
                 </div>
                 <div className={`mt-4 rounded-lg border p-3 text-sm font-bold ${liveDelta > 0 ? 'border-amber-100 bg-amber-50 text-amber-800' : liveDelta < 0 ? 'border-emerald-100 bg-emerald-50 text-emerald-800' : 'border-slate-100 bg-slate-50 text-slate-600'}`}>
-                  {liveDelta === 0 ? 'LIVE đang khớp timeline chuẩn.' : `Buổi sáng đang ${liveDelta > 0 ? 'trễ' : 'sớm'} ${Math.abs(liveDelta)} phút. Nghỉ trưa sẽ tự co/giãn, buổi chiều giữ nguyên.`}
+                  {liveDelta === 0 ? 'LIVE đang khớp agenda chuẩn.' : `Buổi sáng đang ${liveDelta > 0 ? 'trễ' : 'sớm'} ${Math.abs(liveDelta)} phút. Nghỉ trưa sẽ tự co/giãn, buổi chiều giữ nguyên.`}
                 </div>
                 {!publicMode && (
                   <div className="mt-3 rounded-lg border border-blue-100 bg-blue-50 p-3">
@@ -2196,7 +2202,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                 )}
 
                 <div className="mt-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-                  {liveGroupTimelines.map((group, groupIndex) => {
+                  {liveGroupAgendas.map((group, groupIndex) => {
                     const active = group.blocks.find(block => getBlockState(block, liveNow) === 'NOW');
                     const next = group.blocks.find(block => getBlockState(block, liveNow) === 'UPCOMING');
                     const focus = active || next || group.blocks[group.blocks.length - 1];
@@ -2226,11 +2232,11 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                 <h3 className="font-black text-slate-900 flex items-center gap-2"><Users size={18} />Màn hình đội dẫn đoàn</h3>
                 <select
                   value={selectedLiveGroup?.id || ''}
-                  disabled={liveGroupTimelines.length === 0}
+                  disabled={liveGroupAgendas.length === 0}
                   onChange={event => handleLiveGroupSelect(event.target.value)}
                   className="mt-4 w-full border rounded-lg px-3 py-2 text-sm font-black"
                 >
-                  {liveGroupTimelines.map(group => <option key={group.id} value={group.id}>{group.name}</option>)}
+                  {liveGroupAgendas.map(group => <option key={group.id} value={group.id}>{group.name}</option>)}
                 </select>
                 <div className="mt-4 rounded-lg border border-blue-100 bg-blue-50 p-4">
                   <p className="text-xs font-black uppercase text-blue-700">{selectedLiveGroup?.name || 'Chưa chọn nhóm'}</p>
@@ -2251,16 +2257,16 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                 <h3 className="font-black text-slate-900 flex items-center gap-2"><Building2 size={18} />Màn hình nhân viên tại phòng</h3>
                 <p className="mt-1 text-xs text-slate-500">Chọn khu vực/phòng để xem lần lượt nhóm nào sẽ đến, đang đến hoặc đã xong.</p>
                 <select
-                  value={selectedRoomTimeline?.room || ''}
-                  disabled={roomTimelines.length === 0}
+                  value={selectedRoomAgenda?.room || ''}
+                  disabled={roomAgendas.length === 0}
                   onChange={event => handleLiveRoomSelect(event.target.value)}
                   className="mt-4 w-full border rounded-lg px-3 py-2 text-sm font-black"
                 >
-                  {roomTimelines.map(item => <option key={item.room} value={item.room}>{item.room}</option>)}
+                  {roomAgendas.map(item => <option key={item.room} value={item.room}>{item.room}</option>)}
                 </select>
                 <div className="mt-4 rounded-lg border border-violet-100 bg-violet-50 p-4">
                   <p className="text-xs font-black uppercase text-violet-700">Đang theo dõi khu vực</p>
-                  <h4 className="mt-2 text-2xl font-black text-violet-950">{selectedRoomTimeline?.room || 'Chưa có khu vực'}</h4>
+                  <h4 className="mt-2 text-2xl font-black text-violet-950">{selectedRoomAgenda?.room || 'Chưa có khu vực'}</h4>
                   <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="rounded-lg bg-white/80 border border-violet-100 p-3">
                       <p className="text-xs font-black uppercase text-violet-600">Đang đón</p>
@@ -2282,7 +2288,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                   </div>
                 </div>
                 <div className="mt-4 space-y-2">
-                  {(selectedRoomTimeline?.blocks || []).map(block => {
+                  {(selectedRoomAgenda?.blocks || []).map(block => {
                     const state = getBlockState(block, liveNow);
                     return (
                       <div key={`${block.groupId}-${block.id}`} className={`rounded-lg border p-3 flex items-center justify-between gap-3 ${state === 'NOW' ? 'border-emerald-200 bg-emerald-50' : state === 'UPCOMING' ? 'border-amber-100 bg-amber-50' : 'border-slate-100 bg-slate-50'}`}>
@@ -2297,7 +2303,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                       </div>
                     );
                   })}
-                  {!selectedRoomTimeline && <p className="text-sm text-slate-500">Chưa có lịch phòng.</p>}
+                  {!selectedRoomAgenda && <p className="text-sm text-slate-500">Chưa có lịch phòng.</p>}
                 </div>
               </section>
               )}

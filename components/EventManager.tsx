@@ -109,7 +109,7 @@ const DETAIL_TABS: { key: EventDetailTab; section: EventDetailSection; label: st
   { key: 'LAYOUT', section: 'PROGRAM_CONTENT', label: 'Sơ đồ trạm', icon: MapPin },
   { key: 'EH_CONTROL', section: 'PROGRAM_CONTENT', label: 'CONTROL', icon: Radio },
   { key: 'EH_DESIGN', section: 'PROGRAM_CONTENT', label: 'DESIGN', icon: Wand2 },
-  { key: 'EH_TIMELINE', section: 'PROGRAM_CONTENT', label: 'TIMELINE', icon: TimerReset },
+  { key: 'EH_AGENDA', section: 'PROGRAM_CONTENT', label: 'AGENDA', icon: TimerReset },
   { key: 'EH_TASKS', section: 'PROGRAM_CONTENT', label: 'TASKS', icon: ClipboardCheck },
   { key: 'EH_KNOWLEDGE', section: 'PROGRAM_CONTENT', label: 'KNOWLEDGE', icon: Library },
   { key: 'EH_LIVE', section: 'PROGRAM_CONTENT', label: 'LIVE', icon: PlayCircle },
