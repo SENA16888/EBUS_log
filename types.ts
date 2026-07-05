@@ -522,6 +522,18 @@ export interface HouseOperationInstance {
   reportNote?: string;
 }
 
+export interface EventContentProgram {
+  id: string;
+  name: string;
+  description?: string;
+  date?: string;
+  sessions?: ('MORNING' | 'AFTERNOON' | 'EVENING')[];
+  layout?: EventLayout;
+  houseOperation?: HouseOperationInstance;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface Event {
   id: string;
   name: string;
@@ -553,6 +565,7 @@ export interface Event {
   checklist?: EventChecklist;
   timeline?: EventTimelineEntry[];
   houseOperation?: HouseOperationInstance;
+  contentPrograms?: EventContentProgram[];
 }
 
 export interface Transaction {

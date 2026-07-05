@@ -1,6 +1,6 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { Event, InventoryItem, EventStatus, ComboPackage, Employee, EventExpense, EventAdvanceRequest, EventStaffAllocation, Quotation, EventLayout, EventLayoutBlock, LayoutPackageSource, ChecklistDirection, ChecklistStatus, ChecklistSignature, EventTimelineEntry, EventTimelinePhase, EventProfile, EventVenueType, EducationActivity, LearningTrack } from '../types';
+import { Event, InventoryItem, EventStatus, ComboPackage, Employee, EventExpense, EventAdvanceRequest, EventStaffAllocation, Quotation, EventLayout, EventLayoutBlock, LayoutPackageSource, ChecklistDirection, ChecklistStatus, ChecklistSignature, EventTimelineEntry, EventTimelinePhase, EventProfile, EventVenueType, EducationActivity, LearningTrack, EventContentProgram } from '../types';
 import {
   Calendar, MapPin, Box, ArrowLeft, Plus, Minus, X, Layers, Building2,
   Users, DollarSign, Trash2, Truck, BookOpen, 
@@ -83,6 +83,18 @@ type EventScheduleItem = { date: string; sessions: EventSession[] };
 type EventDetailSection = 'PREP_LOGISTICS' | 'PROGRAM_CONTENT';
 type EventDetailTab = 'EQUIPMENT' | 'STAFF' | 'PROFILE' | 'COSTS' | 'LAYOUT' | 'CHECKLIST' | 'TIMELINE' | `EH_${EinsteinHouseModuleTab}`;
 type DetailIcon = React.ComponentType<{ size?: number; className?: string }>;
+type ContentProgramView = {
+  id: string;
+  name: string;
+  description?: string;
+  date?: string;
+  sessions?: EventSession[];
+  layout?: EventLayout;
+  houseOperation?: Event['houseOperation'];
+  isPrimary: boolean;
+};
+
+const PRIMARY_CONTENT_PROGRAM_ID = 'primary-content-program';
 
 const DETAIL_SECTIONS: { key: EventDetailSection; label: string; description: string; Icon: DetailIcon }[] = [
   {
@@ -478,6 +490,8 @@ type AutoStaffSlotStation = {
 type AutoStaffSlot = {
   key: string;
   baseKey: string;
+  programId?: string;
+  programName?: string;
   station: AutoStaffSlotStation;
   date: string;
   sessions: EventSession[];
@@ -535,10 +549,10 @@ const getAutoStaffSlotStations = (event: Event): AutoStaffSlotStation[] => {
   }));
 };
 
-const getStaffSlotAutoKey = (stationId: string, date: string, sessions: EventSession[]) =>
-  `staff-slot-${stationId}-${date}-${sessions.join('-') || 'SESSION'}`;
+const getStaffSlotAutoKey = (stationId: string, date: string, sessions: EventSession[], programId?: string) =>
+  `staff-slot-${programId ? `${programId}-` : ''}${stationId}-${date}-${sessions.join('-') || 'SESSION'}`;
 
-const getAutoStaffSlots = (event: Event, splitKeys: Set<string>): AutoStaffSlot[] => {
+const getAutoStaffSlots = (event: Event, splitKeys: Set<string>, programId?: string, programName?: string): AutoStaffSlot[] => {
   const stations = getAutoStaffSlotStations(event);
   const schedule = getEventSchedule(event);
   const safeSchedule = schedule.length > 0
@@ -546,16 +560,16 @@ const getAutoStaffSlots = (event: Event, splitKeys: Set<string>): AutoStaffSlot[
     : [{ date: event.startDate, sessions: event.session ? [event.session] : ['MORNING' as EventSession] }];
   return stations.flatMap(station => safeSchedule.flatMap(item => {
     const sessions = item.sessions.length > 0 ? item.sessions : (event.session ? [event.session] : ['MORNING' as EventSession]);
-    const baseKey = getStaffSlotAutoKey(station.id, item.date, sessions);
+    const baseKey = getStaffSlotAutoKey(station.id, item.date, sessions, programId);
     const hasSplitAssignment = sessions.length > 1 && sessions.some(session =>
-      (event.staff || []).some(staff => staff.autoKey === getStaffSlotAutoKey(station.id, item.date, [session]))
+      (event.staff || []).some(staff => staff.autoKey === getStaffSlotAutoKey(station.id, item.date, [session], programId))
     );
     const slotSessionGroups = sessions.length > 1 && (splitKeys.has(baseKey) || hasSplitAssignment)
       ? sessions.map(session => [session])
       : [sessions];
     return slotSessionGroups.map(slotSessions => {
       const isSplitChild = slotSessions.length === 1 && sessions.length > 1;
-      const slotKey = isSplitChild ? getStaffSlotAutoKey(station.id, item.date, slotSessions) : baseKey;
+      const slotKey = isSplitChild ? getStaffSlotAutoKey(station.id, item.date, slotSessions, programId) : baseKey;
       const slotHours = getStaffWorkHours(slotSessions);
       const slotCompensation = calculateStaffCompensation(slotHours);
       const assigned = (event.staff || []).find(staff =>
@@ -565,6 +579,8 @@ const getAutoStaffSlots = (event: Event, splitKeys: Set<string>): AutoStaffSlot[
       return {
         key: slotKey,
         baseKey,
+        programId,
+        programName,
         station,
         date: item.date,
         sessions: slotSessions,
@@ -655,6 +671,58 @@ const getSessionsForDate = (event: Event, date: string): EventSession[] | null =
   const schedule = getEventSchedule(event);
   const match = schedule.find(item => item.date === date);
   return match ? match.sessions : null;
+};
+
+const clonePlain = <T,>(value: T): T => JSON.parse(JSON.stringify(value));
+
+const getProgramDefaultDate = (event: Event) =>
+  getEventSchedule(event)[0]?.date || event.startDate || new Date().toISOString().slice(0, 10);
+
+const getProgramDefaultSessions = (event: Event): EventSession[] =>
+  getEventSchedule(event)[0]?.sessions || (event.session ? [event.session] : ['MORNING']);
+
+const getContentProgramViews = (event: Event): ContentProgramView[] => {
+  const primary: ContentProgramView = {
+    id: PRIMARY_CONTENT_PROGRAM_ID,
+    name: 'Chương trình chính',
+    description: 'Dữ liệu nội dung mặc định của sự kiện',
+    date: getProgramDefaultDate(event),
+    sessions: getProgramDefaultSessions(event),
+    layout: event.layout,
+    houseOperation: event.houseOperation,
+    isPrimary: true
+  };
+  const clones: ContentProgramView[] = (event.contentPrograms || []).map(program => ({
+    id: program.id,
+    name: program.name,
+    description: program.description,
+    date: program.date,
+    sessions: program.sessions as EventSession[] | undefined,
+    layout: program.layout,
+    houseOperation: program.houseOperation,
+    isPrimary: false
+  }));
+  return [primary, ...clones];
+};
+
+const getContentProgramEvent = (event: Event, program: ContentProgramView): Event => {
+  const programDate = program.date || getProgramDefaultDate(event);
+  const programSessions = program.sessions && program.sessions.length > 0 ? program.sessions : getProgramDefaultSessions(event);
+  return {
+    ...event,
+    startDate: programDate,
+    endDate: programDate,
+    session: programSessions[0],
+    schedule: [{ date: programDate, sessions: programSessions }],
+    layout: program.layout,
+    houseOperation: program.houseOperation
+  };
+};
+
+const getProgramDateLabel = (program: ContentProgramView, fallbackEvent: Event) => {
+  const date = program.date || getProgramDefaultDate(fallbackEvent);
+  const sessions = program.sessions && program.sessions.length > 0 ? program.sessions : getProgramDefaultSessions(fallbackEvent);
+  return `${date} • ${sessions.map(session => SESSION_LABELS[session]).join(' + ')}`;
 };
 
 const getEventPrimaryDate = (event: Event): string | null => {
@@ -833,6 +901,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
     const now = new Date();
     return { year: now.getFullYear(), month: now.getMonth() };
   });
+  const [activeContentProgramId, setActiveContentProgramId] = useState(PRIMARY_CONTENT_PROGRAM_ID);
   const calendarMonthLabel = useMemo(
     () => new Date(calendarView.year, calendarView.month, 1).toLocaleDateString('vi-VN', { month: 'long', year: 'numeric' }),
     [calendarView]
@@ -885,6 +954,24 @@ export const EventManager: React.FC<EventManagerProps> = ({
   const [viewingItem, setViewingItem] = useState<InventoryItem | null>(null);
 
   const selectedEvent = events.find(e => e.id === selectedEventId);
+  const contentProgramViews = useMemo(
+    () => selectedEvent ? getContentProgramViews(selectedEvent) : [],
+    [selectedEvent]
+  );
+  const activeContentProgram = useMemo(
+    () => contentProgramViews.find(program => program.id === activeContentProgramId) || contentProgramViews[0],
+    [activeContentProgramId, contentProgramViews]
+  );
+  const activeContentEvent = useMemo(
+    () => selectedEvent && activeContentProgram ? getContentProgramEvent(selectedEvent, activeContentProgram) : selectedEvent,
+    [activeContentProgram, selectedEvent]
+  );
+  const eventsForActiveContent = useMemo(
+    () => selectedEvent && activeContentEvent
+      ? events.map(event => event.id === selectedEvent.id ? activeContentEvent : event)
+      : events,
+    [activeContentEvent, events, selectedEvent]
+  );
   const eventProfile = selectedEvent?.eventProfile || {};
   const canEditProfile = canEdit && isAdmin;
   const autoAdvancePlan = useMemo(
@@ -892,8 +979,18 @@ export const EventManager: React.FC<EventManagerProps> = ({
     [selectedEvent]
   );
   const autoStaffSlots = useMemo(
-    () => selectedEvent ? getAutoStaffSlots(selectedEvent, splitAutoStaffSlotKeys) : [],
-    [selectedEvent, splitAutoStaffSlotKeys]
+    () => selectedEvent
+      ? contentProgramViews.flatMap(program => {
+        const programEvent = getContentProgramEvent(selectedEvent, program);
+        return getAutoStaffSlots(
+          programEvent,
+          splitAutoStaffSlotKeys,
+          program.isPrimary ? undefined : program.id,
+          contentProgramViews.length > 1 ? program.name : undefined
+        );
+      })
+      : [],
+    [contentProgramViews, selectedEvent, splitAutoStaffSlotKeys]
   );
   const filledAutoStaffSlots = autoStaffSlots.filter(slot => slot.assigned).length;
   const linkedQuotation = selectedEvent?.quotationId ? quotations.find(q => q.id === selectedEvent.quotationId) : null;
@@ -916,6 +1013,99 @@ export const EventManager: React.FC<EventManagerProps> = ({
       onUpdateEvent(selectedEvent.id, { advanceRequests: nextRequests });
     }
   }, [autoAdvancePlan, canEdit, onUpdateEvent, selectedEvent]);
+
+  useEffect(() => {
+    if (!selectedEvent) return;
+    if (!contentProgramViews.some(program => program.id === activeContentProgramId)) {
+      setActiveContentProgramId(PRIMARY_CONTENT_PROGRAM_ID);
+    }
+  }, [activeContentProgramId, contentProgramViews, selectedEvent]);
+
+  const updateContentProgram = (programId: string, patch: Partial<EventContentProgram>) => {
+    if (!selectedEvent || !onUpdateEvent || programId === PRIMARY_CONTENT_PROGRAM_ID) return;
+    const nextPrograms = (selectedEvent.contentPrograms || []).map(program =>
+      program.id === programId
+        ? { ...program, ...patch, updatedAt: new Date().toISOString() }
+        : program
+    );
+    onUpdateEvent(selectedEvent.id, { contentPrograms: nextPrograms });
+  };
+
+  const removeContentProgram = (programId: string) => {
+    if (!selectedEvent || !onUpdateEvent || programId === PRIMARY_CONTENT_PROGRAM_ID) return;
+    if (!window.confirm('Xóa chương trình nội dung này? Hồ sơ và hậu cần chung của sự kiện vẫn được giữ.')) return;
+    const nextPrograms = (selectedEvent.contentPrograms || []).filter(program => program.id !== programId);
+    onUpdateEvent(selectedEvent.id, { contentPrograms: nextPrograms });
+    setActiveContentProgramId(PRIMARY_CONTENT_PROGRAM_ID);
+  };
+
+  const toggleContentProgramSession = (program: ContentProgramView, session: EventSession) => {
+    if (program.isPrimary) return;
+    const current = program.sessions && program.sessions.length > 0 ? program.sessions : getProgramDefaultSessions(selectedEvent!);
+    const next = current.includes(session)
+      ? current.filter(item => item !== session)
+      : [...current, session];
+    updateContentProgram(program.id, { sessions: next.length > 0 ? next : [session] });
+  };
+
+  const persistActiveContentUpdates = (updates: Partial<Event>) => {
+    if (!selectedEvent || !onUpdateEvent || !activeContentProgram) return;
+    if (activeContentProgram.isPrimary) {
+      onUpdateEvent(selectedEvent.id, updates);
+      return;
+    }
+
+    const rootUpdates: Partial<Event> = {};
+    Object.entries(updates).forEach(([key, value]) => {
+      if (key !== 'layout' && key !== 'houseOperation') {
+        (rootUpdates as any)[key] = value;
+      }
+    });
+
+    const nextPrograms = (selectedEvent.contentPrograms || []).map(program => {
+      if (program.id !== activeContentProgram.id) return program;
+      return {
+        ...program,
+        ...('layout' in updates ? { layout: updates.layout } : {}),
+        ...('houseOperation' in updates ? { houseOperation: updates.houseOperation } : {}),
+        updatedAt: new Date().toISOString()
+      };
+    });
+    onUpdateEvent(selectedEvent.id, { ...rootUpdates, contentPrograms: nextPrograms });
+  };
+
+  const handleUpdateActiveContentEvent = (eventId: string, updates: Partial<Event>) => {
+    if (!selectedEvent || eventId !== selectedEvent.id) {
+      onUpdateEvent?.(eventId, updates);
+      return;
+    }
+    persistActiveContentUpdates(updates);
+  };
+
+  const createContentProgramClone = () => {
+    if (!selectedEvent || !onUpdateEvent) return;
+    const sourceProgram = activeContentProgram || contentProgramViews[0];
+    const sourceEvent = activeContentEvent || selectedEvent;
+    const now = new Date().toISOString();
+    const id = makeEventManagerId('content-program');
+    const clone: EventContentProgram = {
+      id,
+      name: `Chương trình ${contentProgramViews.length + 1}`,
+      description: `Clone từ ${sourceProgram?.name || 'chương trình chính'}`,
+      date: sourceProgram?.date || getProgramDefaultDate(selectedEvent),
+      sessions: sourceProgram?.sessions && sourceProgram.sessions.length > 0
+        ? [...sourceProgram.sessions]
+        : getProgramDefaultSessions(sourceEvent),
+      layout: clonePlain(sourceEvent.layout || { floorplanImage: '', blocks: [] }),
+      houseOperation: sourceEvent.houseOperation ? clonePlain(sourceEvent.houseOperation) : undefined,
+      createdAt: now,
+      updatedAt: now
+    };
+    onUpdateEvent(selectedEvent.id, { contentPrograms: [...(selectedEvent.contentPrograms || []), clone] });
+    setDetailSection('PROGRAM_CONTENT');
+    setDetailTab('EH_CONTROL');
+    setActiveContentProgramId(id);
+  };
 
   const groupedEventsByMonth = useMemo(() => {
     const buckets: Record<string, Event[]> = {};
@@ -1203,7 +1393,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
 
   const handleSyncFromHouseOperation = () => {
     if (!selectedEvent || !onUpdateEvent) return;
-    const stations = selectedEvent.houseOperation?.stations || [];
+    const stations = activeContentEvent?.houseOperation?.stations || [];
     const targetMap = new Map<string, number>();
     stations.forEach(station => {
       (station.equipment || []).forEach(item => {
@@ -1227,7 +1417,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
       });
     });
     onUpdateEvent(selectedEvent.id, { items: nextItems });
-    alert(`Đã đồng bộ ${targetMap.size} thiết bị từ EH OS sang sự kiện.`);
+    alert(`Đã đồng bộ ${targetMap.size} thiết bị từ ${activeContentProgram?.name || 'EH OS'} sang sự kiện.`);
   };
 
   const handleCreateOrder = () => {
@@ -1325,7 +1515,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
     const allocation: EventStaffAllocation = {
       id: slot.assigned?.id || makeEventManagerId('staff-slot'),
       employeeId,
-      task: `Phụ trách trạm ${slot.station.name}`,
+      task: `${slot.programName ? `${slot.programName} • ` : ''}Phụ trách trạm ${slot.station.name}`,
       unit: 'HOUR',
       quantity: slot.hours,
       rate: STAFF_HOURLY_RATE,
@@ -1356,13 +1546,13 @@ export const EventManager: React.FC<EventManagerProps> = ({
     });
     if (!slot.assigned || !onUpdateEvent) return;
     const firstSession = slot.sessions[0];
-    const firstKey = getStaffSlotAutoKey(slot.station.id, slot.date, [firstSession]);
+    const firstKey = getStaffSlotAutoKey(slot.station.id, slot.date, [firstSession], slot.programId);
     const hours = getStaffWorkHours([firstSession]);
     const compensation = calculateStaffCompensation(hours);
     const converted: EventStaffAllocation = {
       ...slot.assigned,
       id: slot.assigned.id || makeEventManagerId('staff-slot'),
-      task: `Phụ trách trạm ${slot.station.name}`,
+      task: `${slot.programName ? `${slot.programName} • ` : ''}Phụ trách trạm ${slot.station.name}`,
       unit: 'HOUR',
       quantity: hours,
       rate: STAFF_HOURLY_RATE,
@@ -1606,7 +1796,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
 
 
 
-  const eventLayout: EventLayout = selectedEvent?.layout || { floorplanImage: '', blocks: [] };
+  const eventLayout: EventLayout = activeContentEvent?.layout || { floorplanImage: '', blocks: [] };
 
   const layoutPackageOptions = useMemo(() => {
     const options: { value: string; label: string; displayName: string; source: LayoutPackageSource; rawId: string }[] = [];
@@ -1638,7 +1828,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
 
   const persistLayout = (layout: EventLayout) => {
     if (!selectedEvent || !onUpdateEvent) return;
-    onUpdateEvent(selectedEvent.id, { layout });
+    persistActiveContentUpdates({ layout });
   };
 
   const handleFloorplanUpload = (file?: File | null) => {
@@ -1879,7 +2069,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
       staffId: '',
       staffName: ''
     }));
-  }, [selectedEventId]);
+  }, [selectedEventId, activeContentProgramId]);
 
   const renderLayoutBoard = (variant: 'main' | 'fullscreen') => {
     const ratio = eventLayout.floorplanAspectRatio || 16 / 9;
@@ -2331,6 +2521,116 @@ export const EventManager: React.FC<EventManagerProps> = ({
                 })}
               </div>
 
+              {detailSection === 'PROGRAM_CONTENT' && (
+                <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm space-y-3">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                    <div>
+                      <p className="text-[11px] font-black uppercase tracking-widest text-slate-400">Chương trình nội dung</p>
+                      <p className="text-sm font-semibold text-slate-700">Hồ sơ dùng chung, mỗi chương trình có Sơ đồ, Design, Agenda, Knowledge, Live và Report riêng.</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={createContentProgramClone}
+                      disabled={!canEdit || !onUpdateEvent}
+                      className="inline-flex items-center justify-center gap-2 rounded-lg bg-teal-600 px-4 py-2 text-sm font-black text-white hover:bg-teal-700 disabled:bg-slate-200 disabled:text-slate-500"
+                    >
+                      <Plus size={16}/> {contentProgramViews.length > 1 ? 'Clone chương trình' : 'Bật chế độ nâng cao'}
+                    </button>
+                  </div>
+
+                  <div className="flex gap-2 overflow-x-auto pb-1">
+                    {contentProgramViews.map(program => {
+                      const operation = program.houseOperation;
+                      const isSelected = activeContentProgram?.id === program.id;
+                      return (
+                        <button
+                          key={program.id}
+                          type="button"
+                          onClick={() => setActiveContentProgramId(program.id)}
+                          className={`min-w-[220px] rounded-xl border p-3 text-left transition ${
+                            isSelected
+                              ? 'border-teal-500 bg-teal-50 text-teal-900'
+                              : 'border-slate-200 bg-slate-50/60 text-slate-600 hover:border-teal-200'
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <p className="text-sm font-black leading-snug">{program.name}</p>
+                            {program.isPrimary && (
+                              <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-black text-slate-500 border border-slate-200">Gốc</span>
+                            )}
+                          </div>
+                          <p className="mt-1 text-[11px] font-semibold text-slate-500">{getProgramDateLabel(program, selectedEvent)}</p>
+                          <p className="mt-2 text-[11px] text-slate-500">
+                            {operation?.stations?.length || 0} trạm • {operation?.agenda?.length || 0} mốc agenda • {program.layout?.blocks?.length || 0} block sơ đồ
+                          </p>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {activeContentProgram && !activeContentProgram.isPrimary && (
+                    <div className="grid grid-cols-1 lg:grid-cols-[1.2fr_0.8fr_1fr_auto] gap-3 rounded-xl border border-teal-100 bg-teal-50/50 p-3">
+                      <div>
+                        <label className="block text-[10px] font-black text-teal-700 uppercase mb-1">Tên chương trình</label>
+                        <input
+                          className="w-full rounded-lg border border-teal-100 bg-white px-3 py-2 text-sm font-semibold outline-none focus:ring-2 focus:ring-teal-500"
+                          value={activeContentProgram.name}
+                          onChange={e => updateContentProgram(activeContentProgram.id, { name: e.target.value })}
+                          disabled={!canEdit}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-black text-teal-700 uppercase mb-1">Ngày tổ chức</label>
+                        <input
+                          type="date"
+                          className="w-full rounded-lg border border-teal-100 bg-white px-3 py-2 text-sm font-semibold outline-none focus:ring-2 focus:ring-teal-500"
+                          value={activeContentProgram.date || getProgramDefaultDate(selectedEvent)}
+                          onChange={e => updateContentProgram(activeContentProgram.id, { date: e.target.value })}
+                          disabled={!canEdit}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-black text-teal-700 uppercase mb-1">Buổi</label>
+                        <div className="flex flex-wrap gap-2">
+                          {SESSION_OPTIONS.map(option => {
+                            const sessions = activeContentProgram.sessions && activeContentProgram.sessions.length > 0
+                              ? activeContentProgram.sessions
+                              : getProgramDefaultSessions(selectedEvent);
+                            const checked = sessions.includes(option.value);
+                            return (
+                              <button
+                                key={option.value}
+                                type="button"
+                                onClick={() => toggleContentProgramSession(activeContentProgram, option.value)}
+                                disabled={!canEdit}
+                                className={`rounded-lg border px-3 py-2 text-xs font-black ${
+                                  checked
+                                    ? 'border-blue-500 bg-blue-50 text-blue-700'
+                                    : 'border-slate-200 bg-white text-slate-500'
+                                } disabled:opacity-50`}
+                              >
+                                {option.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                      <div className="flex items-end">
+                        <button
+                          type="button"
+                          onClick={() => removeContentProgram(activeContentProgram.id)}
+                          disabled={!canEdit}
+                          className="inline-flex h-10 items-center justify-center rounded-lg border border-red-200 bg-white px-3 text-red-500 hover:bg-red-50 disabled:opacity-50"
+                          title="Xóa chương trình clone"
+                        >
+                          <Trash2 size={16}/>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="flex gap-4 md:gap-6 pt-3 border-t border-slate-100 overflow-x-auto">
                 {visibleDetailTabs.map(tab => {
                   const TabIcon = tab.icon;
@@ -2380,10 +2680,10 @@ export const EventManager: React.FC<EventManagerProps> = ({
                       </button>
                       <button
                         onClick={handleSyncFromHouseOperation}
-                        disabled={!selectedEvent.houseOperation?.stations?.length}
-                        className={`px-4 py-2 rounded-lg text-sm font-bold border ${selectedEvent.houseOperation?.stations?.length ? 'bg-teal-50 text-teal-700 border-teal-200 hover:bg-teal-100' : 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'}`}
+                        disabled={!activeContentEvent?.houseOperation?.stations?.length}
+                        className={`px-4 py-2 rounded-lg text-sm font-bold border ${activeContentEvent?.houseOperation?.stations?.length ? 'bg-teal-50 text-teal-700 border-teal-200 hover:bg-teal-100' : 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'}`}
                       >
-                        Đồng bộ từ EH OS
+                        Đồng bộ từ {activeContentProgram?.name || 'chương trình'}
                       </button>
                       <button
                         onClick={handleRemoveSelectedItems}
@@ -2653,7 +2953,14 @@ export const EventManager: React.FC<EventManagerProps> = ({
                             <div key={slot.key} className={`rounded-xl border p-4 transition ${slot.assigned ? 'border-teal-200 bg-teal-50/50' : 'border-slate-200 bg-slate-50/60'}`}>
                               <div className="flex items-start justify-between gap-3">
                                 <div>
-                                  <p className="font-black text-slate-800">{slot.station.name}</p>
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <p className="font-black text-slate-800">{slot.station.name}</p>
+                                    {slot.programName && (
+                                      <span className="rounded-full bg-teal-100 px-2 py-0.5 text-[10px] font-black text-teal-700">
+                                        {slot.programName}
+                                      </span>
+                                    )}
+                                  </div>
                                   <p className="text-xs text-slate-500">
                                     {slot.station.packageName || 'Trạm/khu vực trong DESIGN'}
                                     {slot.station.areaDescription ? ` • ${slot.station.areaDescription}` : ''}
@@ -3105,9 +3412,101 @@ export const EventManager: React.FC<EventManagerProps> = ({
                 </div>
               )}
 
-              {getHouseModuleTab(detailTab) && selectedEvent && (
+              {detailTab === 'EH_CONTROL' && selectedEvent && (
+                <div className="space-y-4">
+                  <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+                    <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                      <div>
+                        <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
+                          <Radio size={18} className="text-blue-600"/> Overview chương trình
+                        </h3>
+                        <p className="mt-1 text-sm text-slate-500">Một hồ sơ sự kiện dùng chung, nhiều chương trình nội dung vận hành độc lập.</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={createContentProgramClone}
+                        disabled={!canEdit || !onUpdateEvent}
+                        className="inline-flex items-center justify-center gap-2 rounded-lg bg-teal-600 px-4 py-2 text-sm font-black text-white hover:bg-teal-700 disabled:bg-slate-200 disabled:text-slate-500"
+                      >
+                        <Plus size={16}/> Clone chương trình
+                      </button>
+                    </div>
+                    <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
+                      <div className="rounded-xl border border-teal-100 bg-teal-50 p-4">
+                        <p className="text-[11px] font-black uppercase text-teal-700">Số chương trình</p>
+                        <p className="mt-1 text-2xl font-black text-teal-800">{contentProgramViews.length}</p>
+                      </div>
+                      <div className="rounded-xl border border-blue-100 bg-blue-50 p-4">
+                        <p className="text-[11px] font-black uppercase text-blue-700">Tổng trạm</p>
+                        <p className="mt-1 text-2xl font-black text-blue-800">
+                          {contentProgramViews.reduce((sum, program) => sum + (program.houseOperation?.stations?.length || 0), 0)}
+                        </p>
+                      </div>
+                      <div className="rounded-xl border border-amber-100 bg-amber-50 p-4">
+                        <p className="text-[11px] font-black uppercase text-amber-700">Incident mở</p>
+                        <p className="mt-1 text-2xl font-black text-amber-800">
+                          {contentProgramViews.reduce((sum, program) => sum + (program.houseOperation?.incidents?.filter(incident => incident.status === 'OPEN').length || 0), 0)}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                    {contentProgramViews.map(program => {
+                      const operation = program.houseOperation;
+                      const doneTasks = operation?.tasks?.filter(task => task.status === 'DONE').length || 0;
+                      const totalTasks = operation?.tasks?.length || 0;
+                      const agenda = operation?.agenda || [];
+                      const firstAgenda = agenda[0];
+                      const lastAgenda = agenda[agenda.length - 1];
+                      const isSelected = activeContentProgram?.id === program.id;
+                      return (
+                        <button
+                          key={program.id}
+                          type="button"
+                          onClick={() => setActiveContentProgramId(program.id)}
+                          className={`rounded-xl border p-5 text-left transition ${
+                            isSelected
+                              ? 'border-teal-500 bg-teal-50 shadow-sm'
+                              : 'border-slate-200 bg-white hover:border-teal-200'
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="text-base font-black text-slate-900">{program.name}</p>
+                              <p className="mt-1 text-xs font-semibold text-slate-500">{getProgramDateLabel(program, selectedEvent)}</p>
+                            </div>
+                            <span className={`rounded-full px-2 py-1 text-[10px] font-black ${program.isPrimary ? 'bg-slate-100 text-slate-600' : 'bg-teal-100 text-teal-700'}`}>
+                              {program.isPrimary ? 'Gốc' : 'Clone'}
+                            </span>
+                          </div>
+                          <div className="mt-4 grid grid-cols-3 gap-2">
+                            <div className="rounded-lg bg-white/80 border border-slate-100 p-3">
+                              <p className="text-[10px] font-black uppercase text-slate-400">Trạm</p>
+                              <p className="text-lg font-black text-slate-800">{operation?.stations?.length || 0}</p>
+                            </div>
+                            <div className="rounded-lg bg-white/80 border border-slate-100 p-3">
+                              <p className="text-[10px] font-black uppercase text-slate-400">Tasks</p>
+                              <p className="text-lg font-black text-slate-800">{doneTasks}/{totalTasks}</p>
+                            </div>
+                            <div className="rounded-lg bg-white/80 border border-slate-100 p-3">
+                              <p className="text-[10px] font-black uppercase text-slate-400">Sơ đồ</p>
+                              <p className="text-lg font-black text-slate-800">{program.layout?.blocks?.length || 0}</p>
+                            </div>
+                          </div>
+                          <p className="mt-3 text-xs text-slate-500">
+                            Agenda: {firstAgenda && lastAgenda ? `${firstAgenda.startTime} - ${lastAgenda.endTime}` : 'Chưa khởi tạo'}
+                          </p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {getHouseModuleTab(detailTab) && detailTab !== 'EH_CONTROL' && selectedEvent && (
                 <EinsteinHouseOS
-                  events={events}
+                  events={eventsForActiveContent}
                   inventory={inventory}
                   employees={employees}
                   packages={packages}
@@ -3118,7 +3517,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
                   lockEventSelection
                   activeModuleTab={getHouseModuleTab(detailTab) || undefined}
                   initialEventId={selectedEvent.id}
-                  onUpdateEvent={onUpdateEvent || (() => {})}
+                  onUpdateEvent={handleUpdateActiveContentEvent}
                 />
               )}
 
