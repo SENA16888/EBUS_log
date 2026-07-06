@@ -391,6 +391,8 @@ export interface EventTimelineEntry {
   phase: EventTimelinePhase;
   datetime: string;
   note: string;
+  source?: 'AUTO_LOGISTICS' | 'MANUAL';
+  autoKey?: string;
 }
 
 export type HouseOperationTaskStatus = 'TODO' | 'DOING' | 'DONE' | 'BLOCKED';

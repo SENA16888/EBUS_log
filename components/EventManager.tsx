@@ -211,6 +211,8 @@ const getEventVenueTone = (venue?: EventVenueType) => {
 
 const AUTO_ADVANCE_SOURCE: EventAdvanceRequest['source'] = 'AUTO_PROFILE';
 const AUTO_ADVANCE_PREFIX = 'profile-auto';
+const AUTO_TIMELINE_SOURCE: EventTimelineEntry['source'] = 'AUTO_LOGISTICS';
+const AUTO_TIMELINE_PREFIX = 'logistics-auto';
 const HANOI_CENTER = { lat: 21.0278, lng: 105.8342 };
 
 const PROVINCE_ROUTE_ESTIMATES: {
@@ -531,6 +533,103 @@ const getStaffCompensationNote = (hours: number, rate = STAFF_HOURLY_RATE) => {
   return `${hours}h x ${rate.toLocaleString()}đ/h + ${allowanceText}${total >= STAFF_DAILY_CAP ? ' • chạm trần 310.000đ/ngày' : allowance > 0 ? '' : ''}`;
 };
 
+type StaffCostGroupItem = {
+  allocation: EventStaffAllocation;
+  index: number;
+  key: string;
+  hours: number;
+};
+
+type StaffCostGroup = {
+  key: string;
+  employeeId: string;
+  shiftDate?: string;
+  items: StaffCostGroupItem[];
+  sessions: EventSession[];
+  stationNames: string[];
+  totalHours: number;
+  totalSalary: number;
+  isDayPolicyGroup: boolean;
+};
+
+const getStaffAllocationHours = (staff: EventStaffAllocation) => {
+  if (staff.unit !== 'HOUR') return 0;
+  const quantity = Number(staff.quantity) || 0;
+  return quantity > 0 ? quantity : getStaffWorkHours(getStaffSessions(staff));
+};
+
+const calculateStaffDayGroupCompensation = (items: StaffCostGroupItem[]) => {
+  const totalHours = items.reduce((sum, item) => sum + item.hours, 0);
+  const base = items.reduce((sum, item) => {
+    const rate = Number(item.allocation.rate) || STAFF_HOURLY_RATE;
+    return sum + item.hours * rate;
+  }, 0);
+  const allowance = totalHours >= 8
+    ? STAFF_MEAL_ALLOWANCE_FULL_DAY + STAFF_WATER_ALLOWANCE_FULL_DAY
+    : totalHours >= 4
+      ? STAFF_WATER_ALLOWANCE_HALF_DAY
+      : 0;
+  return {
+    totalHours,
+    total: Math.min(STAFF_DAILY_CAP, base + allowance)
+  };
+};
+
+const getStaffCostGroups = (staffList: EventStaffAllocation[] = []): StaffCostGroup[] => {
+  const groups = new Map<string, StaffCostGroup>();
+  staffList.forEach((allocation, index) => {
+    const key = allocation.unit === 'HOUR' && allocation.shiftDate
+      ? `day-${allocation.employeeId}-${allocation.shiftDate}`
+      : `single-${getStaffAllocationKey(allocation, index)}`;
+    const item: StaffCostGroupItem = {
+      allocation,
+      index,
+      key: getStaffAllocationKey(allocation, index),
+      hours: getStaffAllocationHours(allocation)
+    };
+    const existing = groups.get(key);
+    if (existing) {
+      existing.items.push(item);
+      return;
+    }
+    groups.set(key, {
+      key,
+      employeeId: allocation.employeeId,
+      shiftDate: allocation.shiftDate,
+      items: [item],
+      sessions: [],
+      stationNames: [],
+      totalHours: 0,
+      totalSalary: 0,
+      isDayPolicyGroup: false
+    });
+  });
+
+  return Array.from(groups.values()).map(group => {
+    const sessions = new Set<EventSession>();
+    const stationNames = new Set<string>();
+    group.items.forEach(item => {
+      getStaffSessions(item.allocation).forEach(session => sessions.add(session));
+      if (item.allocation.stationName) stationNames.add(item.allocation.stationName);
+    });
+    const allHourly = group.items.every(item => item.allocation.unit === 'HOUR');
+    const groupedPay = allHourly
+      ? calculateStaffDayGroupCompensation(group.items)
+      : {
+          totalHours: group.items.reduce((sum, item) => sum + (Number(item.allocation.quantity) || 0), 0),
+          total: group.items.reduce((sum, item) => sum + (Number(item.allocation.salary) || 0), 0)
+        };
+    return {
+      ...group,
+      sessions: Array.from(sessions),
+      stationNames: Array.from(stationNames),
+      totalHours: groupedPay.totalHours,
+      totalSalary: groupedPay.total,
+      isDayPolicyGroup: allHourly && group.shiftDate !== undefined && groupedPay.totalHours >= 8
+    };
+  });
+};
+
 const getAutoStaffSlotStations = (event: Event): AutoStaffSlotStation[] => {
   const houseStations = event.houseOperation?.stations || [];
   if (houseStations.length > 0) {
@@ -719,6 +818,247 @@ const getContentProgramEvent = (event: Event, program: ContentProgramView): Even
     houseOperation: program.houseOperation
   };
 };
+
+const SESSION_DEFAULT_START: Record<EventSession, string> = {
+  MORNING: '09:00',
+  AFTERNOON: '14:00',
+  EVENING: '19:00'
+};
+
+const SESSION_DEFAULT_END: Record<EventSession, string> = {
+  MORNING: '11:30',
+  AFTERNOON: '17:00',
+  EVENING: '21:00'
+};
+
+const parseTimeToMinutes = (value?: string) => {
+  const match = (value || '').match(/^(\d{1,2}):(\d{2})/);
+  if (!match) return null;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
+  return hours * 60 + minutes;
+};
+
+const minutesToTime = (minutes: number) => {
+  const normalized = Math.max(0, Math.min(23 * 60 + 59, minutes));
+  const hours = Math.floor(normalized / 60);
+  const mins = normalized % 60;
+  return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+};
+
+const combineDateTime = (date: string, time: string) => `${date}T${time}`;
+
+const addHoursToLocalDateTime = (dateTime: string, hours: number) => {
+  const parsed = new Date(dateTime);
+  if (Number.isNaN(parsed.getTime())) return dateTime;
+  parsed.setHours(parsed.getHours() + hours);
+  const y = parsed.getFullYear();
+  const m = String(parsed.getMonth() + 1).padStart(2, '0');
+  const d = String(parsed.getDate()).padStart(2, '0');
+  const hh = String(parsed.getHours()).padStart(2, '0');
+  const mm = String(parsed.getMinutes()).padStart(2, '0');
+  return `${y}-${m}-${d}T${hh}:${mm}`;
+};
+
+const addDaysToDateString = (date: string, days: number) => {
+  const parsed = new Date(`${date}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return date;
+  parsed.setDate(parsed.getDate() + days);
+  const y = parsed.getFullYear();
+  const m = String(parsed.getMonth() + 1).padStart(2, '0');
+  const d = String(parsed.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+};
+
+const getProgramStationCount = (program: ContentProgramView) =>
+  Math.max(program.houseOperation?.stations?.length || 0, program.layout?.blocks?.length || 0);
+
+const getProgramTimeBounds = (event: Event, sessions: EventSession[]) => {
+  const profile: Partial<EventProfile> = event.eventProfile || {};
+  const safeSessions = sessions.length > 0 ? sessions : [event.session || 'MORNING'];
+  const sessionStarts = safeSessions
+    .map(session => parseTimeToMinutes(SESSION_DEFAULT_START[session]))
+    .filter((value): value is number => value !== null);
+  const sessionEnds = safeSessions
+    .map(session => parseTimeToMinutes(SESSION_DEFAULT_END[session]))
+    .filter((value): value is number => value !== null);
+  const fallbackStart = parseTimeToMinutes('09:00') || 540;
+  const start = parseTimeToMinutes(profile.programTimeStart) ?? Math.min(...sessionStarts, fallbackStart);
+  const end = parseTimeToMinutes(profile.programTimeEnd) ?? Math.max(...sessionEnds, start + 180);
+  return {
+    startTime: minutesToTime(start),
+    endTime: minutesToTime(Math.max(end, start + 60))
+  };
+};
+
+const getAutoTimelineId = (eventId: string, key: string) => `auto-timeline-${eventId}-${key}`;
+
+const makeAutoTimelineEntry = (
+  event: Event,
+  key: string,
+  phase: EventTimelinePhase,
+  datetime: string,
+  note: string
+): EventTimelineEntry => ({
+  id: getAutoTimelineId(event.id, key),
+  phase,
+  datetime,
+  note,
+  source: AUTO_TIMELINE_SOURCE,
+  autoKey: `${AUTO_TIMELINE_PREFIX}-${key}`
+});
+
+const getAutoTimelinePlan = (event: Event) => {
+  const route = estimateEventRoute(event);
+  const programs = getContentProgramViews(event);
+  const programItems = programs.flatMap(program => {
+    const programEvent = getContentProgramEvent(event, program);
+    return getEventSchedule(programEvent).map(scheduleItem => ({
+      program,
+      date: scheduleItem.date,
+      sessions: scheduleItem.sessions.length > 0 ? scheduleItem.sessions : getProgramDefaultSessions(programEvent),
+      stationCount: getProgramStationCount(program)
+    }));
+  }).filter(item => item.date);
+  const primaryProgram = programs[0];
+  const fallbackDate = getProgramDefaultDate(event);
+  const safeItems = programItems.length > 0
+    ? programItems
+    : [{
+        program: primaryProgram,
+        date: fallbackDate,
+        sessions: getProgramDefaultSessions(event),
+        stationCount: primaryProgram ? getProgramStationCount(primaryProgram) : 0
+      }];
+  const maxStationCount = Math.max(0, ...safeItems.map(item => item.stationCount));
+  const isLargeSetup = maxStationCount > 6;
+  const entries: EventTimelineEntry[] = [];
+  const venue = getEventVenue(event);
+  const isExternalProvince = venue === 'EBUS' && route.isOutOfProvince;
+  const routeLabel = venue === 'EH' ? 'tại EH' : isExternalProvince ? `ngoại tỉnh (${route.label})` : 'Hà Nội';
+
+  const firstItem = [...safeItems].sort((a, b) => a.date.localeCompare(b.date))[0];
+  if (isLargeSetup && firstItem) {
+    const previousDate = addDaysToDateString(firstItem.date, -1);
+    entries.push(makeAutoTimelineEntry(
+      event,
+      'preload-tables-goods',
+      'BEFORE',
+      combineDateTime(previousDate, isExternalProvince ? '18:00' : '16:00'),
+      isExternalProvince
+        ? `Xe EBUS khởi hành buổi tối hôm trước, vận chuyển hàng hóa/bàn ghế cho ${maxStationCount} trạm và ngủ lại tại địa bàn.`
+        : `Setup trước 1 ngày: vận chuyển hàng hóa, bàn ghế và kiểm mặt bằng cho ${maxStationCount} trạm.`
+    ));
+    if (isExternalProvince) {
+      entries.push(makeAutoTimelineEntry(
+        event,
+        'overnight-checkin',
+        'BEFORE',
+        combineDateTime(previousDate, '22:00'),
+        'Đoàn đến địa bàn, nhận phòng/điểm nghỉ và xác nhận lại giờ setup sáng hôm sau.'
+      ));
+    }
+  }
+
+  safeItems.forEach(item => {
+    const { startTime, endTime } = getProgramTimeBounds(event, item.sessions);
+    const programStart = combineDateTime(item.date, startTime);
+    const programEnd = combineDateTime(item.date, endTime);
+    const setupLeadHours = isExternalProvince && isLargeSetup ? 2 : 1;
+    const setupTime = addHoursToLocalDateTime(programStart, -setupLeadHours);
+    const programLabel = programs.length > 1 ? `${item.program.name} - ` : '';
+
+    if (venue === 'EBUS') {
+      if (route.isOutOfProvince) {
+        if (!isLargeSetup) {
+          entries.push(makeAutoTimelineEntry(
+            event,
+            `depart-province-${item.program.id}-${item.date}`,
+            'BEFORE',
+            addHoursToLocalDateTime(programStart, -5),
+            `${programLabel}Xe EBUS khởi hành đi ${route.label}: dự phòng 3-4h di chuyển + 1h setup trong ngày.`
+          ));
+        }
+      } else if (!isLargeSetup) {
+        entries.push(makeAutoTimelineEntry(
+          event,
+          `depart-hanoi-${item.program.id}-${item.date}`,
+          'BEFORE',
+          addHoursToLocalDateTime(programStart, -2),
+          `${programLabel}Xe EBUS khởi hành từ trung tâm trước giờ tổ chức 2h, kiêm vận chuyển thiết bị setup.`
+        ));
+      }
+    }
+
+    entries.push(makeAutoTimelineEntry(
+      event,
+      `setup-${item.program.id}-${item.date}`,
+      'BEFORE',
+      setupTime,
+      `${programLabel}Nhân sự có mặt, bắt đầu SETUP trước chương trình ${setupLeadHours}h (${item.stationCount || maxStationCount || 0} trạm, ${routeLabel}).`
+    ));
+    entries.push(makeAutoTimelineEntry(
+      event,
+      `start-${item.program.id}-${item.date}`,
+      'DURING',
+      programStart,
+      `${programLabel}Bắt đầu chương trình.`
+    ));
+    entries.push(makeAutoTimelineEntry(
+      event,
+      `finish-${item.program.id}-${item.date}`,
+      'AFTER',
+      programEnd,
+      `${programLabel}Kết thúc chương trình, kiểm kê nhanh thiết bị và thu hồi theo trạm.`
+    ));
+    entries.push(makeAutoTimelineEntry(
+      event,
+      `return-${item.program.id}-${item.date}`,
+      'AFTER',
+      addHoursToLocalDateTime(programEnd, isExternalProvince ? 4 : 1),
+      venue === 'EH'
+        ? `${programLabel}Thu dọn, hoàn trả không gian Einstein House và cất thiết bị về kho.`
+        : isExternalProvince
+        ? `${programLabel}Xe EBUS về Hà Nội trong ngày sau sự kiện, kể cả lịch kết thúc muộn.`
+        : `${programLabel}Xe EBUS/đội vận hành di chuyển về trung tâm sau khi thu dọn.`
+    ));
+  });
+
+  return {
+    entries: entries.sort((a, b) => (a.datetime || '').localeCompare(b.datetime || '')),
+    summary: {
+      route,
+      maxStationCount,
+      isLargeSetup,
+      programCount: programs.length
+    }
+  };
+};
+
+const isAutoTimelineEntry = (entry: EventTimelineEntry) =>
+  entry.source !== 'MANUAL' && (
+    entry.source === AUTO_TIMELINE_SOURCE ||
+    (entry.autoKey || '').startsWith(AUTO_TIMELINE_PREFIX) ||
+    entry.id.startsWith('auto-timeline-')
+  );
+
+const areTimelineEntriesEquivalent = (left: EventTimelineEntry[], right: EventTimelineEntry[]) =>
+  JSON.stringify(left.map(item => ({
+    id: item.id,
+    phase: item.phase,
+    datetime: item.datetime,
+    note: item.note,
+    source: item.source || 'MANUAL',
+    autoKey: item.autoKey || ''
+  }))) === JSON.stringify(right.map(item => ({
+    id: item.id,
+    phase: item.phase,
+    datetime: item.datetime,
+    note: item.note,
+    source: item.source || 'MANUAL',
+    autoKey: item.autoKey || ''
+  })));
 
 const getProgramDateLabel = (program: ContentProgramView, fallbackEvent: Event) => {
   const date = program.date || getProgramDefaultDate(fallbackEvent);
@@ -980,6 +1320,10 @@ export const EventManager: React.FC<EventManagerProps> = ({
     () => selectedEvent ? getAutoAdvancePlan(selectedEvent) : null,
     [selectedEvent]
   );
+  const autoTimelinePlan = useMemo(
+    () => selectedEvent ? getAutoTimelinePlan(selectedEvent) : null,
+    [selectedEvent]
+  );
   const autoStaffSlots = useMemo(
     () => selectedEvent
       ? contentProgramViews.flatMap(program => {
@@ -1015,6 +1359,16 @@ export const EventManager: React.FC<EventManagerProps> = ({
       onUpdateEvent(selectedEvent.id, { advanceRequests: nextRequests });
     }
   }, [autoAdvancePlan, canEdit, onUpdateEvent, selectedEvent]);
+
+  useEffect(() => {
+    if (!selectedEvent || !autoTimelinePlan || !onUpdateEvent || !canEdit) return;
+    const manualEntries = (selectedEvent.timeline || []).filter(entry => !isAutoTimelineEntry(entry));
+    const nextTimeline = [...autoTimelinePlan.entries, ...manualEntries]
+      .sort((a, b) => (a.datetime || '').localeCompare(b.datetime || ''));
+    if (!areTimelineEntriesEquivalent(selectedEvent.timeline || [], nextTimeline)) {
+      onUpdateEvent(selectedEvent.id, { timeline: nextTimeline });
+    }
+  }, [autoTimelinePlan, canEdit, onUpdateEvent, selectedEvent]);
 
   useEffect(() => {
     if (!selectedEvent) return;
@@ -1371,7 +1725,8 @@ export const EventManager: React.FC<EventManagerProps> = ({
       id: `TL-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       phase: timelinePhase,
       datetime: timelineDatetime,
-      note: timelineNote.trim()
+      note: timelineNote.trim(),
+      source: 'MANUAL'
     };
     const nextTimeline = [...(selectedEvent.timeline || []), entry].sort((a, b) => (a.datetime || '').localeCompare(b.datetime || ''));
     onUpdateEvent(selectedEvent.id, { timeline: nextTimeline });
@@ -2197,7 +2552,8 @@ export const EventManager: React.FC<EventManagerProps> = ({
     const sessionLabel = eventProfile.programSession ? SESSION_LABELS[eventProfile.programSession as EventSession] : '';
     return [timeRange, sessionLabel].filter(Boolean).join(' • ');
   }, [eventProfile.programSession, eventProfile.programTimeEnd, eventProfile.programTimeStart]);
-  const staffCosts = selectedEvent?.staff?.reduce((a, b) => a + b.salary, 0) || 0;
+  const staffCostGroups = useMemo(() => getStaffCostGroups(selectedEvent?.staff || []), [selectedEvent?.staff]);
+  const staffCosts = staffCostGroups.reduce((sum, group) => sum + group.totalSalary, 0);
   const otherCosts = selectedEvent?.expenses?.reduce((a, b) => a + b.amount, 0) || 0;
   const totalCosts = staffCosts + otherCosts;
   const saleOrderRevenueTotal = linkedSaleOrders
@@ -2869,6 +3225,25 @@ export const EventManager: React.FC<EventManagerProps> = ({
 
               {detailTab === 'TIMELINE' && selectedEvent && (
                 <div className="space-y-4">
+                  {autoTimelinePlan && (
+                    <div className="rounded-2xl border border-blue-100 bg-blue-50/70 p-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                      <div>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-blue-500">Timeline hậu cần tự động</p>
+                        <p className="mt-1 text-sm font-semibold text-blue-900">
+                          {autoTimelinePlan.summary.route.isOutOfProvince ? `Ngoại tỉnh - ${autoTimelinePlan.summary.route.label}` : 'Hà Nội'} • {autoTimelinePlan.summary.maxStationCount} trạm • {autoTimelinePlan.summary.programCount} chương trình
+                        </p>
+                        <p className="text-xs text-blue-700">
+                          {autoTimelinePlan.summary.isLargeSetup
+                            ? 'Trên 6 trạm: tự thêm mốc vận chuyển/setup trước 1 ngày, ngoại tỉnh có qua đêm và setup trước 2h.'
+                            : 'Từ 6 trạm trở xuống: tự tính xe khởi hành, nhân sự có mặt setup trước 1h và mốc quay về.'}
+                        </p>
+                      </div>
+                      <div className="rounded-xl bg-white px-3 py-2 text-right border border-blue-100">
+                        <p className="text-[10px] font-black uppercase text-blue-500">Mốc tự động</p>
+                        <p className="text-lg font-black text-blue-800">{autoTimelinePlan.entries.length}</p>
+                      </div>
+                    </div>
+                  )}
                   <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
                     <div>
                       <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Thêm mốc timeline</p>
@@ -2944,16 +3319,23 @@ export const EventManager: React.FC<EventManagerProps> = ({
                               <div key={entry.id} className="bg-white rounded-xl border border-slate-200 p-3 shadow-[0_5px_20px_rgba(15,23,42,0.05)]">
                                 <div className="flex items-start justify-between gap-2">
                                   <div className="space-y-1">
-                                    <p className="text-[11px] font-black text-slate-600 uppercase tracking-wide">{formatTimelineDatetime(entry.datetime)}</p>
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <p className="text-[11px] font-black text-slate-600 uppercase tracking-wide">{formatTimelineDatetime(entry.datetime)}</p>
+                                      {isAutoTimelineEntry(entry) && (
+                                        <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-black text-blue-700 border border-blue-100">Tự động</span>
+                                      )}
+                                    </div>
                                     <p className="text-sm text-slate-800 leading-snug">{entry.note}</p>
                                   </div>
-                                  <button
-                                    onClick={() => handleRemoveTimelineEntry(entry.id)}
-                                    className="text-gray-300 hover:text-red-500 transition"
-                                    title="Xóa mốc"
-                                  >
-                                    <X size={14}/>
-                                  </button>
+                                  {!isAutoTimelineEntry(entry) && (
+                                    <button
+                                      onClick={() => handleRemoveTimelineEntry(entry.id)}
+                                      className="text-gray-300 hover:text-red-500 transition"
+                                      title="Xóa mốc"
+                                    >
+                                      <X size={14}/>
+                                    </button>
+                                  )}
                                 </div>
                               </div>
                             ))}
@@ -3196,49 +3578,89 @@ export const EventManager: React.FC<EventManagerProps> = ({
                   </div>
 
                   <div className="space-y-3">
-                    {selectedEvent.staff?.map((s, idx) => {
-                      const emp = employees.find(e => e.id === s.employeeId);
-                      const unitLabel = s.unit === 'DAY' ? 'ngày' : s.unit === 'HOUR' ? 'giờ' : 'trọn gói';
-                      const quantityLabel = s.unit === 'FIXED' ? 'Trọn gói' : `${s.quantity} ${unitLabel}`;
-                      const staffSessions = getStaffSessions(s);
-                      const staffKey = getStaffAllocationKey(s, idx);
+                    {staffCostGroups.map(group => {
+                      const emp = employees.find(e => e.id === group.employeeId);
+                      const primaryAllocation = group.items[0]?.allocation;
+                      const isGrouped = group.items.length > 1;
+                      const hasAutoSlot = group.items.some(item => item.allocation.source === AUTO_STAFF_SLOT_SOURCE);
+                      const allDone = group.items.every(item => !!item.allocation.done);
+                      const groupDateLabel = group.shiftDate ? new Date(group.shiftDate).toLocaleDateString('vi-VN') : '';
+                      const handleToggleGroupDone = (done: boolean) => {
+                        group.items.forEach(item => {
+                          const key = item.allocation.id || item.allocation.autoKey || item.key;
+                          onToggleStaffDone?.(selectedEvent.id, item.allocation.employeeId, done, key);
+                        });
+                      };
+                      const handleRemoveGroup = () => {
+                        group.items.forEach(item => {
+                          const key = item.allocation.id || item.allocation.autoKey || item.key;
+                          onRemoveStaff?.(selectedEvent.id, item.allocation.employeeId, key);
+                        });
+                      };
                       return (
-                        <div key={staffKey} className="bg-white p-4 rounded-xl border border-slate-200 flex justify-between items-center hover:shadow-md transition">
+                        <div key={group.key} className="bg-white p-4 rounded-xl border border-slate-200 flex justify-between items-center gap-4 hover:shadow-md transition">
                            <div className="flex items-center gap-4">
                               <img src={emp?.avatarUrl} className="w-12 h-12 rounded-full border-2 border-slate-100" />
                               <div>
                                 <div className="flex flex-wrap items-center gap-2">
                                   <p className="font-bold text-gray-800">{emp?.name}</p>
-                                  {s.source === AUTO_STAFF_SLOT_SOURCE && (
+                                  {hasAutoSlot && (
                                     <span className="rounded-full bg-teal-100 px-2 py-0.5 text-[10px] font-black text-teal-700">
                                       Tự động từ trạm
                                     </span>
                                   )}
+                                  {group.isDayPolicyGroup && (
+                                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-black text-amber-700">
+                                      Gộp chính sách ngày
+                                    </span>
+                                  )}
                                 </div>
-                                <p className="text-xs font-medium text-blue-600">{s.task} • {quantityLabel}</p>
-                                {s.stationName && (
-                                  <p className="text-[11px] text-teal-700 font-semibold mt-0.5">Trạm: {s.stationName}</p>
+                                <p className="text-xs font-medium text-blue-600">
+                                  {isGrouped
+                                    ? `${group.items.length} phân công • ${group.totalHours} giờ`
+                                    : `${primaryAllocation?.task || 'Phân công'} • ${primaryAllocation?.unit === 'FIXED' ? 'Trọn gói' : `${primaryAllocation?.quantity || group.totalHours} ${primaryAllocation?.unit === 'DAY' ? 'ngày' : 'giờ'}`}`}
+                                </p>
+                                {group.stationNames.length > 0 && (
+                                  <p className="text-[11px] text-teal-700 font-semibold mt-0.5">Trạm: {group.stationNames.join(', ')}</p>
                                 )}
-                                {staffSessions.length > 0 && (
+                                {group.sessions.length > 0 && (
                                   <div className="mt-1 flex flex-wrap gap-1">
-                                    {staffSessions.map(sess => (
+                                    {group.sessions.map(sess => (
                                       <div key={sess} className="inline-flex items-center gap-1 text-[10px] font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full">
                                         {SESSION_LABELS[sess]}
                                       </div>
                                     ))}
                                   </div>
                                 )}
-                                {s.shiftDate && (
-                                  <div className="text-[11px] text-slate-400 mt-1">{new Date(s.shiftDate).toLocaleDateString('vi-VN')}</div>
+                                {isGrouped && (
+                                  <div className="mt-2 space-y-0.5">
+                                    {group.items.map(item => {
+                                      const allocationSessions = getStaffSessions(item.allocation);
+                                      const allocationSessionLabel = allocationSessions.map(sess => SESSION_LABELS[sess]).join(' + ');
+                                      return (
+                                        <p key={item.key} className="text-[11px] font-semibold text-slate-500">
+                                          {allocationSessionLabel ? `${allocationSessionLabel} • ` : ''}{item.allocation.task} • {item.hours || item.allocation.quantity} giờ
+                                        </p>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                                {groupDateLabel && (
+                                  <div className="text-[11px] text-slate-400 mt-1">{groupDateLabel}</div>
                                 )}
                               </div>
                            </div>
                            <div className="flex items-center gap-6">
                               <div className="flex items-center gap-3">
-                                <input type="checkbox" checked={!!s.done} onChange={e => onToggleStaffDone?.(selectedEvent.id, s.employeeId, e.target.checked, staffKey)} />
-                                <p className="font-black text-gray-800">{s.salary.toLocaleString()}đ</p>
+                                <input type="checkbox" checked={allDone} onChange={e => handleToggleGroupDone(e.target.checked)} />
+                                <div className="text-right">
+                                  <p className="font-black text-gray-800">{group.totalSalary.toLocaleString()}đ</p>
+                                  {group.isDayPolicyGroup && (
+                                    <p className="text-[10px] font-bold text-amber-600">8h/ngày - trần 310k</p>
+                                  )}
+                                </div>
                               </div>
-                              <button onClick={() => onRemoveStaff?.(selectedEvent.id, s.employeeId, staffKey)} className="text-gray-300 hover:text-red-500"><Trash2 size={16}/></button>
+                              <button onClick={handleRemoveGroup} className="text-gray-300 hover:text-red-500"><Trash2 size={16}/></button>
                            </div>
                         </div>
                       );

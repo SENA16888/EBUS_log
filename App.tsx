@@ -27,6 +27,15 @@ import { LoginModal } from './components/LoginModal';
 
 const generateId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
+const getEventStaffSessions = (staff?: Pick<EventStaffAllocation, 'session' | 'sessions'>) => {
+  if (!staff) return [];
+  if (staff.sessions && staff.sessions.length > 0) return staff.sessions;
+  return staff.session ? [staff.session] : [];
+};
+
+const getEventStaffAllocationKey = (staff: EventStaffAllocation, index?: number) =>
+  staff.id || staff.autoKey || `${staff.employeeId}-${staff.shiftDate || 'no-date'}-${getEventStaffSessions(staff).join('-') || staff.session || 'no-session'}-${index ?? 0}`;
+
 type AppTab = 'dashboard' | 'inventory' | 'stocktake' | 'events' | 'education' | 'interactiveDevices' | 'packages' | 'employees' | 'quotations' | 'sales' | 'elearning' | 'logs';
 
 const PRIMARY_CONTENT_PROGRAM_ID = 'primary-content-program';
@@ -1639,8 +1648,9 @@ const App: React.FC = () => {
       ...prev,
       events: prev.events.map(e => e.id !== eventId ? e : {
         ...e,
-        staff: (e.staff || []).map(s => {
-          const keyMatch = staffKey ? s.id === staffKey || s.autoKey === staffKey : false;
+        staff: (e.staff || []).map((s, index) => {
+          const fallbackKey = getEventStaffAllocationKey(s, index);
+          const keyMatch = staffKey ? s.id === staffKey || s.autoKey === staffKey || fallbackKey === staffKey : false;
           const legacyMatch = !staffKey && s.employeeId === employeeId;
           return keyMatch || legacyMatch ? { ...s, done } : s;
         })
@@ -1966,8 +1976,9 @@ const App: React.FC = () => {
       ...prev,
       events: prev.events.map(e => e.id !== eventId ? e : {
         ...e,
-        staff: (e.staff || []).filter(s => {
-          const keyMatch = staffKey ? s.id === staffKey || s.autoKey === staffKey : false;
+        staff: (e.staff || []).filter((s, index) => {
+          const fallbackKey = getEventStaffAllocationKey(s, index);
+          const keyMatch = staffKey ? s.id === staffKey || s.autoKey === staffKey || fallbackKey === staffKey : false;
           const legacyMatch = !staffKey && s.employeeId === employeeId;
           return !(keyMatch || legacyMatch);
         })
