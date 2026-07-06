@@ -676,9 +676,17 @@ const createDefaultTasks = (event: Event, stations: HouseOperationStation[], emp
   ];
 };
 
-const createDefaultOperation = (event: Event, inventory: InventoryItem[], employees: Employee[], packages: ComboPackage[] = []): HouseOperationInstance => {
+const createDefaultOperation = (
+  event: Event,
+  inventory: InventoryItem[],
+  employees: Employee[],
+  packages: ComboPackage[] = [],
+  options: { includeTemplateStations?: boolean } = {}
+): HouseOperationInstance => {
   const educationPackages = packages.filter(isEducationPackage);
-  const stations = educationPackages.length > 0 ? createPackageStationInstances(educationPackages, inventory) : createStationInstances(inventory);
+  const stations = options.includeTemplateStations
+    ? (educationPackages.length > 0 ? createPackageStationInstances(educationPackages, inventory) : createStationInstances(inventory))
+    : [];
   const studentCount = getStudentCount(event);
   const groupCount = Math.max(1, Math.min(MAX_ROTATION_GROUPS, Math.ceil(studentCount / 25)));
   return {
@@ -692,8 +700,8 @@ const createDefaultOperation = (event: Event, inventory: InventoryItem[], employ
     teacherCount: getTeacherCount(event),
     groupCount,
     stations,
-    agenda: buildAgenda(event, stations),
-    rotations: buildRotations(studentCount, stations, groupCount),
+    agenda: stations.length > 0 ? buildAgenda(event, stations) : [],
+    rotations: stations.length > 0 ? buildRotations(studentCount, stations, groupCount) : [],
     tasks: createDefaultTasks(event, stations, employees),
     incidents: [],
     mediaTasks: SHOT_LIST.map(title => ({ id: makeId('eh-media'), title, checked: false })),
@@ -898,7 +906,9 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
 
   const initializeOperation = () => {
     if (!selectedEvent || !canEdit) return;
-    onUpdateEvent(selectedEvent.id, { houseOperation: createDefaultOperation(selectedEvent, inventory, employees, packages) });
+    onUpdateEvent(selectedEvent.id, {
+      houseOperation: createDefaultOperation(selectedEvent, inventory, employees, packages, { includeTemplateStations: true })
+    });
   };
 
   const updateTask = (taskId: string, patch: Partial<HouseOperationTask>) => {
@@ -930,7 +940,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
       return {
         ...current,
         stations,
-        agenda: recalcStructuredAgenda(selectedEvent!, stations, current.agenda),
+        agenda: current.agenda.length > 0 ? recalcStructuredAgenda(selectedEvent!, stations, current.agenda) : buildAgenda(selectedEvent!, stations),
         rotations: buildRotations(current.studentCount || getStudentCount(selectedEvent!), stations, current.groupCount)
       };
     });
@@ -942,7 +952,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
       return {
         ...current,
         stations,
-        agenda: recalcStructuredAgenda(selectedEvent!, stations, current.agenda),
+        agenda: current.agenda.length > 0 ? recalcStructuredAgenda(selectedEvent!, stations, current.agenda) : buildAgenda(selectedEvent!, stations),
         rotations: buildRotations(current.studentCount || getStudentCount(selectedEvent!), stations, current.groupCount)
       };
     });
