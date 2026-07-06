@@ -861,6 +861,18 @@ const addHoursToLocalDateTime = (dateTime: string, hours: number) => {
   return `${y}-${m}-${d}T${hh}:${mm}`;
 };
 
+const addMinutesToLocalDateTime = (dateTime: string, minutes: number) => {
+  const parsed = new Date(dateTime);
+  if (Number.isNaN(parsed.getTime())) return dateTime;
+  parsed.setMinutes(parsed.getMinutes() + minutes);
+  const y = parsed.getFullYear();
+  const m = String(parsed.getMonth() + 1).padStart(2, '0');
+  const d = String(parsed.getDate()).padStart(2, '0');
+  const hh = String(parsed.getHours()).padStart(2, '0');
+  const mm = String(parsed.getMinutes()).padStart(2, '0');
+  return `${y}-${m}-${d}T${hh}:${mm}`;
+};
+
 const addDaysToDateString = (date: string, days: number) => {
   const parsed = new Date(`${date}T00:00:00`);
   if (Number.isNaN(parsed.getTime())) return date;
@@ -874,7 +886,37 @@ const addDaysToDateString = (date: string, days: number) => {
 const getProgramStationCount = (program: ContentProgramView) =>
   Math.max(program.houseOperation?.stations?.length || 0, program.layout?.blocks?.length || 0);
 
-const getProgramTimeBounds = (event: Event, sessions: EventSession[]) => {
+const getDateDiffDays = (from: string, to: string) => {
+  const fromDate = new Date(`${from}T00:00:00`);
+  const toDate = new Date(`${to}T00:00:00`);
+  if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) return 0;
+  return Math.round((toDate.getTime() - fromDate.getTime()) / 86400000);
+};
+
+const getProgramAgendaTimeBounds = (program: ContentProgramView) => {
+  const agenda = program.houseOperation?.agenda || [];
+  const starts = agenda.map(block => parseTimeToMinutes(block.startTime)).filter((value): value is number => value !== null);
+  const ends = agenda.map(block => parseTimeToMinutes(block.endTime)).filter((value): value is number => value !== null);
+  if (starts.length === 0 || ends.length === 0) return null;
+  return {
+    startTime: minutesToTime(Math.min(...starts)),
+    endTime: minutesToTime(Math.max(...ends))
+  };
+};
+
+const agendaBoundsMatchSessions = (bounds: { startTime: string; endTime: string }, sessions: EventSession[]) => {
+  if (sessions.length !== 1) return true;
+  const start = parseTimeToMinutes(bounds.startTime);
+  if (start === null) return true;
+  const [session] = sessions;
+  if (session === 'MORNING') return start < 12 * 60;
+  if (session === 'AFTERNOON') return start >= 12 * 60 && start < 18 * 60;
+  return start >= 17 * 60;
+};
+
+const getProgramTimeBounds = (event: Event, program: ContentProgramView, sessions: EventSession[], useSharedProfileTime: boolean) => {
+  const agendaBounds = getProgramAgendaTimeBounds(program);
+  if (agendaBounds && agendaBoundsMatchSessions(agendaBounds, sessions)) return agendaBounds;
   const profile: Partial<EventProfile> = event.eventProfile || {};
   const safeSessions = sessions.length > 0 ? sessions : [event.session || 'MORNING'];
   const sessionStarts = safeSessions
@@ -884,8 +926,10 @@ const getProgramTimeBounds = (event: Event, sessions: EventSession[]) => {
     .map(session => parseTimeToMinutes(SESSION_DEFAULT_END[session]))
     .filter((value): value is number => value !== null);
   const fallbackStart = parseTimeToMinutes('09:00') || 540;
-  const start = parseTimeToMinutes(profile.programTimeStart) ?? Math.min(...sessionStarts, fallbackStart);
-  const end = parseTimeToMinutes(profile.programTimeEnd) ?? Math.max(...sessionEnds, start + 180);
+  const sharedStart = useSharedProfileTime ? parseTimeToMinutes(profile.programTimeStart) : null;
+  const sharedEnd = useSharedProfileTime ? parseTimeToMinutes(profile.programTimeEnd) : null;
+  const start = sharedStart ?? Math.min(...sessionStarts, fallbackStart);
+  const end = sharedEnd ?? Math.max(...sessionEnds, start + 180);
   return {
     startTime: minutesToTime(start),
     endTime: minutesToTime(Math.max(end, start + 60))
@@ -908,6 +952,17 @@ const makeAutoTimelineEntry = (
   source: AUTO_TIMELINE_SOURCE,
   autoKey: `${AUTO_TIMELINE_PREFIX}-${key}`
 });
+
+type AutoTimelineProgramItem = {
+  program: ContentProgramView;
+  date: string;
+  sessions: EventSession[];
+  stationCount: number;
+  programStart: string;
+  programEnd: string;
+  setupLeadHours: number;
+  setupTime: string;
+};
 
 const getAutoTimelinePlan = (event: Event) => {
   const route = estimateEventRoute(event);
@@ -937,8 +992,38 @@ const getAutoTimelinePlan = (event: Event) => {
   const venue = getEventVenue(event);
   const isExternalProvince = venue === 'EBUS' && route.isOutOfProvince;
   const routeLabel = venue === 'EH' ? 'tại EH' : isExternalProvince ? `ngoại tỉnh (${route.label})` : 'Hà Nội';
+  const timelineItems: AutoTimelineProgramItem[] = safeItems
+    .map(item => {
+      const { startTime, endTime } = getProgramTimeBounds(event, item.program, item.sessions, programs.length <= 1);
+      const programStart = combineDateTime(item.date, startTime);
+      const programEnd = combineDateTime(item.date, endTime);
+      const setupLeadHours = isExternalProvince && isLargeSetup ? 2 : 1;
+      return {
+        ...item,
+        programStart,
+        programEnd,
+        setupLeadHours,
+        setupTime: addHoursToLocalDateTime(programStart, -setupLeadHours)
+      };
+    })
+    .sort((a, b) => (a.programStart || '').localeCompare(b.programStart || ''));
 
-  const firstItem = [...safeItems].sort((a, b) => a.date.localeCompare(b.date))[0];
+  const makeReturnEntry = (item: AutoTimelineProgramItem) => {
+    const programLabel = programs.length > 1 ? `${item.program.name} - ` : '';
+    return makeAutoTimelineEntry(
+      event,
+      `return-${item.program.id}-${item.date}`,
+      'AFTER',
+      addHoursToLocalDateTime(item.programEnd, isExternalProvince ? 4 : 1),
+      venue === 'EH'
+        ? `${programLabel}Thu dọn, hoàn trả không gian Einstein House và cất thiết bị về kho.`
+        : isExternalProvince
+        ? `${programLabel}Xe EBUS về Hà Nội trong ngày sau sự kiện, kể cả lịch kết thúc muộn.`
+        : `${programLabel}Xe EBUS/đội vận hành di chuyển về trung tâm sau khi thu dọn.`
+    );
+  };
+
+  const firstItem = timelineItems[0];
   if (isLargeSetup && firstItem) {
     const previousDate = addDaysToDateString(firstItem.date, -1);
     entries.push(makeAutoTimelineEntry(
@@ -961,22 +1046,20 @@ const getAutoTimelinePlan = (event: Event) => {
     }
   }
 
-  safeItems.forEach(item => {
-    const { startTime, endTime } = getProgramTimeBounds(event, item.sessions);
-    const programStart = combineDateTime(item.date, startTime);
-    const programEnd = combineDateTime(item.date, endTime);
-    const setupLeadHours = isExternalProvince && isLargeSetup ? 2 : 1;
-    const setupTime = addHoursToLocalDateTime(programStart, -setupLeadHours);
+  timelineItems.forEach((item, index) => {
+    const previousItem = timelineItems[index - 1];
+    const nextItem = timelineItems[index + 1];
+    const isFirstProgramOfDay = !previousItem || previousItem.date !== item.date;
     const programLabel = programs.length > 1 ? `${item.program.name} - ` : '';
 
-    if (venue === 'EBUS') {
+    if (venue === 'EBUS' && isFirstProgramOfDay) {
       if (route.isOutOfProvince) {
         if (!isLargeSetup) {
           entries.push(makeAutoTimelineEntry(
             event,
             `depart-province-${item.program.id}-${item.date}`,
             'BEFORE',
-            addHoursToLocalDateTime(programStart, -5),
+            addHoursToLocalDateTime(item.programStart, -5),
             `${programLabel}Xe EBUS khởi hành đi ${route.label}: dự phòng 3-4h di chuyển + 1h setup trong ngày.`
           ));
         }
@@ -985,7 +1068,7 @@ const getAutoTimelinePlan = (event: Event) => {
           event,
           `depart-hanoi-${item.program.id}-${item.date}`,
           'BEFORE',
-          addHoursToLocalDateTime(programStart, -2),
+          addHoursToLocalDateTime(item.programStart, -2),
           `${programLabel}Xe EBUS khởi hành từ trung tâm trước giờ tổ chức 2h, kiêm vận chuyển thiết bị setup.`
         ));
       }
@@ -995,34 +1078,53 @@ const getAutoTimelinePlan = (event: Event) => {
       event,
       `setup-${item.program.id}-${item.date}`,
       'BEFORE',
-      setupTime,
-      `${programLabel}Nhân sự có mặt, bắt đầu SETUP trước chương trình ${setupLeadHours}h (${item.stationCount || maxStationCount || 0} trạm, ${routeLabel}).`
+      item.setupTime,
+      `${programLabel}Nhân sự có mặt, bắt đầu SETUP trước chương trình ${item.setupLeadHours}h (${item.stationCount || maxStationCount || 0} trạm, ${routeLabel}).`
     ));
     entries.push(makeAutoTimelineEntry(
       event,
       `start-${item.program.id}-${item.date}`,
       'DURING',
-      programStart,
-      `${programLabel}Bắt đầu chương trình.`
+      item.programStart,
+      `${programLabel}Bắt đầu chương trình theo Agenda.`
     ));
     entries.push(makeAutoTimelineEntry(
       event,
       `finish-${item.program.id}-${item.date}`,
       'AFTER',
-      programEnd,
+      item.programEnd,
       `${programLabel}Kết thúc chương trình, kiểm kê nhanh thiết bị và thu hồi theo trạm.`
     ));
-    entries.push(makeAutoTimelineEntry(
-      event,
-      `return-${item.program.id}-${item.date}`,
-      'AFTER',
-      addHoursToLocalDateTime(programEnd, isExternalProvince ? 4 : 1),
-      venue === 'EH'
-        ? `${programLabel}Thu dọn, hoàn trả không gian Einstein House và cất thiết bị về kho.`
-        : isExternalProvince
-        ? `${programLabel}Xe EBUS về Hà Nội trong ngày sau sự kiện, kể cả lịch kết thúc muộn.`
-        : `${programLabel}Xe EBUS/đội vận hành di chuyển về trung tâm sau khi thu dọn.`
-    ));
+
+    if (nextItem) {
+      const nextLabel = programs.length > 1 ? nextItem.program.name : 'chương trình tiếp theo';
+      const gapDays = getDateDiffDays(item.date, nextItem.date);
+      if (gapDays === 0) {
+        entries.push(makeAutoTimelineEntry(
+          event,
+          `handover-same-day-${item.program.id}-${nextItem.program.id}-${item.date}`,
+          'AFTER',
+          addMinutesToLocalDateTime(item.programEnd, 15),
+          venue === 'EH'
+            ? `${programLabel}Chuyển tiếp sang ${nextLabel}: thu gọn thiết bị vào kho/khu hậu trường, sạc pin và bảo trì nhanh tại chỗ.`
+            : `${programLabel}Chuyển tiếp sang ${nextLabel}: cất gọn thiết bị lên xe hoặc kho tại điểm tổ chức, sạc pin/bảo trì tại chỗ và chuẩn bị layout tiếp theo.`
+        ));
+      } else if (venue === 'EH' || (isExternalProvince && isLargeSetup && gapDays === 1)) {
+        entries.push(makeAutoTimelineEntry(
+          event,
+          `handover-overnight-${item.program.id}-${nextItem.program.id}-${item.date}`,
+          'AFTER',
+          addMinutesToLocalDateTime(item.programEnd, 30),
+          venue === 'EH'
+            ? `${programLabel}Cất thiết bị vào kho EH, sạc/bảo trì và giữ sẵn cho ${nextLabel} ngày ${nextItem.date}.`
+            : `${programLabel}Niêm phong thiết bị tại xe/kho điểm tổ chức, sạc pin và bàn giao bảo vệ/BTC để chạy tiếp ${nextLabel} ngày ${nextItem.date}.`
+        ));
+      } else {
+        entries.push(makeReturnEntry(item));
+      }
+    } else {
+      entries.push(makeReturnEntry(item));
+    }
   });
 
   return {
