@@ -13,6 +13,8 @@ interface EmployeeManagerProps {
   canEdit?: boolean;
   canDelete?: boolean;
   canAdjustPayroll?: boolean;
+  currentEmployeeId?: string;
+  selfServiceOnly?: boolean;
 }
 
 export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
@@ -25,7 +27,9 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
   onUpsertPayrollAdjustment,
   canEdit = true,
   canDelete = true,
-  canAdjustPayroll = false
+  canAdjustPayroll = false,
+  currentEmployeeId,
+  selfServiceOnly = false
 }) => {
   type StaffEventInfo = {
     event: Event;
@@ -62,7 +66,14 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
     inactive: false
   });
 
-  const filteredEmployees = employees.filter(e => 
+  const visibleEmployees = useMemo(
+    () => selfServiceOnly
+      ? employees.filter(e => e.id === currentEmployeeId)
+      : employees,
+    [employees, currentEmployeeId, selfServiceOnly]
+  );
+
+  const filteredEmployees = visibleEmployees.filter(e =>
     e.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     e.role.toLowerCase().includes(searchTerm.toLowerCase()) ||
     e.phone.includes(searchTerm)
@@ -151,7 +162,7 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
 
   useEffect(() => {
     const nextDrafts: Record<string, { amount: string; note: string }> = {};
-    employees.forEach(emp => {
+    visibleEmployees.forEach(emp => {
       const adj = payrollAdjustmentMap.get(`${emp.id}-${payrollMonth}`);
       nextDrafts[emp.id] = {
         amount: adj ? String(adj.bonusAmount) : '',
@@ -159,7 +170,7 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
       };
     });
     setBonusDrafts(nextDrafts);
-  }, [employees, payrollAdjustmentMap, payrollMonth]);
+  }, [visibleEmployees, payrollAdjustmentMap, payrollMonth]);
 
   const payrollEntries = useMemo<PayrollEntry[]>(() => {
     return events.flatMap(event => {
@@ -194,7 +205,7 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
         grouped.set(entry.employeeId, list);
       });
 
-    return employees.filter(emp => !emp.inactive).map(emp => {
+    return visibleEmployees.filter(emp => selfServiceOnly || !emp.inactive).map(emp => {
       const entries = [...(grouped.get(emp.id) || [])].sort((a, b) => (a.date || '').localeCompare(b.date || ''));
       const baseTotal = entries.reduce((sum, entry) => sum + (Number.isFinite(entry.salary) ? entry.salary : 0), 0);
       const adj = payrollAdjustmentMap.get(`${emp.id}-${payrollMonth}`);
@@ -209,7 +220,7 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
         total: baseTotal + bonusAmount
       };
     }).sort((a, b) => b.total - a.total);
-  }, [employees, payrollEntries, payrollMonth, payrollAdjustmentMap]);
+  }, [visibleEmployees, payrollEntries, payrollMonth, payrollAdjustmentMap, selfServiceOnly]);
 
   const togglePayrollRow = (id: string) => {
     setExpandedPayrollRows(prev => ({ ...prev, [id]: !prev[id] }));
@@ -265,7 +276,7 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
     printWindow.document.write(`
       <html>
         <head>
-          <title>Bảng lương tháng ${payrollMonth}</title>
+          <title>${selfServiceOnly ? 'Bảng lương cá nhân' : 'Bảng lương'} tháng ${payrollMonth}</title>
           <style>
             body { font-family: Arial, sans-serif; padding: 16px; color: #0f172a; }
             h2 { margin: 0 0 12px 0; }
@@ -277,7 +288,7 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
           </style>
         </head>
         <body>
-          <h2>Bảng lương tháng ${payrollMonth}</h2>
+          <h2>${selfServiceOnly ? 'Bảng lương cá nhân' : 'Bảng lương'} tháng ${payrollMonth}</h2>
           <table>
             <thead>
               <tr>
@@ -329,7 +340,7 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
   return (
     <div className="space-y-5">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-        <h2 className="text-xl font-semibold text-gray-800">Danh Mục Nhân Sự</h2>
+        <h2 className="text-xl font-semibold text-gray-800">{selfServiceOnly ? 'Bảng Lương Của Tôi' : 'Danh Mục Nhân Sự'}</h2>
         {canEdit && (
           <button 
             onClick={handleOpenAdd}
@@ -344,8 +355,10 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
           <div>
             <p className="text-[11px] font-semibold text-slate-500 uppercase">Bảng lương</p>
-            <h3 className="text-lg font-bold text-gray-800">Tổng hợp lương theo tháng</h3>
-            <p className="text-sm text-gray-500">Xem nguồn tính lương từng nhân sự, thêm thưởng kèm lý do và in ra PDF.</p>
+            <h3 className="text-lg font-bold text-gray-800">{selfServiceOnly ? 'Lương cá nhân theo tháng' : 'Tổng hợp lương theo tháng'}</h3>
+            <p className="text-sm text-gray-500">
+              {selfServiceOnly ? 'Xem nguồn tính lương, thưởng và tổng cộng của chính bạn theo từng tháng.' : 'Xem nguồn tính lương từng nhân sự, thêm thưởng kèm lý do và in ra PDF.'}
+            </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <input
@@ -387,34 +400,37 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
                       <td className="px-4 py-3 text-right font-semibold text-slate-800">{row.baseTotal.toLocaleString()} đ</td>
                       <td className="px-4 py-3">
                         <div className="flex flex-col gap-2">
-                          <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-                            <input
-                              type="number"
-                              min={0}
-                              value={draft.amount}
-                              onChange={(e) => handleBonusDraftChange(row.employee.id, 'amount', e.target.value)}
-                              className="w-full sm:w-32 border border-slate-200 rounded-lg px-3 py-2 text-sm"
-                              placeholder="0"
-                              disabled={!canAdjustPayroll}
-                            />
-                            <input
-                              type="text"
-                              value={draft.note}
-                              onChange={(e) => handleBonusDraftChange(row.employee.id, 'note', e.target.value)}
-                              className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm"
-                              placeholder="Lý do thưởng"
-                              disabled={!canAdjustPayroll}
-                            />
-                            {canAdjustPayroll && (
+                          {canAdjustPayroll ? (
+                            <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                              <input
+                                type="number"
+                                min={0}
+                                value={draft.amount}
+                                onChange={(e) => handleBonusDraftChange(row.employee.id, 'amount', e.target.value)}
+                                className="w-full sm:w-32 border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                                placeholder="0"
+                              />
+                              <input
+                                type="text"
+                                value={draft.note}
+                                onChange={(e) => handleBonusDraftChange(row.employee.id, 'note', e.target.value)}
+                                className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                                placeholder="Lý do thưởng"
+                              />
                               <button
                                 onClick={() => handleSaveBonus(row.employee.id)}
                                 className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-semibold hover:bg-blue-700"
                               >
                                 Lưu
                               </button>
-                            )}
-                          </div>
-                          {(row.bonusAmount > 0 || row.bonusNote) && (
+                            </div>
+                          ) : (
+                            <div className="rounded-lg bg-slate-50 border border-slate-100 px-3 py-2">
+                              <p className="text-sm font-semibold text-slate-700">{row.bonusAmount.toLocaleString()} đ</p>
+                              <p className="text-xs text-slate-500">{row.bonusNote || 'Không có ghi chú thưởng'}</p>
+                            </div>
+                          )}
+                          {canAdjustPayroll && (row.bonusAmount > 0 || row.bonusNote) && (
                             <p className="text-[11px] text-slate-500">
                               Đã lưu: {row.bonusAmount.toLocaleString()} đ {row.bonusNote ? `• ${row.bonusNote}` : ''}
                             </p>
@@ -478,20 +494,21 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
         </div>
       </div>
 
-      {/* Search */}
-      <div className="bg-white p-3 rounded-lg shadow-sm border border-slate-100 relative">
-        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
-        <input
-          type="text"
-          placeholder="Tìm kiếm nhân viên theo tên, vai trò, SĐT..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-        />
-      </div>
+      {!selfServiceOnly && (
+        <div className="bg-white p-3 rounded-lg shadow-sm border border-slate-100 relative">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
+          <input
+            type="text"
+            placeholder="Tìm kiếm nhân viên theo tên, vai trò, SĐT..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+          />
+        </div>
+      )}
 
       {/* List */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
+      {!selfServiceOnly && <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
         {filteredEmployees.map(emp => (
           <div key={emp.id} className="bg-white p-4 rounded-lg shadow-sm border border-slate-100 flex gap-3 hover:shadow-md transition group relative">
              <div className="absolute top-3 right-3 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -597,9 +614,9 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
              </div>
           </div>
         ))}
-      </div>
+      </div>}
 
-      {filteredEmployees.length === 0 && (
+      {!selfServiceOnly && filteredEmployees.length === 0 && (
          <div className="text-center py-20 text-gray-500">
            Không tìm thấy nhân viên nào.
          </div>

@@ -347,6 +347,9 @@ const App: React.FC = () => {
   const currentUser = appState.userAccounts?.find(user => user.id === currentUserId) || null;
   const can = (permission: AccessPermission) => hasPermission(currentUser, permission);
   const isAdmin = currentUser?.role === 'ADMIN';
+  const currentEmployeeId = currentUser
+    ? (currentUser.linkedEmployeeId || appState.employees.find(emp => normalizePhone(emp.phone) === normalizePhone(currentUser.phone))?.id)
+    : undefined;
   const canViewLogs = can('LOGS_VIEW');
   const canViewDashboard = can('DASHBOARD_VIEW');
   const canViewInventory = can('INVENTORY_VIEW');
@@ -358,7 +361,8 @@ const App: React.FC = () => {
   const canViewElearning = can('ELEARNING_VIEW');
   const canViewEducation = can('EDUCATION_VIEW');
   const canViewInteractiveDevices = can('INTERACTIVE_DEVICES_VIEW');
-  const canViewEmployees = can('EMPLOYEES_VIEW');
+  const canViewEmployeeDirectory = can('EMPLOYEES_VIEW');
+  const canViewEmployees = canViewEmployeeDirectory || Boolean(currentEmployeeId);
   const isElearningAdmin = currentUser?.role === 'ADMIN' || currentUser?.role === 'MANAGER';
   const firstAccessibleTab: AppTab =
     (canViewDashboard && 'dashboard') ||
@@ -2207,6 +2211,8 @@ const App: React.FC = () => {
           onDeleteEmployee={guard('EMPLOYEES_DELETE', handleDeleteEmployee)}
           canEdit={can('EMPLOYEES_EDIT')}
           canDelete={can('EMPLOYEES_DELETE')}
+          currentEmployeeId={currentEmployeeId}
+          selfServiceOnly={!canViewEmployeeDirectory}
         />
       )}
       {activeTab === 'quotations' && canViewQuotations && (
@@ -2278,7 +2284,7 @@ const App: React.FC = () => {
           canManageRetakes={currentUser?.role === 'ADMIN'}
           currentUserId={currentUser?.id}
           currentUserName={currentUser?.name}
-          currentEmployeeId={currentUser?.linkedEmployeeId}
+          currentEmployeeId={currentEmployeeId}
           openLessonRequest={elearningOpenRequest}
         />
       )}

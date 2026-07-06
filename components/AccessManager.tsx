@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Employee, UserAccount, AccessRole, AccessPermission } from '../types';
 import { ACCESS_PERMISSION_GROUPS, ACCESS_PERMISSION_VERSION, getDefaultPermissionsForRole, normalizePhone } from '../services/accessControl';
-import { X, ShieldCheck, UserPlus, Trash2, RefreshCw } from 'lucide-react';
+import { X, ShieldCheck, UserPlus, Trash2, RefreshCw, ListChecks } from 'lucide-react';
 
 interface AccessManagerProps {
   isOpen: boolean;
@@ -19,6 +19,14 @@ const ROLE_LABELS: Record<AccessRole, string> = {
   STAFF: 'NHAN VIEN'
 };
 
+type BulkTarget = 'ALL_NON_ADMIN' | 'MANAGER' | 'STAFF';
+
+const BULK_TARGET_LABELS: Record<BulkTarget, string> = {
+  ALL_NON_ADMIN: 'Tat ca tru ADMIN',
+  MANAGER: 'Tat ca QUAN LY',
+  STAFF: 'Tat ca NHAN VIEN'
+};
+
 export const AccessManager: React.FC<AccessManagerProps> = ({
   isOpen,
   accounts,
@@ -34,9 +42,18 @@ export const AccessManager: React.FC<AccessManagerProps> = ({
     role: 'STAFF' as AccessRole,
     linkedEmployeeId: ''
   });
+  const [bulkTarget, setBulkTarget] = useState<BulkTarget>('STAFF');
+  const [bulkPermission, setBulkPermission] = useState<AccessPermission>('EMPLOYEES_VIEW');
 
   const sortedAccounts = useMemo(() => [...accounts].sort((a, b) => a.name.localeCompare(b.name)), [accounts]);
   const sortedEmployees = useMemo(() => [...employees].sort((a, b) => a.name.localeCompare(b.name)), [employees]);
+  const bulkTargetAccounts = useMemo(() => {
+    return sortedAccounts.filter(account => {
+      if (account.role === 'ADMIN') return false;
+      if (bulkTarget === 'ALL_NON_ADMIN') return true;
+      return account.role === bulkTarget;
+    });
+  }, [bulkTarget, sortedAccounts]);
 
   if (!isOpen) return null;
 
@@ -79,6 +96,27 @@ export const AccessManager: React.FC<AccessManagerProps> = ({
       permissions.add(perm);
     }
     updateAccount(account, { permissions: Array.from(permissions) });
+  };
+
+  const applyBulkPermission = (mode: 'grant' | 'revoke') => {
+    if (bulkTargetAccounts.length === 0) {
+      alert('Khong co tai khoan nao phu hop voi nhom da chon.');
+      return;
+    }
+
+    const actionLabel = mode === 'grant' ? 'cap' : 'go';
+    const ok = window.confirm(`${actionLabel.toUpperCase()} quyen nay cho ${bulkTargetAccounts.length} tai khoan?`);
+    if (!ok) return;
+
+    bulkTargetAccounts.forEach(account => {
+      const permissions = new Set(account.permissions || []);
+      if (mode === 'grant') {
+        permissions.add(bulkPermission);
+      } else {
+        permissions.delete(bulkPermission);
+      }
+      updateAccount(account, { permissions: Array.from(permissions), permissionsVersion: ACCESS_PERMISSION_VERSION });
+    });
   };
 
   const handleSelectEmployee = (employeeId: string) => {
@@ -158,6 +196,51 @@ export const AccessManager: React.FC<AccessManagerProps> = ({
 
             <div className="text-xs text-slate-500">
               Ghi chu: Tick quyen gom ca xem module va thao tac. ADMIN luon co toan quyen, MANAGER mac dinh duoc sua nhung khong duoc xoa.
+            </div>
+
+            <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 space-y-3">
+              <div className="flex items-center gap-2 font-semibold text-slate-700">
+                <ListChecks size={16} /> Cap quyen hang loat
+              </div>
+              <select
+                value={bulkTarget}
+                onChange={e => setBulkTarget(e.target.value as BulkTarget)}
+                className="w-full border border-blue-100 rounded-lg px-3 py-2 text-sm bg-white"
+              >
+                {Object.keys(BULK_TARGET_LABELS).map(target => (
+                  <option key={target} value={target}>{BULK_TARGET_LABELS[target as BulkTarget]}</option>
+                ))}
+              </select>
+              <select
+                value={bulkPermission}
+                onChange={e => setBulkPermission(e.target.value as AccessPermission)}
+                className="w-full border border-blue-100 rounded-lg px-3 py-2 text-sm bg-white"
+              >
+                {ACCESS_PERMISSION_GROUPS.map(group => (
+                  <optgroup key={group.group} label={group.group}>
+                    {group.items.map(item => (
+                      <option key={item.key} value={item.key}>{item.label}</option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+              <div className="text-xs text-slate-500">
+                Dang ap dung cho <strong>{bulkTargetAccounts.length}</strong> tai khoan. ADMIN khong bi thay doi.
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => applyBulkPermission('grant')}
+                  className="bg-blue-600 text-white rounded-lg py-2 text-sm font-semibold hover:bg-blue-700"
+                >
+                  Cap quyen
+                </button>
+                <button
+                  onClick={() => applyBulkPermission('revoke')}
+                  className="bg-white text-slate-700 border border-blue-100 rounded-lg py-2 text-sm font-semibold hover:bg-blue-100"
+                >
+                  Go quyen
+                </button>
+              </div>
             </div>
           </div>
 
