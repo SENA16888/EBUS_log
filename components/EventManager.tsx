@@ -1242,7 +1242,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
   onSaveChecklistSignature
 }) => {
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
-  const [eventScreenMode, setEventScreenMode] = useState<'HOME' | 'DETAIL'>('HOME');
+  const [eventScreenMode, setEventScreenMode] = useState<'HOME' | 'DASHBOARD' | 'DETAIL'>('HOME');
   const [detailSection, setDetailSection] = useState<EventDetailSection>('PREP_LOGISTICS');
   const [detailTab, setDetailTab] = useState<EventDetailTab>('EQUIPMENT');
   const [selectedLayoutBlockId, setSelectedLayoutBlockId] = useState<string | null>(null);
@@ -1649,7 +1649,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
     setSplitAutoStaffSlotKeys(new Set());
   }, [selectedEvent]);
   useEffect(() => {
-    if (eventScreenMode === 'DETAIL' && !selectedEvent) {
+    if (eventScreenMode !== 'HOME' && !selectedEvent) {
       setEventScreenMode('HOME');
     }
   }, [eventScreenMode, selectedEvent]);
@@ -1803,7 +1803,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
 
   const openEventDetail = (eventId: string) => {
     setSelectedEventId(eventId);
-    setEventScreenMode('DETAIL');
+    setEventScreenMode(isAdmin ? 'DETAIL' : 'DASHBOARD');
   };
 
   const formatTimelineDatetime = (value: string) => {
@@ -2732,6 +2732,42 @@ export const EventManager: React.FC<EventManagerProps> = ({
     totalCosts,
     timelineEntries.length
   ]);
+  const publicLiveBaseUrl = typeof window !== 'undefined'
+    ? `${window.location.origin}${window.location.pathname}`
+    : '';
+  const getDashboardLiveUrl = (programId: string) =>
+    publicLiveBaseUrl
+      ? `${publicLiveBaseUrl}?ehLive=${selectedEvent?.id || ''}&ehProgram=${encodeURIComponent(programId)}`
+      : '';
+  const dashboardMapUrl = eventProfile.mapLink
+    || (selectedEvent?.location ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(selectedEvent.location)}` : '');
+  const dashboardEquipmentItems = selectedEvent
+    ? selectedEvent.items.map(item => {
+      const inv = inventory.find(it => it.id === item.itemId);
+      return {
+        ...item,
+        name: inv?.name || item.itemId,
+        category: inv?.category || '',
+        quantity: Number(item.quantity) || 0
+      };
+    })
+    : [];
+  const dashboardIncidentCount = contentProgramViews.reduce(
+    (sum, program) => sum + (program.houseOperation?.incidents?.filter(incident => incident.status === 'OPEN').length || 0),
+    0
+  );
+  const dashboardStationCount = contentProgramViews.reduce(
+    (sum, program) => sum + Math.max(program.houseOperation?.stations?.length || 0, program.layout?.blocks?.length || 0),
+    0
+  );
+  const dashboardDoneTasks = contentProgramViews.reduce(
+    (sum, program) => sum + (program.houseOperation?.tasks?.filter(task => task.status === 'DONE').length || 0),
+    0
+  );
+  const dashboardTotalTasks = contentProgramViews.reduce(
+    (sum, program) => sum + (program.houseOperation?.tasks?.length || 0),
+    0
+  );
 
   return (
     <div className="flex flex-col lg:flex-row gap-6 lg:h-[calc(100vh-100px)]">
@@ -2904,16 +2940,252 @@ export const EventManager: React.FC<EventManagerProps> = ({
               </div>
             </div>
           </>
+        ) : eventScreenMode === 'DASHBOARD' && selectedEvent ? (
+          <>
+            <div className="p-4 md:p-5 border-b border-slate-100 bg-slate-50/40 shrink-0">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div className="space-y-2">
+                  <button
+                    onClick={() => setEventScreenMode('HOME')}
+                    className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-full bg-white text-slate-700 border border-slate-200 hover:bg-slate-100 transition"
+                  >
+                    <ArrowLeft size={14} /> Quay lại danh sách
+                  </button>
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h2 className="text-2xl font-black text-slate-900">{selectedEvent.name}</h2>
+                      <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-black ${getEventVenueTone(getEventVenue(selectedEvent)).chip}`}>
+                        <span className={`h-1.5 w-1.5 rounded-full ${getEventVenueTone(getEventVenue(selectedEvent)).dot}`}></span>
+                        {getEventVenueLabel(getEventVenue(selectedEvent))}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-sm text-slate-500">{selectedEvent.client || eventProfile.organization || 'Chưa cập nhật đơn vị'} • {eventDateLabel || selectedEvent.startDate}</p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {dashboardMapUrl && (
+                    <a
+                      href={dashboardMapUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-2 rounded-lg border border-blue-100 bg-blue-50 px-4 py-2 text-sm font-black text-blue-700 hover:bg-blue-100"
+                    >
+                      <MapPin size={16}/> Google Map
+                    </a>
+                  )}
+                  {contentProgramViews[0] && getDashboardLiveUrl(contentProgramViews[0].id) && (
+                    <a
+                      href={getDashboardLiveUrl(contentProgramViews[0].id)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-black text-white hover:bg-black"
+                    >
+                      <PlayCircle size={16}/> Xem LIVE
+                    </a>
+                  )}
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      onClick={() => setEventScreenMode('DETAIL')}
+                      className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-black text-white hover:bg-blue-700"
+                    >
+                      <Pencil size={16}/> Mở chỉnh sửa
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto bg-slate-50/50 p-4 md:p-6 space-y-5">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="rounded-xl border border-slate-200 bg-white p-4">
+                  <p className="text-[11px] font-black uppercase text-slate-400">Chương trình</p>
+                  <p className="mt-1 text-2xl font-black text-slate-900">{contentProgramViews.length}</p>
+                </div>
+                <div className="rounded-xl border border-teal-100 bg-teal-50 p-4">
+                  <p className="text-[11px] font-black uppercase text-teal-700">Trạm/Khu vực</p>
+                  <p className="mt-1 text-2xl font-black text-teal-800">{dashboardStationCount}</p>
+                </div>
+                <div className="rounded-xl border border-blue-100 bg-blue-50 p-4">
+                  <p className="text-[11px] font-black uppercase text-blue-700">Nhân sự</p>
+                  <p className="mt-1 text-2xl font-black text-blue-800">{staffCostGroups.length}</p>
+                </div>
+                <div className="rounded-xl border border-amber-100 bg-amber-50 p-4">
+                  <p className="text-[11px] font-black uppercase text-amber-700">Incident mở</p>
+                  <p className="mt-1 text-2xl font-black text-amber-800">{dashboardIncidentCount}</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 xl:grid-cols-[1.1fr_0.9fr] gap-5">
+                <div className="space-y-5">
+                  <div className="rounded-xl border border-slate-200 bg-white p-5">
+                    <h3 className="text-lg font-black text-slate-900 flex items-center gap-2"><BookOpen size={18}/> Hồ sơ nhanh</h3>
+                    <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                      <div className="rounded-lg bg-slate-50 p-3">
+                        <p className="text-[11px] font-black uppercase text-slate-400">Thời gian</p>
+                        <p className="mt-1 font-bold text-slate-800">{eventDateLabel || 'Chưa cập nhật'}{programTimeLabel ? ` • ${programTimeLabel}` : ''}</p>
+                      </div>
+                      <div className="rounded-lg bg-slate-50 p-3">
+                        <p className="text-[11px] font-black uppercase text-slate-400">Địa điểm</p>
+                        <p className="mt-1 font-bold text-slate-800">{[selectedEvent.location, eventProfile.addressDetail].filter(Boolean).join(' • ') || 'Chưa cập nhật'}</p>
+                      </div>
+                      <div className="rounded-lg bg-slate-50 p-3">
+                        <p className="text-[11px] font-black uppercase text-slate-400">Đối tượng / Quy mô</p>
+                        <p className="mt-1 font-bold text-slate-800">
+                          {getAudienceLabels(eventProfile.audience) || 'Chưa cập nhật'}
+                          {(eventProfile.attendanceMin || eventProfile.attendanceMax) ? ` • ${eventProfile.attendanceMin ?? 0}-${eventProfile.attendanceMax ?? 0} người` : ''}
+                        </p>
+                      </div>
+                      <div className="rounded-lg bg-slate-50 p-3">
+                        <p className="text-[11px] font-black uppercase text-slate-400">Liên hệ</p>
+                        <p className="mt-1 font-bold text-slate-800">
+                          {eventProfile.schoolContact?.name || eventProfile.einsteinPic || 'Chưa cập nhật'}
+                          {eventProfile.schoolContact?.phone ? ` • ${eventProfile.schoolContact.phone}` : ''}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-slate-200 bg-white p-5">
+                    <div className="flex items-center justify-between gap-3">
+                      <h3 className="text-lg font-black text-slate-900 flex items-center gap-2"><Radio size={18}/> Chương trình nội dung</h3>
+                      <span className="text-xs font-bold text-slate-500">Tasks {dashboardDoneTasks}/{dashboardTotalTasks}</span>
+                    </div>
+                    <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {contentProgramViews.map(program => {
+                        const operation = program.houseOperation;
+                        const agenda = operation?.agenda || [];
+                        const firstAgenda = agenda[0];
+                        const lastAgenda = agenda[agenda.length - 1];
+                        const stationCount = Math.max(operation?.stations?.length || 0, program.layout?.blocks?.length || 0);
+                        return (
+                          <div key={program.id} className="rounded-xl border border-slate-200 bg-slate-50/60 p-4">
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <p className="font-black text-slate-900">{program.name}</p>
+                                <p className="mt-1 text-xs font-semibold text-slate-500">{getProgramDateLabel(program, selectedEvent)}</p>
+                              </div>
+                              <a
+                                href={getDashboardLiveUrl(program.id)}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="shrink-0 inline-flex items-center gap-1 rounded-lg bg-slate-900 px-2 py-1 text-[11px] font-black text-white"
+                              >
+                                <PlayCircle size={12}/> LIVE
+                              </a>
+                            </div>
+                            <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+                              <div className="rounded-lg bg-white p-2 border border-slate-100">
+                                <p className="text-[10px] font-black uppercase text-slate-400">Trạm</p>
+                                <p className="font-black text-slate-900">{stationCount}</p>
+                              </div>
+                              <div className="rounded-lg bg-white p-2 border border-slate-100">
+                                <p className="text-[10px] font-black uppercase text-slate-400">Agenda</p>
+                                <p className="font-black text-slate-900">{agenda.length}</p>
+                              </div>
+                              <div className="rounded-lg bg-white p-2 border border-slate-100">
+                                <p className="text-[10px] font-black uppercase text-slate-400">Incident</p>
+                                <p className="font-black text-slate-900">{operation?.incidents?.filter(incident => incident.status === 'OPEN').length || 0}</p>
+                              </div>
+                            </div>
+                            <p className="mt-3 text-xs font-semibold text-slate-600">
+                              {firstAgenda && lastAgenda ? `${firstAgenda.startTime} - ${lastAgenda.endTime}` : 'Chưa có agenda'} • {operation?.theme || program.description || 'Chưa cập nhật chủ đề'}
+                            </p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-slate-200 bg-white p-5">
+                    <h3 className="text-lg font-black text-slate-900 flex items-center gap-2"><Clock3 size={18}/> Timeline hậu cần</h3>
+                    <div className="mt-4 space-y-2">
+                      {timelineEntries.slice(0, 8).map(entry => (
+                        <div key={entry.id} className="rounded-lg border border-slate-100 bg-slate-50 p-3">
+                          <p className="text-[11px] font-black uppercase text-slate-500">{formatTimelineDatetime(entry.datetime)}</p>
+                          <p className="mt-1 text-sm font-semibold text-slate-800">{entry.note}</p>
+                        </div>
+                      ))}
+                      {timelineEntries.length === 0 && <p className="text-sm text-slate-400 italic">Chưa có timeline hậu cần.</p>}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-5">
+                  <div className="rounded-xl border border-slate-200 bg-white p-5">
+                    <h3 className="text-lg font-black text-slate-900 flex items-center gap-2"><Users size={18}/> Nhân sự</h3>
+                    <div className="mt-4 space-y-2">
+                      {staffCostGroups.map(group => {
+                        const emp = employees.find(employee => employee.id === group.employeeId);
+                        return (
+                          <div key={group.key} className="rounded-lg border border-slate-100 bg-slate-50 p-3">
+                            <div className="flex items-center justify-between gap-3">
+                              <p className="font-black text-slate-900">{emp?.name || group.employeeId}</p>
+                              <span className="text-xs font-black text-slate-500">{group.totalHours || group.items.length}h</span>
+                            </div>
+                            <p className="mt-1 text-xs font-semibold text-slate-500">{group.shiftDate ? new Date(group.shiftDate).toLocaleDateString('vi-VN') : 'Chưa có ngày'} • {group.sessions.map(session => SESSION_LABELS[session]).join(' + ') || 'Chưa có ca'}</p>
+                            {group.stationNames.length > 0 && <p className="mt-1 text-xs font-semibold text-teal-700">Trạm: {group.stationNames.join(', ')}</p>}
+                          </div>
+                        );
+                      })}
+                      {staffCostGroups.length === 0 && <p className="text-sm text-slate-400 italic">Chưa phân công nhân sự.</p>}
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-slate-200 bg-white p-5">
+                    <h3 className="text-lg font-black text-slate-900 flex items-center gap-2"><Box size={18}/> Thiết bị cần mang</h3>
+                    <div className="mt-4 space-y-2 max-h-[360px] overflow-auto pr-1">
+                      {dashboardEquipmentItems.map(item => (
+                        <div key={item.itemId} className="rounded-lg border border-slate-100 bg-slate-50 p-3 flex items-center justify-between gap-3">
+                          <div>
+                            <p className="font-bold text-slate-900">{item.name}</p>
+                            {item.category && <p className="text-xs text-slate-500">{item.category}</p>}
+                          </div>
+                          <span className="rounded-lg bg-white px-2 py-1 text-sm font-black text-slate-800 border border-slate-100">x{item.quantity}</span>
+                        </div>
+                      ))}
+                      {dashboardEquipmentItems.length === 0 && <p className="text-sm text-slate-400 italic">Chưa có danh sách thiết bị.</p>}
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-slate-200 bg-white p-5">
+                    <h3 className="text-lg font-black text-slate-900 flex items-center gap-2"><LinkIcon size={18}/> Liên kết nhanh</h3>
+                    <div className="mt-4 grid grid-cols-1 gap-2">
+                      {dashboardMapUrl && (
+                        <a href={dashboardMapUrl} target="_blank" rel="noreferrer" className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-sm font-black text-blue-700 hover:bg-blue-100">
+                          Mở Google Map
+                        </a>
+                      )}
+                      {contentProgramViews.map(program => (
+                        <a key={program.id} href={getDashboardLiveUrl(program.id)} target="_blank" rel="noreferrer" className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-black text-slate-700 hover:bg-slate-100">
+                          LIVE - {program.name}
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </>
         ) : selectedEvent ? (
           <>
             <div className="p-3 md:p-4 border-b border-slate-100 space-y-3 shrink-0">
-              <div>
+              <div className="flex flex-wrap items-center gap-2">
                 <button
                   onClick={() => setEventScreenMode('HOME')}
                   className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-full bg-slate-100 text-slate-700 border border-slate-200 hover:bg-slate-200 transition"
                 >
                   <ArrowLeft size={14} /> Quay lại trang chủ Sự kiện
                 </button>
+                {isAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => setEventScreenMode('DASHBOARD')}
+                    className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-black rounded-full bg-blue-50 text-blue-700 border border-blue-100 hover:bg-blue-100 transition"
+                  >
+                    <BarChart3 size={14}/> Xem Dashboard
+                  </button>
+                )}
               </div>
               <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-4">
                 <div>
