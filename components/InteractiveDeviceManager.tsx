@@ -155,21 +155,30 @@ const getProgramStart = (event: Event) =>
   getHouseOperationAgenda(event)[0]?.startTime ||
   '09:00';
 
+const getLiveTimingAnchor = (event: Event) => {
+  const agenda = getHouseOperationAgenda(event);
+  return agenda.find(block => block.kind === 'EXPERIENCE_AM')?.startTime
+    || agenda.find(block => block.kind === 'EXPERIENCE_PM')?.startTime
+    || agenda.find(block => block.kind === 'OPENING')?.startTime
+    || getProgramStart(event);
+};
+
 const getLiveTiming = (event: Event) => {
   const agenda = getHouseOperationAgenda(event);
-  const scheduledArrival = agenda.find(block => block.kind === 'OPENING')?.startTime || getProgramStart(event);
+  const scheduledArrival = getLiveTimingAnchor(event);
   const actualArrival = event.houseOperation?.live?.actualArrivalTime || scheduledArrival;
   const delta = timeToMinutes(actualArrival) - timeToMinutes(scheduledArrival);
   const lunchBlock = agenda.find(block => block.kind === 'LUNCH');
   const lunchEndMinutes = lunchBlock?.endTime ? timeToMinutes(lunchBlock.endTime) : Number.POSITIVE_INFINITY;
-  return { scheduledArrival, actualArrival, delta, lunchBlock, lunchEndMinutes };
+  return { scheduledArrival, actualArrival, delta, lunchBlock, lunchEndMinutes, anchorMinutes: timeToMinutes(scheduledArrival) };
 };
 
 const getLiveAdjustedBlock = (event: Event, block: HouseOperationAgendaBlock): HouseOperationAgendaBlock => {
-  const { delta, lunchBlock, lunchEndMinutes } = getLiveTiming(event);
+  const { delta, lunchBlock, lunchEndMinutes, anchorMinutes } = getLiveTiming(event);
   if (!delta) return block;
-  const isMorning = timeToMinutes(block.startTime) < lunchEndMinutes;
-  if (!isMorning) return block;
+  const startMinutes = timeToMinutes(block.startTime);
+  const isLiveAdjustable = startMinutes >= anchorMinutes && startMinutes < lunchEndMinutes;
+  if (!isLiveAdjustable) return block;
   const isLunch = block.id === lunchBlock?.id || block.kind === 'LUNCH';
   return {
     ...block,
@@ -365,7 +374,7 @@ const buildEventAnnouncements = (device: InteractiveDeviceProfile, events: Event
         source: 'EVENT' as const,
         text: asset ? asset.transcript : applyTemplate(rule.messageTemplate, event),
         asset,
-        detail: `${event.name} • LIVE ${actualArrival}${delta ? ` (${delta > 0 ? '+' : ''}${delta}p)` : ''}`,
+        detail: `${event.name} • LIVE C ${actualArrival}${delta ? ` (${delta > 0 ? '+' : ''}${delta}p)` : ''}`,
         priority: rule.priority || 0
       }];
     }
