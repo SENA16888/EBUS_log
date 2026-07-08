@@ -468,18 +468,25 @@ const buildGroupActivityAgendas = (
 
 const shiftTime = (time: string, deltaMinutes: number) => minutesToTime(timeToMinutes(time) + deltaMinutes);
 
+const getLiveTimingAnchor = (operation: HouseOperationInstance, event: Event) =>
+  operation.agenda.find(block => block.kind === 'EXPERIENCE_AM')?.startTime
+  || operation.agenda.find(block => block.kind === 'EXPERIENCE_PM')?.startTime
+  || operation.agenda.find(block => block.kind === 'OPENING')?.startTime
+  || getProgramStart(event);
+
 const buildLiveGroupAgendas = (
   standardGroups: GroupAgendaView[],
   operation: HouseOperationInstance,
   event: Event
 ): GroupAgendaView[] => {
-  const scheduledArrival = operation.agenda.find(block => block.kind === 'OPENING')?.startTime || getProgramStart(event);
-  const actualArrival = operation.live?.actualArrivalTime || scheduledArrival;
-  const delta = timeToMinutes(actualArrival) - timeToMinutes(scheduledArrival);
+  const liveAnchor = getLiveTimingAnchor(operation, event);
+  const actualStart = operation.live?.actualArrivalTime || liveAnchor;
+  const delta = timeToMinutes(actualStart) - timeToMinutes(liveAnchor);
   if (!delta) return standardGroups;
 
   const lunchBlock = operation.agenda.find(block => block.kind === 'LUNCH');
   const lunchEnd = lunchBlock?.endTime;
+  const anchorMinutes = timeToMinutes(liveAnchor);
   const lunchEndMinutes = lunchEnd ? timeToMinutes(lunchEnd) : Number.POSITIVE_INFINITY;
 
   return standardGroups.map(group => ({
@@ -487,8 +494,8 @@ const buildLiveGroupAgendas = (
     blocks: group.blocks.map(block => {
       const start = timeToMinutes(block.startTime);
       const isLunch = /nghỉ trưa|nghi trua/i.test(block.title);
-      const isMorning = start < lunchEndMinutes;
-      if (!isMorning) return block;
+      const isLiveAdjustable = start >= anchorMinutes && start < lunchEndMinutes;
+      if (!isLiveAdjustable) return block;
       return {
         ...block,
         startTime: shiftTime(block.startTime, delta),
@@ -1405,9 +1412,9 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
     if (!canEdit || publicMode) return;
     saveOperation(cur => ({ ...cur, live: { ...cur.live, selectedRoom: room, lastUpdatedAt: new Date().toISOString() } }));
   };
-  const scheduledArrival = operation.agenda.find(block => block.kind === 'OPENING')?.startTime || getProgramStart(selectedEvent);
-  const actualArrival = operation.live?.actualArrivalTime || scheduledArrival;
-  const liveDelta = timeToMinutes(actualArrival) - timeToMinutes(scheduledArrival);
+  const liveTimingAnchor = getLiveTimingAnchor(operation, selectedEvent);
+  const actualArrival = operation.live?.actualArrivalTime || liveTimingAnchor;
+  const liveDelta = timeToMinutes(actualArrival) - timeToMinutes(liveTimingAnchor);
   const viewingEducationItems = (viewingEducationContext?.links || []).map(link => {
     const activity = educationActivities.find(item => item.id === link.activityId);
     const theme = activity?.themes.find(item => item.id === link.themeId);
@@ -2179,15 +2186,15 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                 <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3">
                   <div>
                     <h3 className="font-black text-slate-900 flex items-center gap-2"><PlayCircle size={18} />Timing Center</h3>
-                    <p className="mt-1 text-xs text-slate-500">Bản LIVE lấy từ agenda chuẩn. Nhập giờ đoàn đến thực tế để tự đẩy lịch buổi sáng; buổi chiều giữ nguyên.</p>
+                    <p className="mt-1 text-xs text-slate-500">Bản LIVE lấy từ agenda chuẩn. Nhập giờ thực tế bắt đầu mốc C để đẩy các vòng trải nghiệm; A check-in và B hoạt động chung giữ nguyên.</p>
                   </div>
                   <div className="grid grid-cols-2 gap-2 min-w-full lg:min-w-[300px]">
                     <label className="block">
-                      <span className="text-[11px] font-black uppercase text-slate-500">Giờ chuẩn</span>
-                      <input readOnly value={scheduledArrival} className="mt-1 w-full border rounded-lg px-3 py-2 text-sm font-black bg-slate-50" />
+                      <span className="text-[11px] font-black uppercase text-slate-500">Mốc C chuẩn</span>
+                      <input readOnly value={liveTimingAnchor} className="mt-1 w-full border rounded-lg px-3 py-2 text-sm font-black bg-slate-50" />
                     </label>
                     <label className="block">
-                      <span className="text-[11px] font-black uppercase text-slate-500">Đoàn đến thực tế</span>
+                      <span className="text-[11px] font-black uppercase text-slate-500">Bắt đầu C thực tế</span>
                       <input
                         type="time"
                         value={actualArrival}
@@ -2199,7 +2206,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                   </div>
                 </div>
                 <div className={`mt-4 rounded-lg border p-3 text-sm font-bold ${liveDelta > 0 ? 'border-amber-100 bg-amber-50 text-amber-800' : liveDelta < 0 ? 'border-emerald-100 bg-emerald-50 text-emerald-800' : 'border-slate-100 bg-slate-50 text-slate-600'}`}>
-                  {liveDelta === 0 ? 'LIVE đang khớp agenda chuẩn.' : `Buổi sáng đang ${liveDelta > 0 ? 'trễ' : 'sớm'} ${Math.abs(liveDelta)} phút. Nghỉ trưa sẽ tự co/giãn, buổi chiều giữ nguyên.`}
+                  {liveDelta === 0 ? 'LIVE đang khớp mốc C chuẩn.' : `Mốc C và các vòng trải nghiệm đang ${liveDelta > 0 ? 'trễ' : 'sớm'} ${Math.abs(liveDelta)} phút. A/B giữ nguyên, nghỉ trưa tự co/giãn, buổi chiều giữ nguyên.`}
                 </div>
                 {!publicMode && (
                   <div className="mt-3 rounded-lg border border-blue-100 bg-blue-50 p-3">
