@@ -500,7 +500,7 @@ type AutoStaffSlot = {
   hours: number;
   salary: number;
   allowance: number;
-  assigned?: EventStaffAllocation;
+  assigned: EventStaffAllocation[];
 };
 
 const makeEventManagerId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -671,7 +671,7 @@ const getAutoStaffSlots = (event: Event, splitKeys: Set<string>, programId?: str
       const slotKey = isSplitChild ? getStaffSlotAutoKey(station.id, item.date, slotSessions, programId) : baseKey;
       const slotHours = getStaffWorkHours(slotSessions);
       const slotCompensation = calculateStaffCompensation(slotHours);
-      const assigned = (event.staff || []).find(staff =>
+      const assigned = (event.staff || []).filter(staff =>
         staff.autoKey === slotKey ||
         (!staff.autoKey && staff.stationId === station.id && staff.shiftDate === item.date && getStaffSessions(staff).join('|') === slotSessions.join('|'))
       );
@@ -1440,7 +1440,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
       : [],
     [contentProgramViews, selectedEvent, splitAutoStaffSlotKeys]
   );
-  const filledAutoStaffSlots = autoStaffSlots.filter(slot => slot.assigned).length;
+  const filledAutoStaffSlots = autoStaffSlots.filter(slot => slot.assigned.length > 0).length;
   const linkedQuotation = selectedEvent?.quotationId ? quotations.find(q => q.id === selectedEvent.quotationId) : null;
   const linkedSaleOrders = useMemo(() => {
     if (!selectedEvent) return [];
@@ -1980,6 +1980,8 @@ export const EventManager: React.FC<EventManagerProps> = ({
     }
     const employee = activeEmployees.find(emp => emp.id === employeeId);
     if (!employee) return;
+    const alreadyAssignedToSlot = currentStaff.some(staff => staff.autoKey === slot.key && staff.employeeId === employeeId);
+    if (alreadyAssignedToSlot) return;
     const conflicts = findStaffScheduleConflict(employeeId, slot.date, slot.sessions, slot.key)
       .filter(conflict => conflict.event.id !== selectedEvent.id || conflict.staff.autoKey !== slot.key);
     if (conflicts.length > 0) {
@@ -1988,7 +1990,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
       return;
     }
     const allocation: EventStaffAllocation = {
-      id: slot.assigned?.id || makeEventManagerId('staff-slot'),
+      id: makeEventManagerId('staff-slot'),
       employeeId,
       task: `${slot.programName ? `${slot.programName} • ` : ''}Phụ trách trạm ${slot.station.name}`,
       unit: 'HOUR',
@@ -2002,12 +2004,16 @@ export const EventManager: React.FC<EventManagerProps> = ({
       stationName: slot.station.name,
       source: AUTO_STAFF_SLOT_SOURCE,
       autoKey: slot.key,
-      done: slot.assigned?.done
+      done: false
     };
-    const replaced = currentStaff.some(staff => staff.autoKey === slot.key);
-    const nextStaff = replaced
-      ? currentStaff.map(staff => staff.autoKey === slot.key ? allocation : staff)
-      : [...currentStaff, allocation];
+    onUpdateEvent(selectedEvent.id, { staff: [...currentStaff, allocation] });
+  };
+
+  const removeEmployeeFromStaffSlot = (slot: AutoStaffSlot, staffId: string) => {
+    if (!selectedEvent || !onUpdateEvent || !canEdit) return;
+    const nextStaff = (selectedEvent.staff || []).filter(staff =>
+      !(staff.autoKey === slot.key && (staff.id || '') === staffId)
+    );
     onUpdateEvent(selectedEvent.id, { staff: nextStaff });
   };
 
@@ -2019,16 +2025,16 @@ export const EventManager: React.FC<EventManagerProps> = ({
       next.add(slot.baseKey);
       return next;
     });
-    if (!slot.assigned || !onUpdateEvent) return;
+    if (slot.assigned.length === 0 || !onUpdateEvent) return;
     const firstSession = slot.sessions[0];
     const firstKey = getStaffSlotAutoKey(slot.station.id, slot.date, [firstSession], slot.programId);
     const hours = getStaffWorkHours([firstSession]);
     const compensation = calculateStaffCompensation(hours);
-    const converted: EventStaffAllocation = {
-      ...slot.assigned,
-      id: slot.assigned.id || makeEventManagerId('staff-slot'),
+    const nextStaff = (selectedEvent.staff || []).map(staff => staff.autoKey === slot.key ? {
+      ...staff,
+      id: staff.id || makeEventManagerId('staff-slot'),
       task: `${slot.programName ? `${slot.programName} • ` : ''}Phụ trách trạm ${slot.station.name}`,
-      unit: 'HOUR',
+      unit: 'HOUR' as const,
       quantity: hours,
       rate: STAFF_HOURLY_RATE,
       salary: compensation.total,
@@ -2039,8 +2045,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
       stationName: slot.station.name,
       source: AUTO_STAFF_SLOT_SOURCE,
       autoKey: firstKey
-    };
-    const nextStaff = (selectedEvent.staff || []).map(staff => staff.autoKey === slot.key ? converted : staff);
+    } : staff);
     onUpdateEvent(selectedEvent.id, { staff: nextStaff });
   };
 
@@ -3742,9 +3747,14 @@ export const EventManager: React.FC<EventManagerProps> = ({
                     {autoStaffSlots.length > 0 ? (
                       <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
                         {autoStaffSlots.map(slot => {
-                          const assignedEmployee = slot.assigned ? employees.find(emp => emp.id === slot.assigned?.employeeId) : undefined;
+                          const assignedEmployees = slot.assigned
+                            .map(staff => ({ staff, employee: employees.find(emp => emp.id === staff.employeeId) }));
+                          const allAssignedDone = slot.assigned.length > 0 && slot.assigned.every(staff => !!staff.done);
+                          const availableEmployees = activeEmployees.filter(emp =>
+                            !slot.assigned.some(staff => staff.employeeId === emp.id)
+                          );
                           return (
-                            <div key={slot.key} className={`rounded-xl border p-4 transition ${slot.assigned ? 'border-teal-200 bg-teal-50/50' : 'border-slate-200 bg-slate-50/60'}`}>
+                            <div key={slot.key} className={`rounded-xl border p-4 transition ${slot.assigned.length > 0 ? 'border-teal-200 bg-teal-50/50' : 'border-slate-200 bg-slate-50/60'}`}>
                               <div className="flex items-start justify-between gap-3">
                                 <div>
                                   <div className="flex flex-wrap items-center gap-2">
@@ -3782,49 +3792,61 @@ export const EventManager: React.FC<EventManagerProps> = ({
                                       <ArrowRightLeft size={13}/> Tách 2 buổi
                                     </button>
                                   )}
-                                  {slot.assigned && (
+                                  {slot.assigned.length > 0 && (
                                     <label className="inline-flex items-center gap-2 text-[11px] font-bold text-teal-700">
                                       <input
                                         type="checkbox"
-                                        checked={!!slot.assigned.done}
-                                        onChange={e => onToggleStaffDone?.(selectedEvent.id, slot.assigned!.employeeId, e.target.checked, slot.assigned!.id || slot.assigned!.autoKey)}
+                                        checked={allAssignedDone}
+                                        onChange={e => slot.assigned.forEach(staff =>
+                                          onToggleStaffDone?.(selectedEvent.id, staff.employeeId, e.target.checked, staff.id || staff.autoKey)
+                                        )}
                                       />
-                                      Xong
+                                      Xong ({slot.assigned.length})
                                     </label>
                                   )}
                                 </div>
                               </div>
-                              <div className="mt-3 grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3 items-center">
+                              <div className="mt-3 grid grid-cols-1 gap-3 items-center">
                                 <select
                                   className="w-full border border-slate-200 rounded-lg p-2.5 text-sm bg-white outline-none focus:ring-2 focus:ring-teal-500 disabled:bg-slate-100"
-                                  value={slot.assigned?.employeeId || ''}
+                                  value=""
                                   onChange={e => assignEmployeeToStaffSlot(slot, e.target.value)}
                                   disabled={!canEdit}
                                 >
-                                  <option value="">-- Chọn nhân sự cho trạm này --</option>
-                                  {activeEmployees.map(emp => (
+                                  <option value="">+ Thêm nhân sự cho trạm này</option>
+                                  {availableEmployees.map(emp => (
                                     <option key={emp.id} value={emp.id}>{emp.name} ({emp.role})</option>
                                   ))}
                                 </select>
-                                {slot.assigned && (
-                                  <button
-                                    type="button"
-                                    onClick={() => assignEmployeeToStaffSlot(slot, '')}
-                                    disabled={!canEdit}
-                                    className="inline-flex items-center justify-center rounded-lg border border-slate-200 p-2 text-slate-400 hover:text-red-500 disabled:opacity-50"
-                                    title="Gỡ khỏi slot"
-                                  >
-                                    <Trash2 size={16}/>
-                                  </button>
+                                {slot.assigned.length > 0 && (
+                                  <div className="space-y-2">
+                                    {assignedEmployees.map(({ staff, employee }) => (
+                                      <div key={staff.id || `${slot.key}-${staff.employeeId}`} className="flex items-center justify-between gap-3 rounded-lg border border-teal-100 bg-white px-3 py-2">
+                                        <div>
+                                          <p className="text-sm font-black text-slate-800">{employee?.name || staff.employeeId}</p>
+                                          <p className="text-[11px] font-semibold text-teal-700">{employee?.role || 'Nhân sự'}{staff.done ? ' • Đã xong' : ''}</p>
+                                        </div>
+                                        <button
+                                          type="button"
+                                          onClick={() => removeEmployeeFromStaffSlot(slot, staff.id || '')}
+                                          disabled={!canEdit || !staff.id}
+                                          className="inline-flex items-center justify-center rounded-lg border border-slate-200 p-2 text-slate-400 hover:text-red-500 disabled:opacity-50"
+                                          title="Gỡ nhân sự khỏi slot"
+                                        >
+                                          <Trash2 size={15}/>
+                                        </button>
+                                      </div>
+                                    ))}
+                                  </div>
                                 )}
                               </div>
                               <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white border border-slate-100 px-3 py-2">
-                                <p className="text-[11px] text-slate-500">{getStaffCompensationNote(slot.hours)}</p>
-                                <p className="text-sm font-black text-teal-700">{slot.salary.toLocaleString()}đ</p>
+                                <p className="text-[11px] text-slate-500">{getStaffCompensationNote(slot.hours)} / người</p>
+                                <p className="text-sm font-black text-teal-700">{slot.salary.toLocaleString()}đ/người</p>
                               </div>
-                              {assignedEmployee && (
+                              {assignedEmployees.length > 0 && (
                                 <p className="mt-2 text-xs font-semibold text-teal-700">
-                                  Đang giao cho {assignedEmployee.name}
+                                  Đang giao cho {assignedEmployees.map(item => item.employee?.name || item.staff.employeeId).join(', ')}
                                 </p>
                               )}
                             </div>
