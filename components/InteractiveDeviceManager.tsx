@@ -156,12 +156,30 @@ const getProgramStart = (event: Event) =>
   '09:00';
 
 const DEFAULT_EVENT_WELCOME_RULE_ID = 'bc-event-start';
+const FIXED_LUNCH_SCHEDULE_ID = 'bc-lunch';
 
 const hasExperienceAnchor = (event: Event) =>
   getHouseOperationAgenda(event).some(block => block.kind === 'EXPERIENCE_AM' || block.kind === 'EXPERIENCE_PM');
 
 const shouldSuppressDefaultWelcomeRule = (event: Event, rule: BroadcastEventRule) =>
   rule.id === DEFAULT_EVENT_WELCOME_RULE_ID && hasExperienceAnchor(event);
+
+const isFixedLunchSchedule = (schedule: BroadcastSchedule) =>
+  schedule.id === FIXED_LUNCH_SCHEDULE_ID ||
+  ((schedule.title || '').toLowerCase().includes('nghỉ trưa') && timeToMinutes(schedule.time) >= 11 * 60 && timeToMinutes(schedule.time) <= 13 * 60);
+
+const hasEventLunchAnnouncement = (device: InteractiveDeviceProfile, events: Event[], dateKey: string) => {
+  const venue = getDeviceVenue(device);
+  const hasEnabledLunchRule = (device.eventRules || []).some(rule =>
+    rule.enabled && rule.trigger === 'BLOCK_START' && rule.blockKind === 'LUNCH'
+  );
+  if (!hasEnabledLunchRule) return false;
+  return events.some(event =>
+    isEventActiveOnDate(event, dateKey) &&
+    getEventVenue(event) === venue &&
+    getHouseOperationAgenda(event).some(block => block.kind === 'LUNCH')
+  );
+};
 
 const getLiveTimingAnchor = (event: Event) => {
   const agenda = getHouseOperationAgenda(event);
@@ -346,11 +364,12 @@ const createDefaultDevice = (): InteractiveDeviceProfile => ({
   playbackLogs: []
 });
 
-const buildDailyAnnouncements = (device: InteractiveDeviceProfile, dateKey: string): PendingAnnouncement[] => {
+const buildDailyAnnouncements = (device: InteractiveDeviceProfile, dateKey: string, suppressFixedLunch = false): PendingAnnouncement[] => {
   if (getDeviceVenue(device) !== 'EH') return [];
   const today = new Date(dateAtTime(dateKey, '00:00')).getDay();
   return (device.schedules || [])
     .filter(schedule => schedule.enabled)
+    .filter(schedule => !(suppressFixedLunch && isFixedLunchSchedule(schedule)))
     .filter(schedule => !schedule.daysOfWeek?.length || schedule.daysOfWeek.includes(today))
     .map(schedule => {
       const asset = (device.audioAssets || []).find(item => item.id === schedule.assetId);
@@ -528,8 +547,9 @@ export const InteractiveDeviceManager: React.FC<InteractiveDeviceManagerProps> =
   ) || effectiveBackgroundTracks[0];
 
   const announcements = useMemo(() => {
+    const suppressFixedLunch = hasEventLunchAnnouncement(device, events, todayKey);
     const list = [
-      ...buildDailyAnnouncements(device, todayKey),
+      ...buildDailyAnnouncements(device, todayKey, suppressFixedLunch),
       ...buildEventAnnouncements(device, events, todayKey)
     ];
     return list.sort((a, b) => a.time.getTime() - b.time.getTime() || b.priority - a.priority);
