@@ -18,7 +18,7 @@ import { InteractiveDeviceManager } from './components/InteractiveDeviceManager'
 import { AppState, InventoryItem, Event, EventStatus, Transaction, TransactionType, ComboPackage, Employee, Quotation, EventStaffAllocation, EventExpense, EventAdvanceRequest, LogEntry, ChecklistDirection, ChecklistStatus, ChecklistSignature, EventChecklist, LearningAttempt, LearningProfile, AccessPermission, UserAccount, LearningTrack, InventoryReceipt, InventoryReceiptItem, ActiveSession, PayrollAdjustment, InventoryAuditSession, InventoryAuditItem, InventoryAuditBaseline, EducationActivity, EducationLessonLink, InteractiveDeviceProfile, HouseOperationInstance } from './types';
 import { MOCK_INVENTORY, MOCK_EVENTS, MOCK_TRANSACTIONS, MOCK_PACKAGES, MOCK_EMPLOYEES, MOCK_LEARNING_TRACKS, MOCK_CAREER_RANKS, DEFAULT_USER_ACCOUNTS, MOCK_INVENTORY_RECEIPTS, MOCK_EDUCATION_ACTIVITIES, MOCK_INTERACTIVE_DEVICES } from './constants';
 import { MessageSquare } from 'lucide-react';
-import { ensureCollectionModelInitialized, initializeAuth, loadCollectionState, subscribeToSessions, setSessionOnline, setSessionOffline, syncCollectionStateDiff, saveLearningUserState, subscribeToLearningUserState, deleteLearningUserState, subscribeToLearningUsers } from './services/firebaseService';
+import { ensureCollectionModelInitialized, initializeAuth, loadCollectionState, subscribeToCollectionState, subscribeToSessions, setSessionOnline, setSessionOffline, syncCollectionStateDiff, saveLearningUserState, subscribeToLearningUserState, deleteLearningUserState, subscribeToLearningUsers } from './services/firebaseService';
 import { ensureInventoryBarcodes, ensureItemBarcode, findDuplicateBarcodeItem, findItemByBarcode, generateBarcode, normalizeBarcode } from './services/barcodeService';
 import { normalizeChecklist } from './services/checklistService';
 import { ACCESS_PERMISSION_VERSION, getDefaultPermissionsForRole, hasPermission, normalizePermissionsForRole, normalizePhone } from './services/accessControl';
@@ -602,6 +602,39 @@ const App: React.FC = () => {
       if (unsubscribe) unsubscribe();
     };
   }, []);
+
+  // Máy phát thanh cần nhận lịch LIVE mới ngay cả khi đã mở sẵn phiên đăng nhập.
+  // Chỉ realtime collection events trong tab Thiết bị tương tác để không ảnh hưởng các màn đang nhập liệu.
+  useEffect(() => {
+    if (activeTab !== 'interactiveDevices' || isPublicLiveMode) return;
+
+    let unsubscribe: (() => void) | undefined;
+    let cancelled = false;
+
+    const startEventsListener = async () => {
+      try {
+        await initializeAuth();
+        if (cancelled) return;
+        unsubscribe = subscribeToCollectionState('events', (events) => {
+          isApplyingRemoteRef.current = true;
+          setAppState(prev => {
+            const nextState = withDefaults({ ...prev, events } as AppState);
+            lastPersistedStateRef.current = stripLearningUserData(nextState);
+            return nextState;
+          });
+        });
+      } catch (err) {
+        console.error('Failed to subscribe events for broadcast refresh:', err);
+      }
+    };
+
+    void startEventsListener();
+
+    return () => {
+      cancelled = true;
+      if (unsubscribe) unsubscribe();
+    };
+  }, [activeTab, isPublicLiveMode]);
 
   // Lưu dữ liệu theo từng collection để tránh ghi đè toàn bộ appState.
   // Gom các thay đổi nhanh và lưu tuần tự để chính phiên hiện tại không tự tạo conflict.

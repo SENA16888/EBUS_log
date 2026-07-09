@@ -155,6 +155,14 @@ const getProgramStart = (event: Event) =>
   getHouseOperationAgenda(event)[0]?.startTime ||
   '09:00';
 
+const DEFAULT_EVENT_WELCOME_RULE_ID = 'bc-event-start';
+
+const hasExperienceAnchor = (event: Event) =>
+  getHouseOperationAgenda(event).some(block => block.kind === 'EXPERIENCE_AM' || block.kind === 'EXPERIENCE_PM');
+
+const shouldSuppressDefaultWelcomeRule = (event: Event, rule: BroadcastEventRule) =>
+  rule.id === DEFAULT_EVENT_WELCOME_RULE_ID && hasExperienceAnchor(event);
+
 const getLiveTimingAnchor = (event: Event) => {
   const agenda = getHouseOperationAgenda(event);
   return agenda.find(block => block.kind === 'EXPERIENCE_AM')?.startTime
@@ -365,16 +373,18 @@ const buildEventAnnouncements = (device: InteractiveDeviceProfile, events: Event
   return activeEvents.flatMap(event => (device.eventRules || []).filter(rule => rule.enabled).flatMap(rule => {
     const asset = (device.audioAssets || []).find(item => item.id === rule.assetId);
     if (rule.trigger === 'EVENT_START') {
-      const { actualArrival, delta } = getLiveTiming(event);
-      const time = addMinutes(dateAtTime(dateKey, actualArrival), rule.offsetMinutes);
+      if (shouldSuppressDefaultWelcomeRule(event, rule)) return [];
+      const programStart = getProgramStart(event);
+      const time = addMinutes(dateAtTime(dateKey, programStart), rule.offsetMinutes);
+      const timingKey = `${programStart}-${rule.offsetMinutes}`;
       return [{
-        id: `event-${event.id}-${rule.id}-${dateKey}`,
+        id: `event-${event.id}-${rule.id}-${dateKey}-${timingKey}`,
         title: rule.title,
         time,
         source: 'EVENT' as const,
         text: asset ? asset.transcript : applyTemplate(rule.messageTemplate, event),
         asset,
-        detail: `${event.name} • LIVE C ${actualArrival}${delta ? ` (${delta > 0 ? '+' : ''}${delta}p)` : ''}`,
+        detail: `${event.name} • Theo agenda ${programStart}`,
         priority: rule.priority || 0
       }];
     }
@@ -382,10 +392,12 @@ const buildEventAnnouncements = (device: InteractiveDeviceProfile, events: Event
     return getBlocksForRule(event, rule)
       .map(block => {
         const { delta } = getLiveTiming(event);
+        const triggerTime = getBlockTriggerTime(dateKey, block, rule);
+        const timingKey = `${block.startTime}-${block.endTime}-${rule.offsetMinutes}`;
         return {
-          id: `event-${event.id}-${rule.id}-${block.id}-${dateKey}`,
+          id: `event-${event.id}-${rule.id}-${block.id}-${dateKey}-${timingKey}`,
           title: rule.title,
-          time: getBlockTriggerTime(dateKey, block, rule),
+          time: triggerTime,
           source: 'EVENT' as const,
           text: asset ? asset.transcript : applyTemplate(rule.messageTemplate, event, block),
           asset,
@@ -522,6 +534,15 @@ export const InteractiveDeviceManager: React.FC<InteractiveDeviceManagerProps> =
     ];
     return list.sort((a, b) => a.time.getTime() - b.time.getTime() || b.priority - a.priority);
   }, [device, events, todayKey]);
+
+  useEffect(() => {
+    const activeIds = new Set(announcements.map(item => item.id));
+    playedKeysRef.current.forEach(key => {
+      if (key.startsWith('event-') && !activeIds.has(key)) {
+        playedKeysRef.current.delete(key);
+      }
+    });
+  }, [announcements]);
 
   const nextAnnouncements = useMemo(
     () => announcements.filter(item => item.time.getTime() >= now.getTime() - 60 * 1000).slice(0, 8),
