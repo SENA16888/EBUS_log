@@ -49,6 +49,15 @@ type PendingAnnouncement = {
 };
 
 const makeId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+const BROADCAST_AUTO_RUN_STORAGE_KEY = 'ebus_broadcast_auto_run';
+
+const getStoredBroadcastAutoRun = () => {
+  try {
+    return typeof localStorage !== 'undefined' && localStorage.getItem(BROADCAST_AUTO_RUN_STORAGE_KEY) === 'true';
+  } catch {
+    return false;
+  }
+};
 
 const getLocalDateKey = (date = new Date()) => {
   const year = date.getFullYear();
@@ -507,8 +516,9 @@ export const InteractiveDeviceManager: React.FC<InteractiveDeviceManagerProps> =
   const wakeLockRef = useRef<any>(null);
   const youtubeVolumeRef = useRef(35);
   const playedKeysRef = useRef<Set<string>>(new Set());
+  const playingKeyRef = useRef<string | null>(null);
   const [now, setNow] = useState(new Date());
-  const [isRunning, setIsRunning] = useState(false);
+  const [isRunning, setIsRunning] = useState(() => getStoredBroadcastAutoRun());
   const [isTabletMode, setIsTabletMode] = useState(false);
   const [isUploadingAudio, setIsUploadingAudio] = useState(false);
   const [scheduleTitle, setScheduleTitle] = useState('Thông báo mới');
@@ -844,19 +854,23 @@ export const InteractiveDeviceManager: React.FC<InteractiveDeviceManagerProps> =
         await playAudioUrl(preUrl);
       }
 
+      let played = false;
       if (audioUrl) {
-        await playAudioUrl(audioUrl);
+        played = await playAudioUrl(audioUrl);
       } else if (text) {
-        await speakText(text);
+        played = await speakText(text);
       } else {
-        return;
+        return false;
       }
+
+      if (!played) return false;
 
       appendPlaybackLog({
         title: announcement.title,
         source,
         detail: announcement.detail || text || announcement.asset?.title
       });
+      return true;
     } finally {
       restoreBackgroundMusic();
     }
@@ -875,6 +889,14 @@ export const InteractiveDeviceManager: React.FC<InteractiveDeviceManagerProps> =
     const timer = window.setInterval(() => setNow(new Date()), 15000);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(BROADCAST_AUTO_RUN_STORAGE_KEY, isRunning ? 'true' : 'false');
+    } catch {
+      // Local preference only; ignore storage failures.
+    }
+  }, [isRunning]);
 
   useEffect(() => {
     if (!('speechSynthesis' in window)) return;
@@ -913,15 +935,24 @@ export const InteractiveDeviceManager: React.FC<InteractiveDeviceManagerProps> =
 
   useEffect(() => {
     if (!isRunning || !device.isAutomationEnabled) return;
-    const dueWindowMs = 60 * 1000;
+    const dueWindowMs = 3 * 60 * 1000;
     const due = announcements
       .filter(item => item.time.getTime() <= now.getTime() && item.time.getTime() >= now.getTime() - dueWindowMs)
       .filter(item => !playedKeysRef.current.has(item.id))
+      .filter(item => playingKeyRef.current !== item.id)
       .sort((a, b) => b.priority - a.priority || a.time.getTime() - b.time.getTime())[0];
 
     if (!due) return;
-    playedKeysRef.current.add(due.id);
-    playAnnouncement(due);
+    playingKeyRef.current = due.id;
+    void playAnnouncement(due).then(played => {
+      if (played) {
+        playedKeysRef.current.add(due.id);
+      }
+    }).finally(() => {
+      if (playingKeyRef.current === due.id) {
+        playingKeyRef.current = null;
+      }
+    });
   }, [announcements, device.isAutomationEnabled, isRunning, now]);
 
   const handleUpload = async (file?: File | null) => {
