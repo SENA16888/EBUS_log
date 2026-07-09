@@ -166,7 +166,9 @@ const shouldSuppressDefaultWelcomeRule = (event: Event, rule: BroadcastEventRule
 
 const isFixedLunchSchedule = (schedule: BroadcastSchedule) =>
   schedule.id === FIXED_LUNCH_SCHEDULE_ID ||
-  ((schedule.title || '').toLowerCase().includes('nghỉ trưa') && timeToMinutes(schedule.time) >= 11 * 60 && timeToMinutes(schedule.time) <= 13 * 60);
+  ((schedule.title || '').toLowerCase().includes('nghỉ trưa') && timeToMinutes(schedule.time) >= 11 * 60 && timeToMinutes(schedule.time) <= 14 * 60) ||
+  ((schedule.title || '').toLowerCase().includes('hết trưa') && timeToMinutes(schedule.time) >= 11 * 60 && timeToMinutes(schedule.time) <= 14 * 60) ||
+  ((schedule.title || '').toLowerCase().includes('kết thúc nghỉ trưa') && timeToMinutes(schedule.time) >= 11 * 60 && timeToMinutes(schedule.time) <= 14 * 60);
 
 const hasEventLunchAnnouncement = (device: InteractiveDeviceProfile, events: Event[], dateKey: string) => {
   const venue = getDeviceVenue(device);
@@ -409,11 +411,11 @@ const buildEventAnnouncements = (device: InteractiveDeviceProfile, events: Event
     }
 
     return getBlocksForRule(event, rule)
-      .map(block => {
+      .flatMap(block => {
         const { delta } = getLiveTiming(event);
         const triggerTime = getBlockTriggerTime(dateKey, block, rule);
         const timingKey = `${block.startTime}-${block.endTime}-${rule.offsetMinutes}`;
-        return {
+        const startAnnouncement = {
           id: `event-${event.id}-${rule.id}-${block.id}-${dateKey}-${timingKey}`,
           title: rule.title,
           time: triggerTime,
@@ -423,6 +425,22 @@ const buildEventAnnouncements = (device: InteractiveDeviceProfile, events: Event
           detail: `${event.name} • ${block.title}${delta ? ` • LIVE ${delta > 0 ? '+' : ''}${delta}p` : ''}`,
           priority: rule.priority || 0
         };
+
+        if (rule.trigger !== 'BLOCK_START' || rule.blockKind !== 'LUNCH') return [startAnnouncement];
+
+        return [
+          startAnnouncement,
+          {
+            id: `event-${event.id}-${rule.id}-${block.id}-end-${dateKey}-${timingKey}`,
+            title: 'Hết trưa theo agenda sự kiện',
+            time: dateAtTime(dateKey, block.endTime),
+            source: 'EVENT' as const,
+            text: 'Đã hết giờ nghỉ trưa. Các đoàn vui lòng quay lại khu vực hoạt động theo hướng dẫn của ban tổ chức.',
+            asset,
+            detail: `${event.name} • ${block.title} kết thúc lúc ${block.endTime}`,
+            priority: Math.max(0, (rule.priority || 0) - 1)
+          }
+        ];
       });
   }));
 };
