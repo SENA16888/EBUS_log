@@ -40,6 +40,12 @@ type AppTab = 'dashboard' | 'inventory' | 'stocktake' | 'events' | 'education' |
 
 const PRIMARY_CONTENT_PROGRAM_ID = 'primary-content-program';
 
+const EVENT_PROFILE_DEFAULT_TIMES: Record<'MORNING' | 'AFTERNOON' | 'EVENING', { start: string; end: string }> = {
+  MORNING: { start: '08:00', end: '11:00' },
+  AFTERNOON: { start: '13:00', end: '16:00' },
+  EVENING: { start: '19:00', end: '21:00' }
+};
+
 const getEventScheduleForPublicProgram = (event: Event) => {
   if (event.schedule && event.schedule.length > 0) return event.schedule;
   if (event.startDate) return [{ date: event.startDate, sessions: event.session ? [event.session] : ['MORNING' as const] }];
@@ -309,6 +315,9 @@ const App: React.FC = () => {
       inventory: normalizedInventory,
       events: (state.events || []).map(ev => {
         const houseOperation = normalizeHouseOperationAgenda(ev.houseOperation);
+        const schedule = Array.isArray(ev.schedule) ? ev.schedule : [];
+        const defaultSession = (ev.eventProfile?.programSession || schedule[0]?.sessions?.[0] || ev.session || 'MORNING') as 'MORNING' | 'AFTERNOON' | 'EVENING';
+        const defaultTimeRange = EVENT_PROFILE_DEFAULT_TIMES[defaultSession] || EVENT_PROFILE_DEFAULT_TIMES.MORNING;
         return {
           ...ev,
           items: ev.items || [],
@@ -320,10 +329,15 @@ const App: React.FC = () => {
           advanceRefundedConfirmed: ev.advanceRefundedConfirmed ?? false,
           paymentCompleted: ev.paymentCompleted ?? false,
           advanceSkipped: ev.advanceSkipped ?? false,
-          eventProfile: ev.eventProfile || {
+          eventProfile: {
+            ...(ev.eventProfile || {}),
             code: ev.startDate ? `EB-${ev.startDate.replace(/-/g, '')}-${String(Math.floor(Math.random() * 900 + 100))}` : `EB-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${String(Math.floor(Math.random() * 900 + 100))}`,
-            organization: ev.client,
-            programSession: ev.session,
+            ...(ev.eventProfile?.code ? { code: ev.eventProfile.code } : {}),
+            organization: ev.eventProfile?.organization || ev.client,
+            programSession: defaultSession,
+            programTimeStart: ev.eventProfile?.programTimeStart || defaultTimeRange.start,
+            programTimeEnd: ev.eventProfile?.programTimeEnd || defaultTimeRange.end,
+            addressDetail: ev.eventProfile?.addressDetail || ev.location,
           },
           checklist: normalizeChecklist(ev.checklist),
           timeline: ev.timeline || [],

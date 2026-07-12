@@ -835,6 +835,15 @@ const SESSION_DEFAULT_END: Record<EventSession, string> = {
   EVENING: '21:00'
 };
 
+const PROFILE_DEFAULT_TIME_RANGE: Record<EventSession, { start: string; end: string }> = {
+  MORNING: { start: '08:00', end: '11:00' },
+  AFTERNOON: { start: '13:00', end: '16:00' },
+  EVENING: { start: '19:00', end: '21:00' }
+};
+
+const getDefaultProfileTimeRange = (session?: EventSession) =>
+  PROFILE_DEFAULT_TIME_RANGE[session || 'MORNING'];
+
 const parseTimeToMinutes = (value?: string) => {
   const match = (value || '').match(/^(\d{1,2}):(\d{2})/);
   if (!match) return null;
@@ -1693,6 +1702,14 @@ export const EventManager: React.FC<EventManagerProps> = ({
     ),
     [currentEmployeeId, currentUserId, eventStaffRegistrations]
   );
+  const isCurrentUserRegisteredForEvent = (event?: Event) =>
+    !!event?.staffRegistrations?.some(item =>
+      item.status !== 'CANCELLED' &&
+      (
+        (currentEmployeeId && item.employeeId === currentEmployeeId) ||
+        (currentUserId && item.userId === currentUserId)
+      )
+    );
   const selectedEventIsPast = selectedEvent ? isEventPast(selectedEvent, todayKey) : false;
   const sortRegisteredEmployeesFirst = (list: Employee[]) =>
     [...list].sort((a, b) => {
@@ -1740,14 +1757,26 @@ export const EventManager: React.FC<EventManagerProps> = ({
     if (!selectedEvent || !onUpdateEvent || !canEdit) return;
     const profile = selectedEvent.eventProfile || {};
     const updates: Partial<EventProfile> = {};
+    const schedule = getEventSchedule(selectedEvent);
+    const defaultSession = (profile.programSession || schedule[0]?.sessions?.[0] || selectedEvent.session || 'MORNING') as EventSession;
+    const defaultTimeRange = getDefaultProfileTimeRange(defaultSession);
     if (!profile.code) {
       updates.code = generateEventCode(selectedEvent.startDate || selectedEvent.endDate || new Date().toISOString().slice(0, 10));
     }
     if (!profile.organization && selectedEvent.client) {
       updates.organization = selectedEvent.client;
     }
-    if (!profile.programSession && selectedEvent.session) {
-      updates.programSession = selectedEvent.session;
+    if (!profile.programSession) {
+      updates.programSession = defaultSession;
+    }
+    if (!profile.programTimeStart) {
+      updates.programTimeStart = defaultTimeRange.start;
+    }
+    if (!profile.programTimeEnd) {
+      updates.programTimeEnd = defaultTimeRange.end;
+    }
+    if (!profile.addressDetail && selectedEvent.location) {
+      updates.addressDetail = selectedEvent.location;
     }
     if (Object.keys(updates).length > 0) {
       onUpdateEvent(selectedEvent.id, { eventProfile: { ...profile, ...updates } });
@@ -1782,6 +1811,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
     const startDate = sortedSchedule[0].date;
     const endDate = sortedSchedule[sortedSchedule.length - 1].date;
     const primarySession = sortedSchedule[0].sessions?.[0] || 'MORNING';
+    const defaultTimeRange = getDefaultProfileTimeRange(primarySession);
     const newEvent: Event = {
       id: `EVT-${Date.now()}`,
       name: newEventData.name,
@@ -1806,7 +1836,10 @@ export const EventManager: React.FC<EventManagerProps> = ({
       eventProfile: {
         code: generateEventCode(startDate),
         organization: newEventData.client,
-        programSession: primarySession
+        programSession: primarySession,
+        programTimeStart: defaultTimeRange.start,
+        programTimeEnd: defaultTimeRange.end,
+        addressDetail: newEventData.location
       },
       timeline: [],
       layout: {
@@ -2881,6 +2914,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
                           const end = schedule[schedule.length - 1]?.date || event.endDate;
                           const venue = getEventVenue(event);
                           const venueTone = getEventVenueTone(venue);
+                          const registeredByCurrentUser = isCurrentUserRegisteredForEvent(event);
                           return (
                             <>
                               <div className="flex items-start justify-between gap-2">
@@ -2899,6 +2933,11 @@ export const EventManager: React.FC<EventManagerProps> = ({
                                     {SESSION_LABELS[session]}
                                   </div>
                                 ))}
+                                {registeredByCurrentUser && (
+                                  <div className="inline-flex items-center gap-1 text-[10px] font-black bg-blue-600 text-white px-2 py-0.5 rounded-full">
+                                    <UserCheck size={10}/> Đã đăng ký
+                                  </div>
+                                )}
                                 {event.quotationId && <div className="inline-flex items-center gap-1 text-[10px] font-bold bg-green-100 text-green-700 px-2 py-0.5 rounded-full"><LinkIcon size={10}/> Đã gắn báo giá</div>}
                                 {event.advancePaidConfirmed && !event.advanceSkipped && (
                                   <div className="inline-flex items-center gap-1 text-[10px] font-bold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">
@@ -2945,6 +2984,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
                           const end = schedule[schedule.length - 1]?.date || event.endDate;
                           const venue = getEventVenue(event);
                           const venueTone = getEventVenueTone(venue);
+                          const registeredByCurrentUser = isCurrentUserRegisteredForEvent(event);
                           return (
                             <>
                               <div className="flex items-start justify-between gap-2">
@@ -2966,6 +3006,11 @@ export const EventManager: React.FC<EventManagerProps> = ({
                                 <div className="inline-flex items-center gap-1 text-[10px] font-bold bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full">
                                   Đã tổ chức
                                 </div>
+                                {registeredByCurrentUser && (
+                                  <div className="inline-flex items-center gap-1 text-[10px] font-black bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
+                                    <UserCheck size={10}/> Đã đăng ký
+                                  </div>
+                                )}
                               </div>
                             </>
                           );
@@ -4685,7 +4730,15 @@ export const EventManager: React.FC<EventManagerProps> = ({
                             <select 
                               className="w-full border rounded-xl p-3 text-sm bg-white"
                               value={eventProfile.programSession || ''}
-                              onChange={e => updateEventProfile({ programSession: (e.target.value || undefined) as Event['session'] })}
+                              onChange={e => {
+                                const nextSession = (e.target.value || undefined) as EventSession | undefined;
+                                const defaults = getDefaultProfileTimeRange(nextSession);
+                                updateEventProfile({
+                                  programSession: nextSession,
+                                  programTimeStart: defaults.start,
+                                  programTimeEnd: defaults.end
+                                });
+                              }}
                               disabled={!canEditProfile}
                             >
                               <option value="">-- Buổi --</option>
