@@ -225,22 +225,46 @@ const PROVINCE_ROUTE_ESTIMATES: {
   oneWayKm: number;
   vetcRoundTrip: number;
 }[] = [
-  { label: 'Quảng Ninh', keywords: ['quang ninh', 'ha long', 'cam pha', 'mong cai', 'uông bi', 'uong bi'], oneWayKm: 170, vetcRoundTrip: 500000 },
-  { label: 'Hải Phòng', keywords: ['hai phong', 'cat ba'], oneWayKm: 120, vetcRoundTrip: 320000 },
-  { label: 'Hải Dương', keywords: ['hai duong'], oneWayKm: 65, vetcRoundTrip: 180000 },
-  { label: 'Hưng Yên', keywords: ['hung yen'], oneWayKm: 45, vetcRoundTrip: 120000 },
-  { label: 'Bắc Ninh', keywords: ['bac ninh'], oneWayKm: 35, vetcRoundTrip: 100000 },
-  { label: 'Bắc Giang', keywords: ['bac giang'], oneWayKm: 60, vetcRoundTrip: 150000 },
-  { label: 'Vĩnh Phúc', keywords: ['vinh phuc', 'vinh yen', 'tam dao'], oneWayKm: 55, vetcRoundTrip: 120000 },
-  { label: 'Thái Nguyên', keywords: ['thai nguyen'], oneWayKm: 80, vetcRoundTrip: 180000 },
-  { label: 'Phú Thọ', keywords: ['phu tho', 'viet tri'], oneWayKm: 90, vetcRoundTrip: 180000 },
-  { label: 'Ninh Bình', keywords: ['ninh binh'], oneWayKm: 95, vetcRoundTrip: 220000 },
+  { label: 'Bắc Ninh', keywords: ['bac ninh', 'tu son', 'tien du', 'que vo'], oneWayKm: 35, vetcRoundTrip: 100000 },
+  { label: 'Hưng Yên', keywords: ['hung yen', 'van giang', 'ecopark'], oneWayKm: 45, vetcRoundTrip: 120000 },
+  { label: 'Vĩnh Phúc', keywords: ['vinh phuc', 'vinh yen', 'tam dao', 'phuc yen', 'bac dam vac'], oneWayKm: 55, vetcRoundTrip: 120000 },
+  { label: 'Bắc Giang', keywords: ['bac giang', 'viet yen', 'luc nam'], oneWayKm: 60, vetcRoundTrip: 150000 },
+  { label: 'Hải Dương', keywords: ['hai duong', 'chi linh'], oneWayKm: 65, vetcRoundTrip: 180000 },
+  { label: 'Hòa Bình', keywords: ['hoa binh', 'luong son', 'mai chau'], oneWayKm: 75, vetcRoundTrip: 150000 },
+  { label: 'Thái Nguyên', keywords: ['thai nguyen', 'song cong', 'pho yen', 'bac kan', 'bac can'], oneWayKm: 80, vetcRoundTrip: 180000 },
+  { label: 'Hà Nam', keywords: ['ha nam', 'phu ly'], oneWayKm: 65, vetcRoundTrip: 150000 },
+  { label: 'Phú Thọ', keywords: ['phu tho', 'viet tri', 'doan hung'], oneWayKm: 90, vetcRoundTrip: 180000 },
   { label: 'Nam Định', keywords: ['nam dinh'], oneWayKm: 90, vetcRoundTrip: 200000 },
+  { label: 'Ninh Bình', keywords: ['ninh binh', 'tam diep'], oneWayKm: 95, vetcRoundTrip: 220000 },
   { label: 'Thái Bình', keywords: ['thai binh'], oneWayKm: 110, vetcRoundTrip: 240000 },
-  { label: 'Thanh Hóa', keywords: ['thanh hoa'], oneWayKm: 160, vetcRoundTrip: 300000 },
-  { label: 'Hòa Bình', keywords: ['hoa binh'], oneWayKm: 75, vetcRoundTrip: 150000 },
-  { label: 'Lạng Sơn', keywords: ['lang son'], oneWayKm: 155, vetcRoundTrip: 300000 },
-  { label: 'Lào Cai', keywords: ['lao cai', 'sapa', 'sa pa'], oneWayKm: 300, vetcRoundTrip: 450000 }
+  { label: 'Hải Phòng', keywords: ['hai phong', 'cat ba', 'do son'], oneWayKm: 120, vetcRoundTrip: 320000 },
+  { label: 'Tuyên Quang', keywords: ['tuyen quang', 'ha giang'], oneWayKm: 150, vetcRoundTrip: 240000 },
+  { label: 'Lạng Sơn', keywords: ['lang son', 'dong dang'], oneWayKm: 155, vetcRoundTrip: 300000 },
+  { label: 'Thanh Hóa', keywords: ['thanh hoa', 'sam son'], oneWayKm: 160, vetcRoundTrip: 300000 },
+  { label: 'Quảng Ninh', keywords: ['quang ninh', 'ha long', 'cam pha', 'mong cai', 'uông bi', 'uong bi'], oneWayKm: 170, vetcRoundTrip: 500000 },
+  { label: 'Cao Bằng', keywords: ['cao bang'], oneWayKm: 280, vetcRoundTrip: 350000 },
+  { label: 'Lào Cai', keywords: ['lao cai', 'sapa', 'sa pa', 'yen bai'], oneWayKm: 300, vetcRoundTrip: 450000 },
+  { label: 'Sơn La', keywords: ['son la', 'moc chau'], oneWayKm: 300, vetcRoundTrip: 250000 },
+  { label: 'Điện Biên', keywords: ['dien bien'], oneWayKm: 450, vetcRoundTrip: 300000 },
+  { label: 'Lai Châu', keywords: ['lai chau'], oneWayKm: 420, vetcRoundTrip: 300000 },
+  { label: 'Nghệ An', keywords: ['nghe an', 'vinh'], oneWayKm: 300, vetcRoundTrip: 450000 },
+  { label: 'Hà Tĩnh', keywords: ['ha tinh'], oneWayKm: 360, vetcRoundTrip: 500000 },
+  { label: 'Quảng Trị', keywords: ['quang tri', 'dong hoi', 'quang binh'], oneWayKm: 590, vetcRoundTrip: 650000 },
+  { label: 'Huế', keywords: ['hue', 'thua thien hue'], oneWayKm: 670, vetcRoundTrip: 700000 },
+  { label: 'Đà Nẵng', keywords: ['da nang', 'hoi an', 'quang nam'], oneWayKm: 760, vetcRoundTrip: 800000 },
+  { label: 'Quảng Ngãi', keywords: ['quang ngai', 'kon tum'], oneWayKm: 880, vetcRoundTrip: 850000 },
+  { label: 'Gia Lai', keywords: ['gia lai', 'pleiku', 'binh dinh', 'quy nhon'], oneWayKm: 1050, vetcRoundTrip: 900000 },
+  { label: 'Đắk Lắk', keywords: ['dak lak', 'đak lak', 'buon ma thuot', 'phu yen', 'tuy hoa'], oneWayKm: 1200, vetcRoundTrip: 950000 },
+  { label: 'Khánh Hòa', keywords: ['khanh hoa', 'nha trang', 'ninh thuan', 'phan rang'], oneWayKm: 1300, vetcRoundTrip: 1000000 },
+  { label: 'Lâm Đồng', keywords: ['lam dong', 'da lat', 'bao loc', 'dak nong', 'đak nong', 'binh thuan', 'phan thiet'], oneWayKm: 1450, vetcRoundTrip: 1050000 },
+  { label: 'Đồng Nai', keywords: ['dong nai', 'bien hoa', 'binh phuoc'], oneWayKm: 1550, vetcRoundTrip: 1100000 },
+  { label: 'TP. Hồ Chí Minh', keywords: ['ho chi minh', 'hcm', 'sai gon', 'saigon', 'binh duong', 'thu dau mot', 'ba ria', 'vung tau'], oneWayKm: 1600, vetcRoundTrip: 1100000 },
+  { label: 'Tây Ninh', keywords: ['tay ninh', 'long an'], oneWayKm: 1620, vetcRoundTrip: 1100000 },
+  { label: 'Cần Thơ', keywords: ['can tho', 'hau giang', 'soc trang'], oneWayKm: 1750, vetcRoundTrip: 1150000 },
+  { label: 'Đồng Tháp', keywords: ['dong thap', 'cao lanh', 'sa dec', 'tien giang', 'my tho'], oneWayKm: 1700, vetcRoundTrip: 1150000 },
+  { label: 'Vĩnh Long', keywords: ['vinh long', 'ben tre', 'tra vinh'], oneWayKm: 1780, vetcRoundTrip: 1150000 },
+  { label: 'An Giang', keywords: ['an giang', 'long xuyen', 'chau doc', 'kien giang', 'rach gia', 'phu quoc'], oneWayKm: 1900, vetcRoundTrip: 1200000 },
+  { label: 'Cà Mau', keywords: ['ca mau', 'bac lieu'], oneWayKm: 1950, vetcRoundTrip: 1200000 }
 ];
 
 const normalizeText = (value?: string | null) =>
@@ -312,9 +336,9 @@ const estimateEventRoute = (event: Event) => {
   ].filter(Boolean).join(' ');
   const normalized = normalizeText(rawText);
   const isHanoi = normalized.includes('ha noi') || normalized.includes('hanoi') || normalized.includes('hà noi');
-  const matchedProvince = PROVINCE_ROUTE_ESTIMATES.find(item =>
-    item.keywords.some(keyword => normalized.includes(keyword))
-  );
+  const matchedProvince = PROVINCE_ROUTE_ESTIMATES
+    .filter(item => item.keywords.some(keyword => normalized.includes(keyword)))
+    .sort((a, b) => a.oneWayKm - b.oneWayKm)[0];
 
   if (matchedProvince) {
     return {
@@ -886,6 +910,12 @@ const addMinutesToLocalDateTime = (dateTime: string, minutes: number) => {
   return `${y}-${m}-${d}T${hh}:${mm}`;
 };
 
+const getMinutesFromLocalDateTime = (dateTime: string) => {
+  const parsed = new Date(dateTime);
+  if (Number.isNaN(parsed.getTime())) return 0;
+  return parsed.getHours() * 60 + parsed.getMinutes();
+};
+
 const addDaysToDateString = (date: string, days: number) => {
   const parsed = new Date(`${date}T00:00:00`);
   if (Number.isNaN(parsed.getTime())) return date;
@@ -950,6 +980,13 @@ const getProgramTimeBounds = (event: Event, program: ContentProgramView, session
 };
 
 const getAutoTimelineId = (eventId: string, key: string) => `auto-timeline-${eventId}-${key}`;
+const EARLIEST_SAME_DAY_PROVINCE_DEPARTURE = 5 * 60 + 30;
+
+const getRouteTravelMinutesOneWay = (route: ReturnType<typeof estimateEventRoute>) => {
+  if (!route.isOutOfProvince) return 90;
+  const oneWayKm = Math.max(30, route.roundTripKm / 2);
+  return Math.max(120, Math.min(300, Math.ceil((oneWayKm / 50) * 60) + 45));
+};
 
 const makeAutoTimelineEntry = (
   event: Event,
@@ -1005,6 +1042,7 @@ const getAutoTimelinePlan = (event: Event) => {
   const venue = getEventVenue(event);
   const isExternalProvince = venue === 'EBUS' && route.isOutOfProvince;
   const routeLabel = venue === 'EH' ? 'tại EH' : isExternalProvince ? `ngoại tỉnh (${route.label})` : 'Hà Nội';
+  const travelMinutesOneWay = getRouteTravelMinutesOneWay(route);
   const timelineItems: AutoTimelineProgramItem[] = safeItems
     .map(item => {
       const { startTime, endTime } = getProgramTimeBounds(event, item.program, item.sessions, programs.length <= 1);
@@ -1037,7 +1075,23 @@ const getAutoTimelinePlan = (event: Event) => {
   };
 
   const firstItem = timelineItems[0];
-  if (isLargeSetup && firstItem) {
+  const firstProvinceDepartureTime = firstItem
+    ? addMinutesToLocalDateTime(firstItem.setupTime, -travelMinutesOneWay)
+    : '';
+  const canFirstProvinceDepartSameDay = !!(
+    isExternalProvince &&
+    firstItem &&
+    getMinutesFromLocalDateTime(firstProvinceDepartureTime) >= EARLIEST_SAME_DAY_PROVINCE_DEPARTURE
+  );
+  const shouldPreparePreviousDay = !!(
+    firstItem &&
+    (
+      (isExternalProvince && !canFirstProvinceDepartSameDay) ||
+      (isLargeSetup && !isExternalProvince)
+    )
+  );
+
+  if (shouldPreparePreviousDay && firstItem) {
     const previousDate = addDaysToDateString(firstItem.date, -1);
     entries.push(makeAutoTimelineEntry(
       event,
@@ -1045,7 +1099,7 @@ const getAutoTimelinePlan = (event: Event) => {
       'BEFORE',
       combineDateTime(previousDate, isExternalProvince ? '18:00' : '16:00'),
       isExternalProvince
-        ? `Xe EBUS khởi hành buổi tối hôm trước, vận chuyển hàng hóa/bàn ghế cho ${maxStationCount} trạm và ngủ lại tại địa bàn.`
+        ? `Xe EBUS khởi hành tối hôm trước vì giờ bắt đầu không đủ biên đi trong ngày: khoảng ${travelMinutesOneWay} phút di chuyển + setup ${firstItem.setupLeadHours}h cho ${maxStationCount} trạm.`
         : `Setup trước 1 ngày: vận chuyển hàng hóa, bàn ghế và kiểm mặt bằng cho ${maxStationCount} trạm.`
     ));
     if (isExternalProvince) {
@@ -1067,13 +1121,15 @@ const getAutoTimelinePlan = (event: Event) => {
 
     if (venue === 'EBUS' && isFirstProgramOfDay) {
       if (route.isOutOfProvince) {
-        if (!isLargeSetup) {
+        const departTime = addMinutesToLocalDateTime(item.setupTime, -travelMinutesOneWay);
+        const canDepartSameDay = getMinutesFromLocalDateTime(departTime) >= EARLIEST_SAME_DAY_PROVINCE_DEPARTURE;
+        if (canDepartSameDay) {
           entries.push(makeAutoTimelineEntry(
             event,
             `depart-province-${item.program.id}-${item.date}`,
             'BEFORE',
-            addHoursToLocalDateTime(item.programStart, -5),
-            `${programLabel}Xe EBUS khởi hành đi ${route.label}: dự phòng 3-4h di chuyển + 1h setup trong ngày.`
+            departTime,
+            `${programLabel}Xe EBUS khởi hành đi ${route.label} trong ngày: khoảng ${travelMinutesOneWay} phút di chuyển + setup ${item.setupLeadHours}h trước giờ chạy.`
           ));
         }
       } else if (!isLargeSetup) {
@@ -1146,7 +1202,9 @@ const getAutoTimelinePlan = (event: Event) => {
       route,
       maxStationCount,
       isLargeSetup,
-      programCount: programs.length
+      programCount: programs.length,
+      travelMinutesOneWay,
+      provinceSameDayDeparture: canFirstProvinceDepartSameDay
     }
   };
 };
@@ -1300,6 +1358,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
   const [timelinePhase, setTimelinePhase] = useState<EventTimelinePhase>('BEFORE');
   const [timelineDatetime, setTimelineDatetime] = useState('');
   const [timelineNote, setTimelineNote] = useState('');
+  const [editingTimelineId, setEditingTimelineId] = useState<string | null>(null);
   const sortedNewEventSchedule = useMemo(
     () => [...newEventSchedule].sort((a, b) => a.date.localeCompare(b.date)),
     [newEventSchedule]
@@ -1499,7 +1558,13 @@ export const EventManager: React.FC<EventManagerProps> = ({
   useEffect(() => {
     if (!selectedEvent || !autoTimelinePlan || !onUpdateEvent || !canEdit) return;
     const manualEntries = (selectedEvent.timeline || []).filter(entry => !isAutoTimelineEntry(entry));
-    const nextTimeline = [...autoTimelinePlan.entries, ...manualEntries]
+    const manualEntryIds = new Set(manualEntries.map(entry => entry.id));
+    const manualAutoKeys = new Set(manualEntries.map(entry => entry.autoKey).filter(Boolean));
+    const nextAutoEntries = autoTimelinePlan.entries.filter(entry =>
+      !manualEntryIds.has(entry.id) &&
+      (!entry.autoKey || !manualAutoKeys.has(entry.autoKey))
+    );
+    const nextTimeline = [...nextAutoEntries, ...manualEntries]
       .sort((a, b) => (a.datetime || '').localeCompare(b.datetime || ''));
     if (!areTimelineEntriesEquivalent(selectedEvent.timeline || [], nextTimeline)) {
       onUpdateEvent(selectedEvent.id, { timeline: nextTimeline });
@@ -1750,6 +1815,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
     const firstDate = schedule[0]?.date || selectedEvent.startDate || '';
     setTimelinePhase('BEFORE');
     setTimelineNote('');
+    setEditingTimelineId(null);
     setTimelineDatetime(firstDate ? `${firstDate}T08:00` : '');
   }, [selectedEvent, selectedEventId]);
 
@@ -1926,6 +1992,28 @@ export const EventManager: React.FC<EventManagerProps> = ({
       alert('Vui lòng nhập nội dung cần thực hiện.');
       return;
     }
+    if (editingTimelineId) {
+      const current = (selectedEvent.timeline || []).find(entry => entry.id === editingTimelineId);
+      if (!current) {
+        setEditingTimelineId(null);
+        return;
+      }
+      const nextTimeline = (selectedEvent.timeline || []).map(entry =>
+        entry.id === editingTimelineId
+          ? {
+            ...entry,
+            phase: timelinePhase,
+            datetime: timelineDatetime,
+            note: timelineNote.trim(),
+            source: 'MANUAL' as const
+          }
+          : entry
+      ).sort((a, b) => (a.datetime || '').localeCompare(b.datetime || ''));
+      onUpdateEvent(selectedEvent.id, { timeline: nextTimeline });
+      setEditingTimelineId(null);
+      setTimelineNote('');
+      return;
+    }
     const entry: EventTimelineEntry = {
       id: `TL-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       phase: timelinePhase,
@@ -1936,6 +2024,24 @@ export const EventManager: React.FC<EventManagerProps> = ({
     const nextTimeline = [...(selectedEvent.timeline || []), entry].sort((a, b) => (a.datetime || '').localeCompare(b.datetime || ''));
     onUpdateEvent(selectedEvent.id, { timeline: nextTimeline });
     setTimelineNote('');
+  };
+
+  const handleEditTimelineEntry = (entry: EventTimelineEntry) => {
+    if (!canEdit) return;
+    setEditingTimelineId(entry.id);
+    setTimelinePhase(entry.phase || 'BEFORE');
+    setTimelineDatetime(entry.datetime || '');
+    setTimelineNote(entry.note || '');
+  };
+
+  const handleCancelTimelineEdit = () => {
+    if (!selectedEvent) return;
+    const schedule = getEventSchedule(selectedEvent);
+    const firstDate = schedule[0]?.date || selectedEvent.startDate || '';
+    setEditingTimelineId(null);
+    setTimelinePhase('BEFORE');
+    setTimelineNote('');
+    setTimelineDatetime(firstDate ? `${firstDate}T08:00` : '');
   };
 
   const handleRemoveTimelineEntry = (entryId: string) => {
@@ -3831,9 +3937,13 @@ export const EventManager: React.FC<EventManagerProps> = ({
                           {autoTimelinePlan.summary.route.isOutOfProvince ? `Ngoại tỉnh - ${autoTimelinePlan.summary.route.label}` : 'Hà Nội'} • {autoTimelinePlan.summary.maxStationCount} trạm • {autoTimelinePlan.summary.programCount} chương trình
                         </p>
                         <p className="text-xs text-blue-700">
-                          {autoTimelinePlan.summary.isLargeSetup
-                            ? 'Trên 6 trạm: tự thêm mốc vận chuyển/setup trước 1 ngày, ngoại tỉnh có qua đêm và setup trước 2h.'
-                            : 'Từ 6 trạm trở xuống: tự tính xe khởi hành, nhân sự có mặt setup trước 1h và mốc quay về.'}
+                          {autoTimelinePlan.summary.route.isOutOfProvince
+                            ? autoTimelinePlan.summary.provinceSameDayDeparture
+                              ? `Ngoại tỉnh: tự tính đi trong ngày nếu còn đủ biên giờ, ước lượng ${autoTimelinePlan.summary.travelMinutesOneWay} phút di chuyển một chiều và setup ${autoTimelinePlan.summary.isLargeSetup ? '2h' : '1h'}.`
+                              : `Ngoại tỉnh: giờ bắt đầu sớm nên tự chuyển sang phương án đi tối hôm trước, ước lượng ${autoTimelinePlan.summary.travelMinutesOneWay} phút di chuyển một chiều.`
+                            : autoTimelinePlan.summary.isLargeSetup
+                              ? 'Trên 6 trạm tại Hà Nội: tự thêm mốc vận chuyển/setup trước 1 ngày và setup trước giờ chạy.'
+                              : 'Từ 6 trạm trở xuống: tự tính xe khởi hành, nhân sự có mặt setup trước 1h và mốc quay về.'}
                         </p>
                       </div>
                       <div className="rounded-xl bg-white px-3 py-2 text-right border border-blue-100">
@@ -3844,8 +3954,14 @@ export const EventManager: React.FC<EventManagerProps> = ({
                   )}
                   <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
                     <div>
-                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Thêm mốc timeline</p>
-                      <p className="text-sm text-slate-600">Chia theo giai đoạn trước / trong / sau để bám sát tiến độ triển khai.</p>
+                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                        {editingTimelineId ? 'Sửa mốc timeline' : 'Thêm mốc timeline'}
+                      </p>
+                      <p className="text-sm text-slate-600">
+                        {editingTimelineId
+                          ? 'Mốc sau khi sửa sẽ trở thành mốc tùy chỉnh để không bị timeline tự động ghi đè.'
+                          : 'Chia theo giai đoạn trước / trong / sau để bám sát tiến độ triển khai.'}
+                      </p>
                     </div>
                     <div className="flex flex-col md:flex-row gap-3">
                       <div className="flex-1 space-y-1">
@@ -3884,13 +4000,23 @@ export const EventManager: React.FC<EventManagerProps> = ({
                         disabled={!canEdit}
                       />
                     </div>
-                    <div className="flex justify-end">
+                    <div className="flex justify-end gap-2">
+                      {editingTimelineId && (
+                        <button
+                          type="button"
+                          onClick={handleCancelTimelineEdit}
+                          className="px-4 py-2 rounded-lg text-sm font-bold border border-slate-200 text-slate-600 hover:bg-slate-50"
+                        >
+                          Hủy sửa
+                        </button>
+                      )}
                       <button
                         onClick={handleAddTimelineEntry}
                         disabled={!canEdit}
                         className={`px-4 py-2 rounded-lg text-sm font-bold shadow-sm flex items-center gap-2 ${canEdit ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-slate-200 text-slate-500 cursor-not-allowed'}`}
                       >
-                        <Plus size={16}/> Lưu mốc
+                        {editingTimelineId ? <Pencil size={16}/> : <Plus size={16}/>}
+                        {editingTimelineId ? 'Cập nhật mốc' : 'Lưu mốc'}
                       </button>
                     </div>
                   </div>
@@ -3925,15 +4051,27 @@ export const EventManager: React.FC<EventManagerProps> = ({
                                     </div>
                                     <p className="text-sm text-slate-800 leading-snug">{entry.note}</p>
                                   </div>
-                                  {!isAutoTimelineEntry(entry) && (
+                                  <div className="flex shrink-0 items-center gap-1">
                                     <button
-                                      onClick={() => handleRemoveTimelineEntry(entry.id)}
-                                      className="text-gray-300 hover:text-red-500 transition"
-                                      title="Xóa mốc"
+                                      type="button"
+                                      onClick={() => handleEditTimelineEntry(entry)}
+                                      disabled={!canEdit}
+                                      className="rounded-lg p-1.5 text-slate-400 hover:bg-blue-50 hover:text-blue-600 disabled:opacity-40"
+                                      title="Sửa mốc"
                                     >
-                                      <X size={14}/>
+                                      <Pencil size={14}/>
                                     </button>
-                                  )}
+                                    {!isAutoTimelineEntry(entry) && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRemoveTimelineEntry(entry.id)}
+                                        className="rounded-lg p-1.5 text-gray-300 hover:bg-red-50 hover:text-red-500 transition"
+                                        title="Xóa mốc"
+                                      >
+                                        <X size={14}/>
+                                      </button>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
                             ))}
