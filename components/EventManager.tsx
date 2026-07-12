@@ -23,6 +23,9 @@ interface EventManagerProps {
   saleOrders?: any[];
   educationActivities?: EducationActivity[];
   learningTracks?: LearningTrack[];
+  currentUserId?: string;
+  currentUserName?: string;
+  currentEmployeeId?: string;
   canEdit?: boolean;
   isAdmin?: boolean;
   onExportToEvent: (eventId: string, itemId: string, qty: number) => void;
@@ -44,6 +47,7 @@ interface EventManagerProps {
   onLinkQuotation?: (eventId: string, quotationId: string) => void;
   onFinalizeOrder?: (eventId: string) => void;
   onUpdateEvent?: (eventId: string, updates: Partial<Event>) => void;
+  onRegisterStaff?: (eventId: string, action: 'REGISTER' | 'CANCEL') => void;
   onLinkSaleOrder?: (eventId: string, saleOrderId: string, link: boolean) => void;
   onChecklistScan?: (payload: { eventId: string; barcode: string; direction: ChecklistDirection; status?: ChecklistStatus; quantity?: number; note?: string }) => void;
   onUpdateChecklistNote?: (eventId: string, itemId: string, note: string) => void;
@@ -1232,6 +1236,9 @@ export const EventManager: React.FC<EventManagerProps> = ({
   saleOrders = [],
   educationActivities = [],
   learningTracks = [],
+  currentUserId,
+  currentUserName,
+  currentEmployeeId,
   canEdit = true,
   isAdmin = false,
   onExportToEvent,
@@ -1253,6 +1260,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
   onLinkQuotation,
   onFinalizeOrder,
   onUpdateEvent,
+  onRegisterStaff,
   onLinkSaleOrder,
   onChecklistScan,
   onUpdateChecklistNote,
@@ -1659,15 +1667,48 @@ export const EventManager: React.FC<EventManagerProps> = ({
     () => employees.filter(emp => !emp.inactive),
     [employees]
   );
+  const eventStaffRegistrations = useMemo(
+    () => (selectedEvent?.staffRegistrations || []).filter(item => item.status !== 'CANCELLED'),
+    [selectedEvent?.staffRegistrations]
+  );
+  const registeredEmployeeIds = useMemo(
+    () => new Set(eventStaffRegistrations.map(item => item.employeeId)),
+    [eventStaffRegistrations]
+  );
+  const registeredStaffRows = useMemo(
+    () => eventStaffRegistrations.map(registration => ({
+      registration,
+      employee: employees.find(emp => emp.id === registration.employeeId)
+    })),
+    [employees, eventStaffRegistrations]
+  );
+  const currentEmployee = useMemo(
+    () => currentEmployeeId ? employees.find(emp => emp.id === currentEmployeeId) : undefined,
+    [currentEmployeeId, employees]
+  );
+  const currentStaffRegistration = useMemo(
+    () => eventStaffRegistrations.find(item =>
+      (currentEmployeeId && item.employeeId === currentEmployeeId) ||
+      (currentUserId && item.userId === currentUserId)
+    ),
+    [currentEmployeeId, currentUserId, eventStaffRegistrations]
+  );
+  const selectedEventIsPast = selectedEvent ? isEventPast(selectedEvent, todayKey) : false;
+  const sortRegisteredEmployeesFirst = (list: Employee[]) =>
+    [...list].sort((a, b) => {
+      const aRegistered = registeredEmployeeIds.has(a.id) ? 0 : 1;
+      const bRegistered = registeredEmployeeIds.has(b.id) ? 0 : 1;
+      return aRegistered - bRegistered || a.name.localeCompare(b.name, 'vi', { sensitivity: 'base' });
+    });
   const staffSearch = staffSearchTerm.trim().toLowerCase();
   const assignableEmployees = useMemo(() => {
-    if (!staffSearch) return activeEmployees;
-    return activeEmployees.filter(emp =>
+    const filtered = !staffSearch ? activeEmployees : activeEmployees.filter(emp =>
       emp.name.toLowerCase().includes(staffSearch) ||
       (emp.role || '').toLowerCase().includes(staffSearch) ||
       emp.phone.includes(staffSearch)
     );
-  }, [activeEmployees, staffSearch]);
+    return sortRegisteredEmployeesFirst(filtered);
+  }, [activeEmployees, registeredEmployeeIds, staffSearch]);
 
   useEffect(() => {
     setSelectedItemIds([]);
@@ -3121,6 +3162,39 @@ export const EventManager: React.FC<EventManagerProps> = ({
                 </div>
               </div>
 
+              {!isAdmin && onRegisterStaff && (
+                <div className="rounded-xl border border-blue-100 bg-white p-5 shadow-sm">
+                  <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                    <div>
+                      <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
+                        <UserCheck size={18} className="text-blue-600"/> Đăng ký tham gia sự kiện
+                      </h3>
+                      <p className="mt-1 text-sm font-semibold text-slate-500">
+                        {currentStaffRegistration
+                          ? `Bạn đã đăng ký tham gia sự kiện này${currentStaffRegistration.updatedAt ? ` lúc ${new Date(currentStaffRegistration.updatedAt).toLocaleString('vi-VN')}` : ''}.`
+                          : 'Đăng ký trước để ADMIN ưu tiên bạn khi phân công nhân sự.'}
+                      </p>
+                      <p className="mt-2 text-xs font-bold text-slate-400">
+                        {currentEmployee?.name || currentUserName || 'Tài khoản hiện tại'} • {currentEmployee?.role || 'Nhân sự'} • {eventStaffRegistrations.length} người đã đăng ký
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => onRegisterStaff(selectedEvent.id, currentStaffRegistration ? 'CANCEL' : 'REGISTER')}
+                      disabled={selectedEventIsPast}
+                      className={`inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-black transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                        currentStaffRegistration
+                          ? 'border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
+                          : 'bg-blue-600 text-white hover:bg-blue-700'
+                      }`}
+                    >
+                      {currentStaffRegistration ? <X size={16}/> : <UserCheck size={16}/>}
+                      {selectedEventIsPast ? 'Sự kiện đã qua' : currentStaffRegistration ? 'Hủy đăng ký' : 'Đăng ký tham gia'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <div className="grid grid-cols-1 xl:grid-cols-[1.1fr_0.9fr] gap-5">
                 <div className="space-y-5">
                   <div className="rounded-xl border border-slate-200 bg-white p-5">
@@ -3828,6 +3902,50 @@ export const EventManager: React.FC<EventManagerProps> = ({
 
               {detailTab === 'STAFF' && selectedEvent && (
                 <div className="space-y-6">
+                  <div className="bg-white p-5 rounded-xl border border-blue-100 shadow-sm space-y-4">
+                    <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                      <div>
+                        <h4 className="font-bold text-gray-700 text-xs uppercase flex items-center gap-2">
+                          <UserCheck size={16} className="text-blue-600"/> Nhân sự đã đăng ký
+                        </h4>
+                        <p className="mt-1 text-xs text-slate-500">
+                          Dùng danh sách này để ưu tiên khi phân slot. Nhân sự chỉ đăng ký tham gia, ADMIN vẫn quyết định vị trí cụ thể.
+                        </p>
+                      </div>
+                      <div className="rounded-lg bg-blue-50 px-3 py-2 text-right">
+                        <p className="text-[10px] font-black uppercase text-blue-600">Đăng ký</p>
+                        <p className="text-lg font-black text-blue-700">{eventStaffRegistrations.length}</p>
+                      </div>
+                    </div>
+                    {registeredStaffRows.length > 0 ? (
+                      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
+                        {registeredStaffRows.map(({ registration, employee }) => {
+                          const assigned = (selectedEvent.staff || []).some(staff => staff.employeeId === registration.employeeId);
+                          return (
+                            <div key={registration.id} className="rounded-lg border border-blue-100 bg-blue-50/60 px-3 py-2">
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="min-w-0">
+                                  <p className="truncate text-sm font-black text-slate-800">{employee?.name || registration.name}</p>
+                                  <p className="truncate text-[11px] font-semibold text-blue-700">{employee?.role || registration.role || 'Nhân sự'}</p>
+                                </div>
+                                <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-black ${assigned ? 'bg-emerald-100 text-emerald-700' : 'bg-white text-blue-700 border border-blue-100'}`}>
+                                  {assigned ? 'Đã phân' : 'Ưu tiên'}
+                                </span>
+                              </div>
+                              <p className="mt-1 text-[10px] font-semibold text-slate-400">
+                                {new Date(registration.updatedAt || registration.createdAt).toLocaleString('vi-VN')}
+                              </p>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
+                        Chưa có nhân sự nào đăng ký tham gia sự kiện này.
+                      </div>
+                    )}
+                  </div>
+
                   <div className="bg-white p-5 rounded-xl border border-teal-100 shadow-sm space-y-4">
                     <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
                       <div>
@@ -3850,9 +3968,9 @@ export const EventManager: React.FC<EventManagerProps> = ({
                           const assignedEmployees = slot.assigned
                             .map(staff => ({ staff, employee: employees.find(emp => emp.id === staff.employeeId) }));
                           const allAssignedDone = slot.assigned.length > 0 && slot.assigned.every(staff => !!staff.done);
-                          const availableEmployees = activeEmployees.filter(emp =>
+                          const availableEmployees = sortRegisteredEmployeesFirst(activeEmployees.filter(emp =>
                             !slot.assigned.some(staff => staff.employeeId === emp.id)
-                          );
+                          ));
                           return (
                             <div key={slot.key} className={`rounded-xl border p-4 transition ${slot.assigned.length > 0 ? 'border-teal-200 bg-teal-50/50' : 'border-slate-200 bg-slate-50/60'}`}>
                               <div className="flex items-start justify-between gap-3">
@@ -3915,7 +4033,9 @@ export const EventManager: React.FC<EventManagerProps> = ({
                                 >
                                   <option value="">+ Thêm nhân sự cho trạm này</option>
                                   {availableEmployees.map(emp => (
-                                    <option key={emp.id} value={emp.id}>{emp.name} ({emp.role})</option>
+                                    <option key={emp.id} value={emp.id}>
+                                      {registeredEmployeeIds.has(emp.id) ? '★ ' : ''}{emp.name} ({emp.role}){registeredEmployeeIds.has(emp.id) ? ' - Đã đăng ký' : ''}
+                                    </option>
                                   ))}
                                 </select>
                                 {slot.assigned.length > 0 && (
@@ -3971,7 +4091,11 @@ export const EventManager: React.FC<EventManagerProps> = ({
                       />
                       <select className="border border-slate-200 rounded-lg p-2 text-sm bg-white" value={selectedStaffId} onChange={e => handleStaffSelect(e.target.value)}>
                         <option value="">-- Chọn nhân viên --</option>
-                        {assignableEmployees.map(e => <option key={e.id} value={e.id}>{e.name} ({e.role})</option>)}
+                        {assignableEmployees.map(e => (
+                          <option key={e.id} value={e.id}>
+                            {registeredEmployeeIds.has(e.id) ? '★ ' : ''}{e.name} ({e.role}){registeredEmployeeIds.has(e.id) ? ' - Đã đăng ký' : ''}
+                          </option>
+                        ))}
                       </select>
                       <input className="border border-slate-200 rounded-lg p-2 text-sm" placeholder="Nhiệm vụ..." value={staffTask} onChange={e => setStaffTask(e.target.value)} />
                     </div>

@@ -15,7 +15,7 @@ import { AdminLogPage } from './components/AdminLogPage';
 import { EinsteinHouseOS } from './components/EinsteinHouseOS';
 import { EducationContentManager } from './components/EducationContentManager';
 import { InteractiveDeviceManager } from './components/InteractiveDeviceManager';
-import { AppState, InventoryItem, Event, EventStatus, Transaction, TransactionType, ComboPackage, Employee, Quotation, EventStaffAllocation, EventExpense, EventAdvanceRequest, LogEntry, ChecklistDirection, ChecklistStatus, ChecklistSignature, EventChecklist, LearningAttempt, LearningProfile, AccessPermission, UserAccount, LearningTrack, InventoryReceipt, InventoryReceiptItem, ActiveSession, PayrollAdjustment, InventoryAuditSession, InventoryAuditItem, InventoryAuditBaseline, EducationActivity, EducationLessonLink, InteractiveDeviceProfile, HouseOperationInstance } from './types';
+import { AppState, InventoryItem, Event, EventStatus, Transaction, TransactionType, ComboPackage, Employee, Quotation, EventStaffAllocation, EventStaffRegistration, EventExpense, EventAdvanceRequest, LogEntry, ChecklistDirection, ChecklistStatus, ChecklistSignature, EventChecklist, LearningAttempt, LearningProfile, AccessPermission, UserAccount, LearningTrack, InventoryReceipt, InventoryReceiptItem, ActiveSession, PayrollAdjustment, InventoryAuditSession, InventoryAuditItem, InventoryAuditBaseline, EducationActivity, EducationLessonLink, InteractiveDeviceProfile, HouseOperationInstance } from './types';
 import { MOCK_INVENTORY, MOCK_EVENTS, MOCK_TRANSACTIONS, MOCK_PACKAGES, MOCK_EMPLOYEES, MOCK_LEARNING_TRACKS, MOCK_CAREER_RANKS, DEFAULT_USER_ACCOUNTS, MOCK_INVENTORY_RECEIPTS, MOCK_EDUCATION_ACTIVITIES, MOCK_INTERACTIVE_DEVICES } from './constants';
 import { MessageSquare } from 'lucide-react';
 import { ensureCollectionModelInitialized, initializeAuth, loadCollectionState, subscribeToCollectionState, subscribeToSessions, setSessionOnline, setSessionOffline, syncCollectionStateDiff, saveLearningUserState, subscribeToLearningUserState, deleteLearningUserState, subscribeToLearningUsers } from './services/firebaseService';
@@ -312,6 +312,7 @@ const App: React.FC = () => {
         return {
           ...ev,
           items: ev.items || [],
+          staffRegistrations: ev.staffRegistrations || [],
           advanceRequests: ev.advanceRequests || [],
           advancePaidAmount: ev.advancePaidAmount ?? 0,
           advancePaidDate: ev.advancePaidDate || '',
@@ -2008,6 +2009,56 @@ const App: React.FC = () => {
     }));
   };
 
+  const handleRegisterEventStaff = (eventId: string, action: 'REGISTER' | 'CANCEL') => {
+    if (!currentUser) {
+      alert('Vui lòng đăng nhập để đăng ký sự kiện.');
+      return;
+    }
+    const employeeId = currentEmployeeId;
+    const employee = employeeId ? appState.employees.find(emp => emp.id === employeeId) : undefined;
+    if (!employeeId || !employee) {
+      alert('Tài khoản của bạn chưa được liên kết với hồ sơ nhân sự. Vui lòng báo ADMIN cập nhật liên kết nhân sự.');
+      return;
+    }
+
+    const timestamp = new Date().toISOString();
+    setAppState(prev => ({
+      ...prev,
+      events: prev.events.map(event => {
+        if (event.id !== eventId) return event;
+        const registrations = event.staffRegistrations || [];
+        const existing = registrations.find(item => item.employeeId === employeeId || item.userId === currentUser.id);
+        if (action === 'CANCEL') {
+          return {
+            ...event,
+            staffRegistrations: registrations.filter(item => item.employeeId !== employeeId && item.userId !== currentUser.id)
+          };
+        }
+
+        const registration: EventStaffRegistration = {
+          id: existing?.id || `event-staff-reg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          employeeId,
+          userId: currentUser.id,
+          name: employee.name || currentUser.name,
+          role: employee.role,
+          phone: employee.phone || currentUser.phone,
+          note: existing?.note,
+          status: 'REGISTERED',
+          createdAt: existing?.createdAt || timestamp,
+          updatedAt: timestamp
+        };
+
+        return {
+          ...event,
+          staffRegistrations: existing
+            ? registrations.map(item => item.id === existing.id ? registration : item)
+            : [...registrations, registration]
+        };
+      })
+    }));
+    addLog(`${action === 'REGISTER' ? 'Đăng ký' : 'Hủy đăng ký'} nhân sự sự kiện ${eventId}: ${employee.name}`, action === 'REGISTER' ? 'SUCCESS' : 'INFO');
+  };
+
   const handleRemoveStaff = (eventId: string, employeeId: string, staffKey?: string) => {
     setAppState(prev => ({
       ...prev,
@@ -2334,6 +2385,9 @@ const App: React.FC = () => {
           saleOrders={appState.saleOrders || []}
           educationActivities={appState.educationActivities || []}
           learningTracks={appState.learningTracks || []}
+          currentUserId={currentUser?.id}
+          currentUserName={currentUser?.name}
+          currentEmployeeId={currentEmployeeId}
           canEdit={can('EVENTS_EDIT')}
           isAdmin={currentUser?.role === 'ADMIN'}
           onExportToEvent={guard('EVENTS_EDIT', handleExportToEvent)}
@@ -2355,6 +2409,7 @@ const App: React.FC = () => {
           onToggleItemDone={guard('EVENTS_EDIT', handleToggleEventItemDone)}
           onToggleStaffDone={guard('EVENTS_EDIT', handleToggleEventStaffDone)}
           onUpdateEvent={guard('EVENTS_EDIT', handleUpdateEvent)}
+          onRegisterStaff={handleRegisterEventStaff}
           onLinkSaleOrder={guard('EVENTS_EDIT', handleLinkSaleOrderToEvent)}
           onChecklistScan={guard('EVENTS_EDIT', handleChecklistScan)}
           onUpdateChecklistNote={guard('EVENTS_EDIT', handleUpdateChecklistNote)}

@@ -290,6 +290,19 @@ export interface EventStaffAllocation {
   done?: boolean;
 }
 
+export interface EventStaffRegistration {
+  id: string;
+  employeeId: string;
+  userId?: string;
+  name: string;
+  role?: string;
+  phone?: string;
+  note?: string;
+  status: 'REGISTERED' | 'CANCELLED';
+  createdAt: string;
+  updatedAt?: string;
+}
+
 export interface EventExpense {
   id: string;
   category: 'TRANSPORT_GOODS' | 'TRANSPORT_STAFF' | 'ACCOMMODATION' | 'PRINTING' | 'CONSUMABLES' | 'CATERING' | 'MISC';
@@ -558,6 +571,7 @@ export interface Event {
   schedule?: Array<{ date: string; sessions: ('MORNING' | 'AFTERNOON' | 'EVENING')[] }>;
   items: EventItemAllocation[];
   staff?: EventStaffAllocation[];
+  staffRegistrations?: EventStaffRegistration[];
   expenses?: EventExpense[];
   advanceRequests?: EventAdvanceRequest[];
   advancePaidAmount?: number;
