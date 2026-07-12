@@ -1168,9 +1168,26 @@ const getProgramDateLabel = (program: ContentProgramView, fallbackEvent: Event) 
   return `${date} • ${sessions.map(session => SESSION_LABELS[session]).join(' + ')}`;
 };
 
+const getLocalDateKey = (date = new Date()) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 const getEventPrimaryDate = (event: Event): string | null => {
   const schedule = getEventSchedule(event);
   return schedule[0]?.date || event.startDate || event.endDate || null;
+};
+
+const getEventLastDate = (event: Event): string | null => {
+  const schedule = getEventSchedule(event);
+  return schedule[schedule.length - 1]?.date || event.endDate || event.startDate || null;
+};
+
+const isEventPast = (event: Event, todayKey = getLocalDateKey()) => {
+  const lastDate = getEventLastDate(event);
+  return !!lastDate && lastDate < todayKey;
 };
 
 const formatDateWithDay = (dateStr?: string | null) => {
@@ -1581,38 +1598,50 @@ export const EventManager: React.FC<EventManagerProps> = ({
     setIsContentProgramEditorOpen(true);
   };
 
+  const todayKey = getLocalDateKey();
+
   const groupedEventsByMonth = useMemo(() => {
     const buckets: Record<string, Event[]> = {};
+    const pastBuckets: Record<string, Event[]> = {};
     const others: Event[] = [];
+    const pastOthers: Event[] = [];
     events.forEach(ev => {
       const primary = getEventPrimaryDate(ev);
       if (!primary) {
-        others.push(ev);
+        if (isEventPast(ev, todayKey)) pastOthers.push(ev);
+        else others.push(ev);
         return;
       }
       const parsed = new Date(primary);
       const key = Number.isNaN(parsed.getTime())
         ? primary.slice(0, 7)
         : `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}`;
-      if (!buckets[key]) buckets[key] = [];
-      buckets[key].push(ev);
+      const target = isEventPast(ev, todayKey) ? pastBuckets : buckets;
+      if (!target[key]) target[key] = [];
+      target[key].push(ev);
     });
-    const groups = Object.keys(buckets)
-      .sort((a, b) => b.localeCompare(a))
+    const makeGroups = (source: Record<string, Event[]>, past = false) => Object.keys(source)
+      .sort((a, b) => past ? b.localeCompare(a) : a.localeCompare(b))
       .map(key => ({
         key,
         label: formatMonthLabel(key),
-        events: buckets[key].sort((a, b) => {
+        isPast: past,
+        events: source[key].sort((a, b) => {
           const da = getEventPrimaryDate(a) || '';
           const db = getEventPrimaryDate(b) || '';
-          return db.localeCompare(da);
+          return past ? db.localeCompare(da) : da.localeCompare(db);
         })
       }));
+    const groups = makeGroups(buckets);
     if (others.length) {
-      groups.push({ key: 'others', label: 'Khác', events: others });
+      groups.push({ key: 'others', label: 'Khác', isPast: false, events: others });
     }
-    return groups;
-  }, [events]);
+    const pastGroups = makeGroups(pastBuckets, true);
+    if (pastOthers.length) {
+      pastGroups.push({ key: 'past-others', label: 'Khác', isPast: true, events: pastOthers });
+    }
+    return { upcoming: groups, past: pastGroups };
+  }, [events, todayKey]);
   const timelineEntries = useMemo<EventTimelineEntry[]>(() => {
     if (!selectedEvent?.timeline) return [];
     return [...selectedEvent.timeline].sort((a, b) => (a.datetime || '').localeCompare(b.datetime || ''));
@@ -2791,65 +2820,121 @@ export const EventManager: React.FC<EventManagerProps> = ({
           </div>
           <div className="flex-1 overflow-y-auto p-4 space-y-3">
             {events.length === 0 && <div className="text-center py-10 text-gray-400 italic text-sm">Chưa có sự kiện nào.</div>}
-            {groupedEventsByMonth.map(group => (
-              <div key={group.key} className="space-y-2">
-                <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest">{group.label}</p>
-                {group.events.map(event => (
-                  <button
-                    key={event.id}
-                    type="button"
-                    onClick={() => openEventDetail(event.id)}
-                    className={`w-full p-4 rounded-xl border-2 text-left transition ${selectedEventId === event.id ? 'border-blue-500 bg-blue-50 shadow-sm' : 'border-transparent bg-white border-slate-100 hover:border-slate-200'}`}
-                  >
-                    {(() => {
-                      const schedule = getEventSchedule(event);
-                      const uniqueSessions = Array.from(new Set(schedule.flatMap(item => item.sessions)));
-                      const start = schedule[0]?.date || event.startDate;
-                      const end = schedule[schedule.length - 1]?.date || event.endDate;
-                      const venue = getEventVenue(event);
-                      const venueTone = getEventVenueTone(venue);
-                      return (
-                        <>
-                          <div className="flex items-start justify-between gap-2">
-                            <h4 className="font-bold text-gray-800 leading-snug">{event.name}</h4>
-                            <span className={`shrink-0 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-black ${venueTone.chip}`}>
-                              <span className={`h-1.5 w-1.5 rounded-full ${venueTone.dot}`}></span>
-                              {getEventVenueShortLabel(venue)}
-                            </span>
-                          </div>
-                          <p className="text-xs text-gray-500 flex items-center gap-1 mt-1">
-                            <Calendar size={12}/> {start}{end && end !== start ? ` → ${end}` : ''}
-                          </p>
-                          <div className="mt-2 flex items-center gap-2 flex-wrap">
-                            {uniqueSessions.map(session => (
-                              <div key={session} className="inline-flex items-center gap-1 text-[10px] font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full">
-                                {SESSION_LABELS[session]}
+            {groupedEventsByMonth.upcoming.length > 0 && (
+              <div className="space-y-3">
+                <p className="text-[11px] font-black text-blue-500 uppercase tracking-widest">Sắp tới / đang diễn ra</p>
+                {groupedEventsByMonth.upcoming.map(group => (
+                  <div key={group.key} className="space-y-2">
+                    <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest">{group.label}</p>
+                    {group.events.map(event => (
+                      <button
+                        key={event.id}
+                        type="button"
+                        onClick={() => openEventDetail(event.id)}
+                        className={`w-full p-4 rounded-xl border-2 text-left transition ${selectedEventId === event.id ? 'border-blue-500 bg-blue-50 shadow-sm' : 'border-transparent bg-white border-slate-100 hover:border-slate-200'}`}
+                      >
+                        {(() => {
+                          const schedule = getEventSchedule(event);
+                          const uniqueSessions = Array.from(new Set(schedule.flatMap(item => item.sessions)));
+                          const start = schedule[0]?.date || event.startDate;
+                          const end = schedule[schedule.length - 1]?.date || event.endDate;
+                          const venue = getEventVenue(event);
+                          const venueTone = getEventVenueTone(venue);
+                          return (
+                            <>
+                              <div className="flex items-start justify-between gap-2">
+                                <h4 className="font-bold text-gray-800 leading-snug">{event.name}</h4>
+                                <span className={`shrink-0 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-black ${venueTone.chip}`}>
+                                  <span className={`h-1.5 w-1.5 rounded-full ${venueTone.dot}`}></span>
+                                  {getEventVenueShortLabel(venue)}
+                                </span>
                               </div>
-                            ))}
-                            {event.quotationId && <div className="inline-flex items-center gap-1 text-[10px] font-bold bg-green-100 text-green-700 px-2 py-0.5 rounded-full"><LinkIcon size={10}/> Đã gắn báo giá</div>}
-                            {event.advancePaidConfirmed && !event.advanceSkipped && (
-                              <div className="inline-flex items-center gap-1 text-[10px] font-bold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">
-                                <CheckCircle size={10}/> Đã tạm ứng
+                              <p className="text-xs text-gray-500 flex items-center gap-1 mt-1">
+                                <Calendar size={12}/> {start}{end && end !== start ? ` → ${end}` : ''}
+                              </p>
+                              <div className="mt-2 flex items-center gap-2 flex-wrap">
+                                {uniqueSessions.map(session => (
+                                  <div key={session} className="inline-flex items-center gap-1 text-[10px] font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full">
+                                    {SESSION_LABELS[session]}
+                                  </div>
+                                ))}
+                                {event.quotationId && <div className="inline-flex items-center gap-1 text-[10px] font-bold bg-green-100 text-green-700 px-2 py-0.5 rounded-full"><LinkIcon size={10}/> Đã gắn báo giá</div>}
+                                {event.advancePaidConfirmed && !event.advanceSkipped && (
+                                  <div className="inline-flex items-center gap-1 text-[10px] font-bold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">
+                                    <CheckCircle size={10}/> Đã tạm ứng
+                                  </div>
+                                )}
+                                {event.advanceRefundedConfirmed && (
+                                  <div className="inline-flex items-center gap-1 text-[10px] font-bold bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
+                                    <RefreshCw size={10}/> Đã hoàn ứng
+                                  </div>
+                                )}
+                                {event.paymentCompleted && (
+                                  <div className="inline-flex items-center gap-1 text-[10px] font-bold bg-slate-900 text-white px-2 py-0.5 rounded-full">
+                                    <DollarSign size={10}/> Đã thanh toán
+                                  </div>
+                                )}
                               </div>
-                            )}
-                            {event.advanceRefundedConfirmed && (
-                              <div className="inline-flex items-center gap-1 text-[10px] font-bold bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
-                                <RefreshCw size={10}/> Đã hoàn ứng
-                              </div>
-                            )}
-                            {event.paymentCompleted && (
-                              <div className="inline-flex items-center gap-1 text-[10px] font-bold bg-slate-900 text-white px-2 py-0.5 rounded-full">
-                                <DollarSign size={10}/> Đã thanh toán
-                              </div>
-                            )}
-                          </div>
-                        </>
-                      );
-                    })()}
-                  </button>
+                            </>
+                          );
+                        })()}
+                      </button>
+                    ))}
+                  </div>
                 ))}
               </div>
-            ))}
+            )}
+            {groupedEventsByMonth.past.length > 0 && (
+              <div className="space-y-3 pt-3 border-t border-slate-100">
+                <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Sự kiện đã tổ chức</p>
+                {groupedEventsByMonth.past.map(group => (
+                  <div key={group.key} className="space-y-2">
+                    <p className="text-[11px] font-black text-slate-300 uppercase tracking-widest">{group.label}</p>
+                    {group.events.map(event => (
+                      <button
+                        key={event.id}
+                        type="button"
+                        onClick={() => openEventDetail(event.id)}
+                        className={`w-full p-4 rounded-xl border text-left transition opacity-60 grayscale hover:opacity-85 hover:grayscale-0 ${selectedEventId === event.id ? 'border-blue-300 bg-blue-50 shadow-sm opacity-90 grayscale-0' : 'border-slate-100 bg-slate-50 hover:border-slate-200'}`}
+                      >
+                        {(() => {
+                          const schedule = getEventSchedule(event);
+                          const uniqueSessions = Array.from(new Set(schedule.flatMap(item => item.sessions)));
+                          const start = schedule[0]?.date || event.startDate;
+                          const end = schedule[schedule.length - 1]?.date || event.endDate;
+                          const venue = getEventVenue(event);
+                          const venueTone = getEventVenueTone(venue);
+                          return (
+                            <>
+                              <div className="flex items-start justify-between gap-2">
+                                <h4 className="font-bold text-gray-700 leading-snug">{event.name}</h4>
+                                <span className={`shrink-0 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-black ${venueTone.chip}`}>
+                                  <span className={`h-1.5 w-1.5 rounded-full ${venueTone.dot}`}></span>
+                                  {getEventVenueShortLabel(venue)}
+                                </span>
+                              </div>
+                              <p className="text-xs text-gray-500 flex items-center gap-1 mt-1">
+                                <Calendar size={12}/> {start}{end && end !== start ? ` → ${end}` : ''}
+                              </p>
+                              <div className="mt-2 flex items-center gap-2 flex-wrap">
+                                {uniqueSessions.map(session => (
+                                  <div key={session} className="inline-flex items-center gap-1 text-[10px] font-bold bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full">
+                                    {SESSION_LABELS[session]}
+                                  </div>
+                                ))}
+                                <div className="inline-flex items-center gap-1 text-[10px] font-bold bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full">
+                                  Đã tổ chức
+                                </div>
+                              </div>
+                            </>
+                          );
+                        })()}
+                      </button>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -2884,11 +2969,11 @@ export const EventManager: React.FC<EventManagerProps> = ({
                 </div>
                 <div className="p-4 md:p-5">
                   <div className="grid grid-cols-7 gap-2 text-sm">
-                    {['CN','T2','T3','T4','T5','T6','T7'].map((d, weekdayIndex) => (
+                    {['T2','T3','T4','T5','T6','T7','CN'].map((d, weekdayIndex) => (
                       <div
                         key={d}
                         className={`rounded-lg py-2 text-center font-black text-xs uppercase ${
-                          weekdayIndex === 0 || weekdayIndex === 6
+                          weekdayIndex >= 5
                             ? 'bg-rose-50 text-rose-600 border border-rose-100'
                             : 'text-slate-500'
                         }`}
@@ -2901,19 +2986,34 @@ export const EventManager: React.FC<EventManagerProps> = ({
                       const year = calendarView.year;
                       const month = calendarView.month;
                       const first = new Date(year, month, 1);
-                      const startDay = first.getDay();
+                      const startDay = (first.getDay() + 6) % 7;
                       const daysInMonth = new Date(year, month + 1, 0).getDate();
                       const cells = [] as (Date | null)[];
                       for (let i = 0; i < startDay; i++) cells.push(null);
                       for (let d = 1; d <= daysInMonth; d++) cells.push(new Date(year, month, d));
                       return cells.map((dt, idx) => {
-                        const isWeekendCell = idx % 7 === 0 || idx % 7 === 6;
+                        const isWeekendCell = idx % 7 >= 5;
                         if (!dt) return <div key={idx} className={`min-h-[110px] p-2 border rounded-lg ${isWeekendCell ? 'bg-rose-50/50 border-rose-100' : 'bg-slate-50 border-slate-100'}`} />;
-                        const key = dt.toISOString().slice(0, 10);
+                        const key = getLocalDateKey(dt);
+                        const isToday = key === todayKey;
                         const dayEvents = events.filter(ev => getEventSchedule(ev).some(item => item.date === key));
                         return (
-                          <div key={idx} className={`min-h-[110px] p-2 border rounded-lg flex flex-col ${isWeekendCell ? 'bg-rose-50/35 border-rose-200 ring-1 ring-rose-50' : 'bg-white border-slate-200'}`}>
-                            <div className={`text-xs font-black ${isWeekendCell ? 'text-rose-500' : 'text-slate-400'}`}>{dt.getDate()}</div>
+                          <div
+                            key={idx}
+                            className={`min-h-[110px] p-2 border rounded-lg flex flex-col ${
+                              isToday
+                                ? 'bg-yellow-50 border-yellow-300 ring-2 ring-yellow-200 shadow-sm'
+                                : isWeekendCell
+                                  ? 'bg-rose-50/35 border-rose-200 ring-1 ring-rose-50'
+                                  : 'bg-white border-slate-200'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <div className={`text-xs font-black ${isToday ? 'text-yellow-700' : isWeekendCell ? 'text-rose-500' : 'text-slate-400'}`}>{dt.getDate()}</div>
+                              {isToday && (
+                                <span className="rounded-full bg-yellow-200 px-1.5 py-0.5 text-[9px] font-black text-yellow-800">Hôm nay</span>
+                              )}
+                            </div>
                             <div className="mt-2 space-y-1 overflow-auto text-[12px]">
                               {dayEvents.map(ev => {
                                 const venue = getEventVenue(ev);
