@@ -82,6 +82,13 @@ interface EinsteinHouseOSProps {
 export type EinsteinHouseModuleTab = 'CONTROL' | 'DESIGN' | 'AGENDA' | 'TASKS' | 'KNOWLEDGE' | 'LIVE' | 'REPORT';
 type ModuleTab = EinsteinHouseModuleTab;
 type LiveViewMode = 'CONTROL' | 'GUIDE' | 'ROOM';
+type EventSession = NonNullable<Event['session']>;
+
+const SESSION_LABELS: Record<EventSession, string> = {
+  MORNING: 'SÁNG',
+  AFTERNOON: 'CHIỀU',
+  EVENING: 'TỐI'
+};
 
 const EVENT_VENUE_OPTIONS: { value: EventVenueType; label: string; description: string }[] = [
   { value: 'EH', label: 'Tại EH', description: 'Phát tại trung tâm Einstein House' },
@@ -402,11 +409,42 @@ type GroupAgendaBlock = {
 
 type GroupAgendaView = HouseOperationRotationGroup & { blocks: GroupAgendaBlock[] };
 
+type StationReservation = {
+  resourceKey: string;
+  date: string;
+  start: number;
+  end: number;
+  eventId: string;
+  eventName: string;
+  groupName: string;
+  stationName: string;
+};
+
+const timeRangesOverlap = (leftStart: number, leftEnd: number, rightStart: number, rightEnd: number) =>
+  leftStart < rightEnd && rightStart < leftEnd;
+
+const getStationReservationBlocker = (
+  station: HouseOperationStation | undefined,
+  date: string,
+  start: number,
+  end: number,
+  reservations: StationReservation[]
+) => {
+  if (!station) return undefined;
+  const stationKeys = getStationResourceKeys(station);
+  return reservations.find(reservation =>
+    reservation.date === date &&
+    stationKeys.includes(reservation.resourceKey) &&
+    timeRangesOverlap(start, end, reservation.start, reservation.end)
+  );
+};
+
 const buildGroupActivityAgendas = (
   event: Event,
   agenda: HouseOperationAgendaBlock[],
   stations: HouseOperationStation[],
-  rotations: HouseOperationRotationGroup[]
+  rotations: HouseOperationRotationGroup[],
+  externalReservations: StationReservation[] = []
 ) => {
   const stationMap = new Map(stations.map(station => [station.id, station]));
   const experienceStationIds = getExperienceStations(stations, agenda).map(station => station.id);
@@ -414,6 +452,8 @@ const buildGroupActivityAgendas = (
   const commonBlocks = agenda.filter(block => block.kind === 'COMMON');
   const sharedBreakBlocks = agenda.filter(block => block.kind === 'BREAK' || block.kind === 'LUNCH');
   const experienceBlocks = agenda.filter(block => block.kind === 'EXPERIENCE_AM' || block.kind === 'EXPERIENCE_PM');
+  const date = getPrimaryDate(event);
+  const localReservations: StationReservation[] = [];
 
   return rotations.map(group => {
     const groupRoute = experienceStationIds.map((_, routeIndex) => experienceStationIds[(routeIndex + rotations.indexOf(group)) % experienceStationIds.length]).filter(Boolean);
@@ -444,18 +484,61 @@ const buildGroupActivityAgendas = (
         const stationCount = Math.max(0, block.stationCount || 0);
         let cursor = timeToMinutes(block.startTime);
         return Array.from({ length: stationCount }).map((_, roundIndex) => {
-          const stationId = groupRoute[routeCursor % Math.max(1, groupRoute.length)];
-          routeCursor += 1;
-          const station = stationId ? stationMap.get(stationId) : undefined;
+          const start = cursor;
+          const end = cursor + experienceSlotDuration;
+          const reservations = [...externalReservations, ...localReservations];
+          const routeLength = Math.max(1, groupRoute.length);
+          let stationId: string | undefined;
+          let station: HouseOperationStation | undefined;
+          let blocker: StationReservation | undefined;
+
+          for (let offset = 0; offset < routeLength; offset += 1) {
+            const candidateId = groupRoute[(routeCursor + offset) % routeLength];
+            const candidateStation = candidateId ? stationMap.get(candidateId) : undefined;
+            const candidateBlocker = getStationReservationBlocker(candidateStation, date, start, end, reservations);
+            if (!candidateBlocker) {
+              stationId = candidateId;
+              station = candidateStation;
+              routeCursor += offset + 1;
+              break;
+            }
+            blocker = blocker || candidateBlocker;
+          }
+
+          if (!stationId) {
+            const fallbackId = groupRoute[routeCursor % routeLength];
+            const fallbackStation = fallbackId ? stationMap.get(fallbackId) : undefined;
+            blocker = blocker || getStationReservationBlocker(fallbackStation, date, start, end, reservations);
+            routeCursor += 1;
+          }
+
           const duration = experienceSlotDuration;
+          if (station) {
+            getStationResourceKeys(station).forEach(resourceKey => {
+              localReservations.push({
+                resourceKey,
+                date,
+                start,
+                end,
+                eventId: event.id,
+                eventName: event.name,
+                groupName: group.name,
+                stationName: station?.name || ''
+              });
+            });
+          }
           const item = {
             id: `${group.id}-${block.id}-${roundIndex}`,
             title: station?.name || 'Nghỉ/chờ lượt',
-            startTime: minutesToTime(cursor),
-            endTime: minutesToTime(cursor + duration),
+            startTime: minutesToTime(start),
+            endTime: minutesToTime(end),
             stationId,
             room: station?.areaDescription || station?.room,
-            note: `${block.sectionCode || ''} • ${station?.packageName || block.title}`
+            note: station
+              ? `${block.sectionCode || ''} • ${station.packageName || block.title}`
+              : blocker
+                ? `Tạm chờ vì ${blocker.stationName} đang được ${blocker.eventName} / ${blocker.groupName} dùng cùng giờ.`
+                : `${block.sectionCode || ''} • Chưa có trạm khả dụng`
           };
           cursor += duration;
           return item;
@@ -610,6 +693,131 @@ const getStationPackageIds = (station: HouseOperationStation) =>
     : station.packageId
       ? [station.packageId]
       : [];
+
+const normalizeResourceText = (value?: string | null) =>
+  (value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+
+const getStationResourceKeys = (station: HouseOperationStation) => {
+  const packageKeys = getStationPackageIds(station).map(packageId => `pkg:${packageId}`);
+  if (packageKeys.length > 0) return packageKeys;
+  const nameKey = normalizeResourceText(station.packageName || station.name);
+  return nameKey ? [`name:${nameKey}`] : [`station:${station.id}`];
+};
+
+const getEventScheduleItems = (event: Event): Array<{ date: string; sessions: EventSession[] }> => {
+  if (event.schedule && event.schedule.length > 0) {
+    return event.schedule.map(item => ({
+      date: item.date,
+      sessions: item.sessions && item.sessions.length > 0
+        ? item.sessions as EventSession[]
+        : event.session
+          ? [event.session]
+          : ['MORNING' as EventSession]
+    }));
+  }
+  const date = getPrimaryDate(event);
+  return date ? [{ date, sessions: event.session ? [event.session] : ['MORNING' as EventSession] }] : [];
+};
+
+const eventSessionsOverlap = (left: Event, right: Event) => {
+  const leftSchedule = getEventScheduleItems(left);
+  const rightSchedule = getEventScheduleItems(right);
+  return leftSchedule.some(leftItem => rightSchedule.some(rightItem =>
+    leftItem.date === rightItem.date &&
+    leftItem.sessions.some(session => rightItem.sessions.includes(session))
+  ));
+};
+
+const getSessionListLabel = (sessions: EventSession[]) =>
+  sessions.map(session => SESSION_LABELS[session]).join(' + ');
+
+const buildEhReservationsForEvent = (event: Event): StationReservation[] => {
+  const operation = event.houseOperation;
+  if (!operation || getEventVenue(event) !== 'EH') return [];
+  const date = getPrimaryDate(event);
+  if (!date) return [];
+  const stationMap = new Map(operation.stations.map(station => [station.id, station]));
+  return buildGroupActivityAgendas(event, operation.agenda || [], operation.stations || [], operation.rotations || [])
+    .flatMap(group => group.blocks.flatMap(block => {
+      const station = block.stationId ? stationMap.get(block.stationId) : undefined;
+      if (!station) return [];
+      const start = timeToMinutes(block.startTime);
+      const end = timeToMinutes(block.endTime);
+      return getStationResourceKeys(station).map(resourceKey => ({
+        resourceKey,
+        date,
+        start,
+        end,
+        eventId: event.id,
+        eventName: event.name,
+        groupName: group.name,
+        stationName: station.name
+      }));
+    }));
+};
+
+const getExternalEhReservations = (events: Event[], selectedEvent: Event) =>
+  events
+    .filter(event =>
+      event.id !== selectedEvent.id &&
+      getEventVenue(event) === 'EH' &&
+      getPrimaryDate(event) === getPrimaryDate(selectedEvent)
+    )
+    .flatMap(buildEhReservationsForEvent);
+
+type EbusPackageLock = {
+  packageId: string;
+  eventId: string;
+  eventName: string;
+  date: string;
+  sessions: EventSession[];
+  stationName: string;
+};
+
+const getEventPackageSelections = (event: Event) => {
+  const selections = new Map<string, string>();
+  (event.houseOperation?.stations || []).forEach(station => {
+    getStationPackageIds(station).forEach(packageId => {
+      if (!selections.has(packageId)) selections.set(packageId, station.name);
+    });
+  });
+  (event.layout?.blocks || []).forEach(block => {
+    if (block.packageId && !selections.has(block.packageId)) {
+      selections.set(block.packageId, block.name || block.packageName || block.packageId);
+    }
+  });
+  return Array.from(selections.entries()).map(([packageId, stationName]) => ({ packageId, stationName }));
+};
+
+const getEbusPackageLocks = (events: Event[], selectedEvent: Event) => {
+  const locks = new Map<string, EbusPackageLock[]>();
+  if (getEventVenue(selectedEvent) !== 'EBUS') return locks;
+  events.forEach(event => {
+    if (event.id === selectedEvent.id || getEventVenue(event) !== 'EBUS' || !eventSessionsOverlap(event, selectedEvent)) return;
+    const date = getPrimaryDate(event);
+    const sessions = getEventScheduleItems(event)
+      .filter(item => getEventScheduleItems(selectedEvent).some(selectedItem => selectedItem.date === item.date))
+      .flatMap(item => item.sessions);
+    getEventPackageSelections(event).forEach(({ packageId, stationName }) => {
+      const current = locks.get(packageId) || [];
+      current.push({
+        packageId,
+        eventId: event.id,
+        eventName: event.name,
+        date,
+        sessions: Array.from(new Set(sessions)),
+        stationName
+      });
+      locks.set(packageId, current);
+    });
+  });
+  return locks;
+};
 
 const getPackageNames = (packageIds: string[], packages: ComboPackage[]) =>
   packageIds
@@ -842,13 +1050,65 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
   }, [operation]);
 
   const overlapWarnings = useMemo(() => operation ? getOverlapWarnings(operation.agenda) : new Set<string>(), [operation]);
+  const externalEhReservations = useMemo(
+    () => selectedEvent ? getExternalEhReservations(events, selectedEvent) : [],
+    [events, selectedEvent]
+  );
+  const ebusPackageLocks = useMemo(
+    () => selectedEvent ? getEbusPackageLocks(events, selectedEvent) : new Map<string, EbusPackageLock[]>(),
+    [events, selectedEvent]
+  );
 
   const groupActivityAgendas = useMemo(
     () => selectedEvent && operation
-      ? buildGroupActivityAgendas(selectedEvent, operation.agenda, operation.stations, operation.rotations)
+      ? buildGroupActivityAgendas(
+        selectedEvent,
+        operation.agenda,
+        operation.stations,
+        operation.rotations,
+        getEventVenue(selectedEvent) === 'EH' ? externalEhReservations : []
+      )
       : [],
-    [selectedEvent, operation]
+    [selectedEvent, operation, externalEhReservations]
   );
+
+  const ehResourceConflictWarnings = useMemo(() => {
+    if (!selectedEvent || !operation || getEventVenue(selectedEvent) !== 'EH') return [];
+    const ownEvent: Event = { ...selectedEvent, houseOperation: operation };
+    const ownReservations = buildEhReservationsForEvent(ownEvent);
+    const warnings = new Map<string, { stationName: string; blocker: StationReservation; own: StationReservation }>();
+    ownReservations.forEach(own => {
+      externalEhReservations.forEach(blocker => {
+        if (
+          own.resourceKey === blocker.resourceKey &&
+          own.date === blocker.date &&
+          timeRangesOverlap(own.start, own.end, blocker.start, blocker.end)
+        ) {
+          warnings.set(`${own.resourceKey}-${own.start}-${own.end}-${blocker.eventId}`, {
+            stationName: own.stationName,
+            blocker,
+            own
+          });
+        }
+      });
+    });
+    return Array.from(warnings.values()).slice(0, 6);
+  }, [externalEhReservations, operation, selectedEvent]);
+
+  const unresolvedEhSlots = useMemo(
+    () => groupActivityAgendas.flatMap(group => group.blocks
+      .filter(block => !block.stationId && (block.note || '').includes('Tạm chờ'))
+      .map(block => ({ groupName: group.name, block }))
+    ).slice(0, 6),
+    [groupActivityAgendas]
+  );
+
+  const ebusCurrentStationConflicts = useMemo(() => {
+    if (!selectedEvent || !operation || getEventVenue(selectedEvent) !== 'EBUS') return [];
+    return operation.stations.flatMap(station => getStationPackageIds(station).flatMap(packageId =>
+      (ebusPackageLocks.get(packageId) || []).map(lock => ({ station, lock }))
+    ));
+  }, [ebusPackageLocks, operation, selectedEvent]);
 
   const liveGroupAgendas = useMemo(
     () => selectedEvent && operation ? buildLiveGroupAgendas(groupActivityAgendas, operation, selectedEvent) : [],
@@ -911,6 +1171,15 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
     });
   };
 
+  const getEbusPackageLockText = (packageId: string) => {
+    const lock = ebusPackageLocks.get(packageId)?.[0];
+    if (!lock) return '';
+    return `${lock.eventName} • ${lock.date} • ${getSessionListLabel(lock.sessions)}`;
+  };
+
+  const isEbusPackageLocked = (packageId: string) =>
+    getEventVenue(selectedEvent) === 'EBUS' && (ebusPackageLocks.get(packageId)?.length || 0) > 0;
+
   const initializeOperation = () => {
     if (!selectedEvent || !canEdit) return;
     onUpdateEvent(selectedEvent.id, {
@@ -938,6 +1207,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
   };
 
   const addPackageStation = (pkg: ComboPackage) => {
+    if (isEbusPackageLocked(pkg.id)) return;
     saveOperation(current => {
       const station = {
         ...createStationFromPackage(pkg, inventory, current.stations.length),
@@ -996,6 +1266,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
   };
 
   const mergePackageIntoStation = (stationId: string, packageId: string) => {
+    if (isEbusPackageLocked(packageId)) return;
     const pkg = packages.find(item => item.id === packageId);
     if (!pkg) return;
     saveOperation(current => {
@@ -1631,20 +1902,45 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                 </div>
                 <div className="mt-4">
                   <p className="text-xs font-black uppercase text-slate-500 mb-2">Tạo nhanh khu vực từ gói thiết bị</p>
+                  {getEventVenue(selectedEvent) === 'EBUS' && ebusPackageLocks.size > 0 && (
+                    <div className="mb-3 rounded-lg border border-blue-100 bg-blue-50 p-3 text-xs font-semibold text-blue-800">
+                      EBUS đang khóa trạm theo sự kiện cùng ngày/cùng buổi. Gói đã có sự kiện khác dùng sẽ không chọn được; quy tắc này không áp dụng cho EH.
+                    </div>
+                  )}
+                  {ebusCurrentStationConflicts.length > 0 && (
+                    <div className="mb-3 rounded-lg border border-rose-100 bg-rose-50 p-3 text-xs text-rose-800">
+                      <p className="font-black uppercase">Trạm EBUS đang trùng lịch</p>
+                      <div className="mt-2 space-y-1">
+                        {ebusCurrentStationConflicts.slice(0, 4).map(({ station, lock }) => (
+                          <p key={`${station.id}-${lock.packageId}-${lock.eventId}`} className="font-semibold">
+                            {station.name} đang bị giữ bởi {lock.eventName} ({lock.date} • {getSessionListLabel(lock.sessions)}).
+                          </p>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   <div className="flex flex-wrap gap-2">
                     {educationPackages.map(pkg => {
                       const alreadyAdded = operation.stations.some(station => getStationPackageIds(station).includes(pkg.id));
+                      const locked = isEbusPackageLocked(pkg.id);
                       return (
                         <button
                           key={pkg.id}
                           onClick={() => addPackageStation(pkg)}
-                          disabled={!canEdit}
-                          className={`inline-flex items-center gap-1 px-3 py-2 rounded-lg border text-sm font-bold hover:bg-slate-50 disabled:text-slate-300 ${alreadyAdded ? 'border-teal-200 bg-teal-50 text-teal-800' : 'border-slate-200 text-slate-800'}`}
-                          title={`${pkg.items.length} thiết bị trong gói`}
+                          disabled={!canEdit || locked}
+                          className={`inline-flex items-center gap-1 px-3 py-2 rounded-lg border text-sm font-bold hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300 ${
+                            locked
+                              ? 'border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-50'
+                              : alreadyAdded
+                                ? 'border-teal-200 bg-teal-50 text-teal-800'
+                                : 'border-slate-200 text-slate-800'
+                          }`}
+                          title={locked ? `Đã được chọn bởi ${getEbusPackageLockText(pkg.id)}` : `${pkg.items.length} thiết bị trong gói`}
                         >
                           <Plus size={15} />
                           {pkg.name}
                           <span className="text-[11px] font-black text-slate-400">({pkg.items.length})</span>
+                          {locked && <span className="text-[10px] font-black text-rose-500">Đã khóa</span>}
                         </button>
                       );
                     })}
@@ -1675,6 +1971,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                   {operation.stations.map((station, index) => {
                     const stationPackageIds = getStationPackageIds(station);
                     const mergeablePackages = educationPackages.filter(pkg => !stationPackageIds.includes(pkg.id));
+                    const hasUnlockedMergeablePackage = mergeablePackages.some(pkg => !isEbusPackageLocked(pkg.id));
                     return (
                       <div
                         key={station.id}
@@ -1727,7 +2024,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                           </label>
                           <select
                             value=""
-                            disabled={!canEdit || mergeablePackages.length === 0}
+                            disabled={!canEdit || mergeablePackages.length === 0 || !hasUnlockedMergeablePackage}
                             onChange={event => {
                               if (!event.target.value) return;
                               mergePackageIntoStation(station.id, event.target.value);
@@ -1736,7 +2033,11 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                             className="w-full min-w-0 border rounded-lg px-2 py-2 text-xs font-bold bg-white"
                           >
                             <option value="">Chọn/gộp gói vào khu vực</option>
-                            {mergeablePackages.map(pkg => <option key={pkg.id} value={pkg.id}>{pkg.name} ({pkg.items.length})</option>)}
+                            {mergeablePackages.map(pkg => (
+                              <option key={pkg.id} value={pkg.id} disabled={isEbusPackageLocked(pkg.id)}>
+                                {pkg.name} ({pkg.items.length}){isEbusPackageLocked(pkg.id) ? ` - Đã khóa: ${getEbusPackageLockText(pkg.id)}` : ''}
+                              </option>
+                            ))}
                           </select>
                           <select value={station.status || 'TODO'} disabled={!canEdit} onChange={e => saveOperation(cur => ({ ...cur, stations: cur.stations.map(s => s.id === station.id ? { ...s, status: e.target.value as HouseOperationTaskStatus } : s) }))} className="w-full min-w-0 border rounded-lg px-2 py-2 text-xs font-bold bg-white">
                             {Object.entries(STATUS_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
@@ -1873,6 +2174,18 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                     Số nhóm đang nhiều hơn số khu vực/trạm, có thể phải cho một số nhóm nghỉ/chờ hoặc bổ sung khu vực để tránh trùng.
                   </div>
                 )}
+                {getEventVenue(selectedEvent) === 'EH' && ehResourceConflictWarnings.length > 0 && (
+                  <div className="mt-3 rounded-lg border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800">
+                    <p className="font-black uppercase">Đã phát hiện chương trình EH trùng giờ</p>
+                    <div className="mt-2 space-y-1">
+                      {ehResourceConflictWarnings.slice(0, 4).map(({ stationName, blocker, own }) => (
+                        <p key={`${stationName}-${blocker.eventId}-${own.start}`} className="font-semibold">
+                          {stationName} va với {blocker.eventName} / {blocker.groupName} ({minutesToTime(blocker.start)}-{minutesToTime(blocker.end)}). Agenda nhóm sẽ tự né nếu còn trạm thay thế.
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <div className="mt-4 space-y-3">
                   {operation.rotations.map((group, groupIndex) => {
                     const color = group.color || GROUP_COLORS[groupIndex % GROUP_COLORS.length];
@@ -1936,6 +2249,18 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                     </button>
                   </div>
                 </div>
+                {unresolvedEhSlots.length > 0 && (
+                  <div className="mt-4 rounded-lg border border-rose-100 bg-rose-50 p-3 text-xs text-rose-800">
+                    <p className="font-black uppercase">Còn slot chưa có trạm sạch</p>
+                    <div className="mt-2 space-y-1">
+                      {unresolvedEhSlots.map(({ groupName, block }) => (
+                        <p key={block.id} className="font-semibold">
+                          {groupName} • {block.startTime}-{block.endTime}: {block.note}
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-3">
                   {groupActivityAgendas.map((group, groupIndex) => (
                     <div key={group.id} className="rounded-lg border border-slate-100 bg-slate-50 p-3" style={{ borderTop: `5px solid ${group.color || GROUP_COLORS[groupIndex % GROUP_COLORS.length]}` }}>
@@ -2049,7 +2374,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                       <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2">
                         <select
                           value=""
-                          disabled={!canEdit || educationPackages.length === 0}
+                          disabled={!canEdit || educationPackages.length === 0 || educationPackages.every(pkg => isEbusPackageLocked(pkg.id))}
                           onChange={event => {
                             if (!event.target.value) return;
                             mergePackageIntoStation(station.id, event.target.value);
@@ -2058,7 +2383,11 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                           className="w-full border rounded-lg px-2 py-2 text-xs font-bold bg-white"
                         >
                           <option value="">Bổ sung gói ngoài Design</option>
-                          {educationPackages.map(pkg => <option key={pkg.id} value={pkg.id}>{pkg.name} ({pkg.items.length})</option>)}
+                          {educationPackages.map(pkg => (
+                            <option key={pkg.id} value={pkg.id} disabled={isEbusPackageLocked(pkg.id)}>
+                              {pkg.name} ({pkg.items.length}){isEbusPackageLocked(pkg.id) ? ` - Đã khóa: ${getEbusPackageLockText(pkg.id)}` : ''}
+                            </option>
+                          ))}
                         </select>
                         <select
                           value=""

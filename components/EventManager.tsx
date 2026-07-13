@@ -783,7 +783,7 @@ const getEventSchedule = (event: Event): EventScheduleItem[] => {
     const normalized = (event.schedule as any[]).map(it => {
       if (it.sessions && Array.isArray(it.sessions)) return { date: it.date, sessions: it.sessions as EventSession[] };
       if (it.session) return { date: it.date, sessions: [it.session as EventSession] };
-      return { date: it.date, sessions: event.session ? [event.session] : ['MORNING'] };
+      return { date: it.date, sessions: event.session ? [event.session] : ['MORNING' as EventSession] };
     });
     return [...normalized].sort((a, b) => a.date.localeCompare(b.date));
   }
@@ -846,6 +846,20 @@ const getContentProgramEvent = (event: Event, program: ContentProgramView): Even
     houseOperation: program.houseOperation
   };
 };
+
+const getContentProgramScopedEvents = (event: Event, activeProgramId?: string): Event[] =>
+  getContentProgramViews(event).map(program => {
+    const scopedEvent = getContentProgramEvent(event, program);
+    const rootProgramId = activeProgramId || PRIMARY_CONTENT_PROGRAM_ID;
+    const useRootId = program.id === rootProgramId;
+    return {
+      ...scopedEvent,
+      id: useRootId ? event.id : `${event.id}::${program.id}`,
+      name: program.isPrimary ? event.name : `${event.name} • ${program.name}`,
+      contentPrograms: undefined,
+      primaryContentProgram: undefined
+    };
+  });
 
 const SESSION_DEFAULT_START: Record<EventSession, string> = {
   MORNING: '09:00',
@@ -1504,10 +1518,13 @@ export const EventManager: React.FC<EventManagerProps> = ({
     [activeContentProgram, selectedEvent]
   );
   const eventsForActiveContent = useMemo(
-    () => selectedEvent && activeContentEvent
-      ? events.map(event => event.id === selectedEvent.id ? activeContentEvent : event)
-      : events,
-    [activeContentEvent, events, selectedEvent]
+    () => selectedEvent && activeContentProgram
+      ? events.flatMap(event => event.id === selectedEvent.id
+        ? getContentProgramScopedEvents(event, activeContentProgram.id)
+        : getContentProgramScopedEvents(event)
+      ).map(event => event.id === selectedEvent.id ? activeContentEvent || event : event)
+      : events.flatMap(event => getContentProgramScopedEvents(event)),
+    [activeContentEvent, activeContentProgram, events, selectedEvent]
   );
   const eventProfile = selectedEvent?.eventProfile || {};
   const canEditProfile = canEdit && isAdmin;
