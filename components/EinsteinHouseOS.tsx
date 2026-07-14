@@ -645,6 +645,18 @@ const buildRoomAgendasFromLiveGroups = (
     .sort((a, b) => a.room.localeCompare(b.room));
 };
 
+const alignRoomAgendasToRoomOptions = (
+  roomAgendas: Array<{ room: string; blocks: RoomAgendaBlock[] }>,
+  roomOptions: string[]
+) => {
+  if (roomOptions.length === 0) return roomAgendas;
+  const agendaMap = new Map(roomAgendas.map(item => [item.room, item.blocks]));
+  return roomOptions.map(room => ({
+    room,
+    blocks: (agendaMap.get(room) || []).sort((a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime))
+  }));
+};
+
 const getBlockState = (block: GroupAgendaBlock, now: Date) => {
   const nowMinutes = now.getHours() * 60 + now.getMinutes();
   const start = timeToMinutes(block.startTime);
@@ -1230,7 +1242,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
   }, [employees, events, inventory, operation, packages, roomAgendas, selectedEvent]);
 
   const effectiveRoomAgendas = selectedEvent && getEventVenue(selectedEvent) === 'EH'
-    ? ehSameDayRoomAgendas
+    ? alignRoomAgendasToRoomOptions(ehSameDayRoomAgendas, ehRoomOptions)
     : roomAgendas;
 
   useEffect(() => {
