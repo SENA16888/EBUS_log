@@ -436,6 +436,10 @@ type RoomAgendaBlock = GroupAgendaBlock & {
   eventId?: string;
   eventName?: string;
 };
+type LiveControlEventAgenda = {
+  event: Event;
+  groups: GroupAgendaView[];
+};
 
 type StationReservation = {
   resourceKey: string;
@@ -1202,6 +1206,33 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
     () => selectedEvent && operation ? buildLiveGroupAgendas(groupActivityAgendas, operation, selectedEvent) : [],
     [groupActivityAgendas, operation, selectedEvent]
   );
+
+  const liveControlEventAgendas = useMemo<LiveControlEventAgenda[]>(() => {
+    if (!selectedEvent || !operation) return [];
+    const selectedDate = getPrimaryDate(selectedEvent);
+    const aggregateSameDayEh = getEventVenue(selectedEvent) === 'EH';
+    const sourceEvents = aggregateSameDayEh
+      ? events.filter(event => getEventVenue(event) === 'EH' && getPrimaryDate(event) === selectedDate)
+      : [selectedEvent];
+
+    return sourceEvents.map(event => {
+      const currentOperation = event.id === selectedEvent.id
+        ? operation
+        : ensureOperation(event, inventory, employees, packages);
+      const reservations = getEventVenue(event) === 'EH' ? getExternalEhReservations(events, event) : [];
+      const standardGroups = buildGroupActivityAgendas(
+        event,
+        currentOperation.agenda,
+        currentOperation.stations,
+        currentOperation.rotations,
+        reservations
+      );
+      return {
+        event,
+        groups: buildLiveGroupAgendas(standardGroups, currentOperation, event)
+      };
+    }).filter(item => item.groups.length > 0);
+  }, [employees, events, inventory, operation, packages, selectedEvent]);
 
   const roomAgendas = useMemo(
     () => buildRoomAgendasFromLiveGroups(liveGroupAgendas, selectedEvent),
@@ -2765,28 +2796,76 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                   </div>
                 )}
 
-                <div className="mt-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-                  {liveGroupAgendas.map((group, groupIndex) => {
-                    const active = group.blocks.find(block => getBlockState(block, liveNow) === 'NOW');
-                    const next = group.blocks.find(block => getBlockState(block, liveNow) === 'UPCOMING');
-                    const focus = active || next || group.blocks[group.blocks.length - 1];
+                <div className="mt-4 space-y-4">
+                  {getEventVenue(selectedEvent) === 'EH' && (
+                    <div className="rounded-lg border border-teal-100 bg-teal-50 p-3">
+                      <p className="text-xs font-black uppercase text-teal-700">Tổng điều phối trung tâm trong ngày</p>
+                      <p className="mt-1 text-xs font-semibold text-teal-800">
+                        Đang xem {liveControlEventAgendas.length} đoàn/chương trình EH cùng ngày {formatDate(getPrimaryDate(selectedEvent))}.
+                      </p>
+                    </div>
+                  )}
+                  {liveControlEventAgendas.map(({ event, groups }) => {
+                    const activeCount = groups.filter(group => group.blocks.some(block => getBlockState(block, liveNow) === 'NOW')).length;
+                    const upcomingCount = groups.filter(group =>
+                      !group.blocks.some(block => getBlockState(block, liveNow) === 'NOW') &&
+                      group.blocks.some(block => getBlockState(block, liveNow) === 'UPCOMING')
+                    ).length;
                     return (
-                      <div key={group.id} className="rounded-lg border border-slate-100 bg-slate-50 p-3" style={{ borderTop: `5px solid ${group.color || GROUP_COLORS[groupIndex % GROUP_COLORS.length]}` }}>
-                        <div className="flex items-center justify-between gap-2">
-                          <p className="font-black text-slate-900">{group.name}</p>
-                          <span className={`px-2 py-1 rounded-full text-[11px] font-black ${active ? 'bg-emerald-100 text-emerald-700' : next ? 'bg-amber-100 text-amber-700' : 'bg-slate-200 text-slate-600'}`}>
-                            {active ? 'Đang chạy' : next ? 'Sắp tới' : 'Xong'}
-                          </span>
+                      <div key={event.id} className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                          <div>
+                            <p className="text-[11px] font-black uppercase text-slate-400">{formatDate(getPrimaryDate(event))}</p>
+                            <h4 className="font-black text-slate-900">{event.name}</h4>
+                          </div>
+                          <div className="flex flex-wrap gap-2 text-[11px] font-black">
+                            <span className="rounded-full bg-emerald-100 px-2 py-1 text-emerald-700">{activeCount} đang chạy</span>
+                            <span className="rounded-full bg-amber-100 px-2 py-1 text-amber-700">{upcomingCount} sắp tới</span>
+                            <span className="rounded-full bg-slate-200 px-2 py-1 text-slate-600">{groups.length} nhóm</span>
+                          </div>
                         </div>
-                        <p className="mt-3 text-lg font-black text-slate-900">{focus?.title || 'Standby'}</p>
-                        <p className="mt-1 text-xs text-slate-500">{focus ? `${focus.startTime}-${focus.endTime} • ${focus.room || 'Chưa gán vị trí'}` : 'Không có lịch live'}</p>
-                        <div className="mt-3 rounded-lg bg-white border border-slate-200 p-3 text-center">
-                          <p className="text-xs font-black uppercase text-slate-500">{active ? 'Countdown' : 'Chuẩn bị'}</p>
-                          <p className="mt-1 text-xl font-black text-teal-700">{getCountdownLabel(focus, liveNow)}</p>
+                        <div className="mt-3 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                          {groups.map((group, groupIndex) => {
+                            const active = group.blocks.find(block => getBlockState(block, liveNow) === 'NOW');
+                            const next = group.blocks.find(block => getBlockState(block, liveNow) === 'UPCOMING');
+                            const focus = active || next || group.blocks[group.blocks.length - 1];
+                            const nextAfterFocus = active ? next : undefined;
+                            return (
+                              <div key={`${event.id}-${group.id}`} className="rounded-lg border border-slate-100 bg-white p-3" style={{ borderTop: `5px solid ${group.color || GROUP_COLORS[groupIndex % GROUP_COLORS.length]}` }}>
+                                <div className="flex items-center justify-between gap-2">
+                                  <p className="font-black text-slate-900">{group.name}</p>
+                                  <span className={`px-2 py-1 rounded-full text-[11px] font-black ${active ? 'bg-emerald-100 text-emerald-700' : next ? 'bg-amber-100 text-amber-700' : 'bg-slate-200 text-slate-600'}`}>
+                                    {active ? 'Đang chạy' : next ? 'Sắp tới' : 'Xong'}
+                                  </span>
+                                </div>
+                                <p className="mt-3 text-lg font-black text-slate-900">{focus?.title || 'Standby'}</p>
+                                <p className="mt-1 text-xs text-slate-500">{focus ? `${focus.startTime}-${focus.endTime} • ${focus.room || 'Chưa gán vị trí'}` : 'Không có lịch live'}</p>
+                                <div className="mt-3 rounded-lg bg-slate-50 border border-slate-200 p-3 text-center">
+                                  <p className="text-xs font-black uppercase text-slate-500">{active ? 'Countdown' : 'Chuẩn bị'}</p>
+                                  <p className="mt-1 text-xl font-black text-teal-700">{getCountdownLabel(focus, liveNow)}</p>
+                                </div>
+                                <div className="mt-3 rounded-lg border border-blue-100 bg-blue-50 p-2">
+                                  <p className="text-[10px] font-black uppercase text-blue-600">{active ? 'Trạm tiếp theo' : 'Mốc sắp chạy'}</p>
+                                  <p className="mt-1 text-xs font-bold text-blue-900">
+                                    {nextAfterFocus
+                                      ? `${nextAfterFocus.title} • ${nextAfterFocus.startTime}-${nextAfterFocus.endTime} • ${nextAfterFocus.room || 'Chưa gán vị trí'}`
+                                      : next
+                                        ? `${next.title} • ${next.startTime}-${next.endTime} • ${next.room || 'Chưa gán vị trí'}`
+                                        : 'Không còn trạm tiếp theo'}
+                                  </p>
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
                     );
                   })}
+                  {liveControlEventAgendas.length === 0 && (
+                    <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
+                      Chưa có nhóm live nào trong ngày.
+                    </div>
+                  )}
                 </div>
               </section>
               )}
