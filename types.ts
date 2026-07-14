@@ -525,6 +525,7 @@ export interface HouseOperationInstance {
   studentCount?: number;
   teacherCount?: number;
   groupCount?: number;
+  rooms?: string[];
   stations: HouseOperationStation[];
   agenda: HouseOperationAgendaBlock[];
   timeline?: HouseOperationAgendaBlock[];

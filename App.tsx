@@ -88,6 +88,59 @@ const getPublicProgramEvent = (event: Event, programId?: string): Event => {
   };
 };
 
+const getPublicEventPrimaryDate = (event: Event) =>
+  event.schedule?.[0]?.date || event.startDate || event.endDate || '';
+
+const getPublicScopedProgramEvents = (event: Event, activeProgramId?: string): Event[] => {
+  const defaultSchedule = getEventScheduleForPublicProgram(event);
+  const defaultDate = defaultSchedule[0]?.date || event.startDate || new Date().toISOString().slice(0, 10);
+  const defaultSessions = defaultSchedule[0]?.sessions || (event.session ? [event.session] : ['MORNING' as const]);
+  const programs = [
+    {
+      id: PRIMARY_CONTENT_PROGRAM_ID,
+      name: event.primaryContentProgram?.name || 'Chương trình chính',
+      date: event.primaryContentProgram?.date || defaultDate,
+      sessions: event.primaryContentProgram?.sessions && event.primaryContentProgram.sessions.length > 0
+        ? event.primaryContentProgram.sessions
+        : defaultSessions,
+      layout: event.layout,
+      houseOperation: event.houseOperation,
+      isPrimary: true
+    },
+    ...(event.contentPrograms || []).map(program => ({
+      id: program.id,
+      name: program.name,
+      date: program.date || defaultDate,
+      sessions: program.sessions && program.sessions.length > 0 ? program.sessions : defaultSessions,
+      layout: program.layout,
+      houseOperation: program.houseOperation,
+      isPrimary: false
+    }))
+  ];
+  const rootProgramId = activeProgramId || PRIMARY_CONTENT_PROGRAM_ID;
+  return programs.map(program => ({
+    ...event,
+    id: program.id === rootProgramId ? event.id : `${event.id}::${program.id}`,
+    name: program.isPrimary ? event.name : `${event.name} • ${program.name}`,
+    startDate: program.date,
+    endDate: program.date,
+    session: program.sessions[0],
+    schedule: [{ date: program.date, sessions: program.sessions }],
+    layout: program.layout,
+    houseOperation: program.houseOperation,
+    contentPrograms: undefined,
+    primaryContentProgram: undefined
+  }));
+};
+
+const getPublicLiveEvents = (events: Event[], publicEvent: Event, sourceEvent: Event, programId?: string) => {
+  if ((publicEvent.organizationVenue || 'EH') !== 'EH') return [publicEvent];
+  const publicDate = getPublicEventPrimaryDate(publicEvent);
+  return events
+    .flatMap(event => getPublicScopedProgramEvents(event, event.id === sourceEvent.id ? (programId || PRIMARY_CONTENT_PROGRAM_ID) : undefined))
+    .filter(event => (event.organizationVenue || 'EH') === 'EH' && getPublicEventPrimaryDate(event) === publicDate);
+};
+
 const getSessionId = () => {
   try {
     if (typeof sessionStorage !== 'undefined') {
@@ -2209,13 +2262,16 @@ const App: React.FC = () => {
   if (isPublicLiveMode) {
     const publicSourceEvent = appState.events.find(event => event.id === publicLiveEventId);
     const publicEvent = publicSourceEvent ? getPublicProgramEvent(publicSourceEvent, publicLiveProgramId) : undefined;
+    const publicLiveEvents = publicSourceEvent && publicEvent
+      ? getPublicLiveEvents(appState.events, publicEvent, publicSourceEvent, publicLiveProgramId)
+      : [];
     return (
       <div className="min-h-screen bg-slate-50 p-3 md:p-4">
         {isLoading ? (
           <div className="min-h-[70vh] flex items-center justify-center text-slate-600 font-bold">Đang tải LIVE...</div>
         ) : publicEvent ? (
           <EinsteinHouseOS
-            events={[publicEvent]}
+            events={publicLiveEvents.length > 0 ? publicLiveEvents : [publicEvent]}
           inventory={appState.inventory}
           employees={appState.employees}
           packages={appState.packages}

@@ -408,6 +408,13 @@ type GroupAgendaBlock = {
 };
 
 type GroupAgendaView = HouseOperationRotationGroup & { blocks: GroupAgendaBlock[] };
+type RoomAgendaBlock = GroupAgendaBlock & {
+  groupName: string;
+  groupColor?: string;
+  groupId: string;
+  eventId?: string;
+  eventName?: string;
+};
 
 type StationReservation = {
   resourceKey: string;
@@ -467,7 +474,7 @@ const buildGroupActivityAgendas = (
           startTime: block.startTime,
           endTime: block.endTime,
           stationId: block.stationId,
-          room: block.room || station?.areaDescription || station?.room,
+          room: block.room || station?.room || station?.areaDescription,
           note: 'Hoạt động chung toàn đoàn'
         };
       }),
@@ -533,7 +540,7 @@ const buildGroupActivityAgendas = (
             startTime: minutesToTime(start),
             endTime: minutesToTime(end),
             stationId,
-            room: station?.areaDescription || station?.room,
+            room: station?.room || station?.areaDescription,
             note: station
               ? `${block.sectionCode || ''} • ${station.packageName || block.title}`
               : blocker
@@ -587,6 +594,34 @@ const buildLiveGroupAgendas = (
       };
     })
   }));
+};
+
+const buildRoomAgendasFromLiveGroups = (
+  liveGroups: GroupAgendaView[],
+  event?: Event
+): Array<{ room: string; blocks: RoomAgendaBlock[] }> => {
+  const map = new Map<string, RoomAgendaBlock[]>();
+  liveGroups.forEach(group => {
+    group.blocks.forEach(block => {
+      const room = block.room || 'Chưa gán phòng';
+      const rows = map.get(room) || [];
+      rows.push({
+        ...block,
+        groupName: group.name,
+        groupColor: group.color,
+        groupId: group.id,
+        eventId: event?.id,
+        eventName: event?.name
+      });
+      map.set(room, rows);
+    });
+  });
+  return Array.from(map.entries())
+    .map(([room, blocks]) => ({
+      room,
+      blocks: blocks.sort((a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime))
+    }))
+    .sort((a, b) => a.room.localeCompare(b.room));
 };
 
 const getBlockState = (block: GroupAgendaBlock, now: Date) => {
@@ -693,6 +728,17 @@ const getStationPackageIds = (station: HouseOperationStation) =>
     : station.packageId
       ? [station.packageId]
       : [];
+
+const dedupeRoomNames = (rooms: string[]) =>
+  Array.from(new Set(rooms.map(room => room.trim()).filter(Boolean)));
+
+const getOperationRooms = (rooms?: string[], stations: HouseOperationStation[] = []) => {
+  const stationRooms = stations.flatMap(station => {
+    const candidates = [station.room, station.areaDescription];
+    return candidates.filter((value): value is string => !!value && value.trim().length > 0 && value.trim().length <= 50);
+  });
+  return dedupeRoomNames([...(rooms || []), ...stationRooms]);
+};
 
 const normalizeResourceText = (value?: string | null) =>
   (value || '')
@@ -837,7 +883,7 @@ const createStationFromPackage = (pkg: ComboPackage, inventory: InventoryItem[],
     areaDescription: pkg.description || '',
     category,
     durationMinutes: getPackageStationDuration(pkg),
-    room: `Khu ${index + 1}`,
+    room: '',
     objective: pkg.description || `Tổ chức trạm trải nghiệm theo gói thiết bị ${pkg.name}.`,
     sopVersion: `PKG-${pkg.id}`,
     checklist: ['Kiểm tra đủ thiết bị trong gói', 'Test hoạt động trước khi đón đoàn', 'Sắp xếp khu vực và hàng chờ', 'Chốt người phụ trách trạm'],
@@ -855,7 +901,7 @@ const createEmptyAreaStation = (index: number): HouseOperationStation => ({
   areaDescription: '',
   category: 'OTHER',
   durationMinutes: 30,
-  room: `Khu ${index + 1}`,
+  room: '',
   objective: 'Khu vực vận hành gồm một hoặc nhiều trạm/gói thiết bị.',
   sopVersion: 'CUSTOM-AREA',
   checklist: ['Chốt vị trí khu vực', 'Gán trạm/gói thiết bị', 'Kiểm tra lối di chuyển', 'Chốt người phụ trách'],
@@ -914,6 +960,7 @@ const createDefaultOperation = (
     studentCount,
     teacherCount: getTeacherCount(event),
     groupCount,
+    rooms: getOperationRooms([], stations),
     stations,
     agenda: stations.length > 0 ? buildAgenda(event, stations) : [],
     rotations: stations.length > 0 ? buildRotations(studentCount, stations, groupCount) : [],
@@ -937,6 +984,7 @@ const ensureOperation = (event: Event, inventory: InventoryItem[], employees: Em
   return {
     ...fallback,
     ...currentWithoutLegacy,
+    rooms: getOperationRooms(current.rooms, current.stations || fallback.stations),
     stations: Array.isArray(current.stations) ? current.stations : fallback.stations,
     agenda: currentAgenda && (currentAgenda.length > 0 || !legacyAgenda)
       ? currentAgenda
@@ -1000,6 +1048,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
   const [localLiveRoom, setLocalLiveRoom] = useState('');
   const [expandedEquipmentStationId, setExpandedEquipmentStationId] = useState<string | null>(null);
   const [viewingEducationContext, setViewingEducationContext] = useState<{ stationName: string; links: HouseOperationEducationLink[]; activeIndex: number } | null>(null);
+  const [newRoomName, setNewRoomName] = useState('');
 
   const selectedEvent = events.find(event => event.id === selectedEventId) || events[0];
   const operation = useMemo(
@@ -1115,23 +1164,47 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
     [groupActivityAgendas, operation, selectedEvent]
   );
 
-  const roomAgendas = useMemo(() => {
-    const map = new Map<string, Array<GroupAgendaBlock & { groupName: string; groupColor?: string; groupId: string }>>();
-    liveGroupAgendas.forEach(group => {
-      group.blocks.forEach(block => {
-        const room = block.room || 'Chưa gán vị trí';
-        const rows = map.get(room) || [];
-        rows.push({ ...block, groupName: group.name, groupColor: group.color, groupId: group.id });
-        map.set(room, rows);
+  const roomAgendas = useMemo(
+    () => buildRoomAgendasFromLiveGroups(liveGroupAgendas, selectedEvent),
+    [liveGroupAgendas, selectedEvent]
+  );
+
+  const ehSameDayRoomAgendas = useMemo(() => {
+    if (!selectedEvent || getEventVenue(selectedEvent) !== 'EH') return roomAgendas;
+    const date = getPrimaryDate(selectedEvent);
+    const map = new Map<string, RoomAgendaBlock[]>();
+    events
+      .filter(event => getEventVenue(event) === 'EH' && getPrimaryDate(event) === date)
+      .forEach(event => {
+        const currentOperation = event.id === selectedEvent.id && operation
+          ? operation
+          : ensureOperation(event, inventory, employees, packages);
+        const reservations = getExternalEhReservations(events, event);
+        const standardGroups = buildGroupActivityAgendas(
+          event,
+          currentOperation.agenda,
+          currentOperation.stations,
+          currentOperation.rotations,
+          reservations
+        );
+        const liveGroups = buildLiveGroupAgendas(standardGroups, currentOperation, event);
+        buildRoomAgendasFromLiveGroups(liveGroups, event).forEach(roomAgenda => {
+          const rows = map.get(roomAgenda.room) || [];
+          rows.push(...roomAgenda.blocks);
+          map.set(roomAgenda.room, rows);
+        });
       });
-    });
     return Array.from(map.entries())
       .map(([room, blocks]) => ({
         room,
         blocks: blocks.sort((a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime))
       }))
       .sort((a, b) => a.room.localeCompare(b.room));
-  }, [liveGroupAgendas]);
+  }, [employees, events, inventory, operation, packages, roomAgendas, selectedEvent]);
+
+  const effectiveRoomAgendas = selectedEvent && getEventVenue(selectedEvent) === 'EH'
+    ? ehSameDayRoomAgendas
+    : roomAgendas;
 
   useEffect(() => {
     setLocalLiveGroupId(current => {
@@ -1145,13 +1218,13 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
 
   useEffect(() => {
     setLocalLiveRoom(current => {
-      if (!roomAgendas.length) return '';
-      if (current && roomAgendas.some(item => item.room === current)) return current;
+      if (!effectiveRoomAgendas.length) return '';
+      if (current && effectiveRoomAgendas.some(item => item.room === current)) return current;
       const saved = operation?.live?.selectedRoom;
-      if (saved && roomAgendas.some(item => item.room === saved)) return saved;
-      return roomAgendas[0].room;
+      if (saved && effectiveRoomAgendas.some(item => item.room === saved)) return saved;
+      return effectiveRoomAgendas[0].room;
     });
-  }, [roomAgendas, operation?.live?.selectedRoom]);
+  }, [effectiveRoomAgendas, operation?.live?.selectedRoom]);
 
   const hasGroupStationConflict = operation ? (operation.groupCount || operation.rotations.length || 1) > Math.max(1, operation.stations.length) : false;
 
@@ -1169,6 +1242,29 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
         updatedAt: new Date().toISOString()
       }
     });
+  };
+
+  const addRoom = () => {
+    const name = newRoomName.trim();
+    if (!name) return;
+    saveOperation(current => ({
+      ...current,
+      rooms: dedupeRoomNames([...(current.rooms || []), name])
+    }));
+    setNewRoomName('');
+  };
+
+  const removeRoom = (room: string) => {
+    if (!room) return;
+    const isUsed = (operation?.stations || []).some(station => station.room === room);
+    if (isUsed && !window.confirm(`Xóa phòng "${room}" và bỏ gán khỏi các trạm đang dùng phòng này?`)) return;
+    saveOperation(current => ({
+      ...current,
+      rooms: (current.rooms || []).filter(item => item !== room),
+      stations: current.stations.map(station =>
+        station.room === room ? { ...station, room: '' } : station
+      )
+    }));
   };
 
   const getEbusPackageLockText = (packageId: string) => {
@@ -1444,7 +1540,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
         startTime: getProgramStart(selectedEvent!),
         endTime: addMinutes(getProgramStart(selectedEvent!), firstStation?.durationMinutes || 15),
         stationId: firstStation?.id,
-        room: firstStation?.areaDescription || firstStation?.room,
+        room: firstStation?.room || firstStation?.areaDescription,
         note: 'Toàn bộ nhóm cùng tham gia mốc này.'
       };
       const firstExperienceIndex = current.agenda.findIndex(item => item.kind === 'EXPERIENCE_AM' || item.kind === 'EXPERIENCE_PM');
@@ -1669,7 +1765,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
   const activeGroupBlock = selectedLiveBlocks.find(block => getBlockState(block, liveNow) === 'NOW');
   const nextGroupBlock = selectedLiveBlocks.find(block => getBlockState(block, liveNow) === 'UPCOMING');
   const focusGroupBlock = activeGroupBlock || nextGroupBlock || selectedLiveBlocks[selectedLiveBlocks.length - 1];
-  const selectedRoomAgenda = roomAgendas.find(item => item.room === (localLiveRoom || operation.live?.selectedRoom)) || roomAgendas[0];
+  const selectedRoomAgenda = effectiveRoomAgendas.find(item => item.room === (localLiveRoom || operation.live?.selectedRoom)) || effectiveRoomAgendas[0];
   const activeRoomBlock = selectedRoomAgenda?.blocks.find(block => getBlockState(block, liveNow) === 'NOW');
   const nextRoomBlock = selectedRoomAgenda?.blocks.find(block => getBlockState(block, liveNow) === 'UPCOMING');
   const focusRoomBlock = activeRoomBlock || nextRoomBlock;
@@ -1900,6 +1996,58 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                     <input type="number" value={operation.teacherCount || 0} disabled={!canEdit} onChange={e => saveOperation(cur => ({ ...cur, teacherCount: Number(e.target.value) }))} className="w-full border rounded-lg px-3 py-2 text-sm" />
                   </Field>
                 </div>
+                {getEventVenue(selectedEvent) === 'EH' && (
+                  <div className="mt-4 rounded-lg border border-teal-100 bg-teal-50/50 p-3">
+                    <p className="text-xs font-black uppercase text-teal-700">Danh sách phòng/khu vực EH</p>
+                    <div className="mt-2 flex gap-2">
+                      <input
+                        value={newRoomName}
+                        disabled={!canEdit}
+                        onChange={event => setNewRoomName(event.target.value)}
+                        onKeyDown={event => {
+                          if (event.key === 'Enter') {
+                            event.preventDefault();
+                            addRoom();
+                          }
+                        }}
+                        placeholder="Ví dụ: Phòng Tesla, Sảnh tầng 1..."
+                        className="min-w-0 flex-1 border border-teal-100 rounded-lg px-3 py-2 text-sm bg-white"
+                      />
+                      <button
+                        type="button"
+                        onClick={addRoom}
+                        disabled={!canEdit || !newRoomName.trim()}
+                        className="inline-flex items-center gap-1 rounded-lg bg-teal-600 px-3 py-2 text-xs font-black text-white disabled:bg-slate-300"
+                      >
+                        <Plus size={14} />
+                        Thêm
+                      </button>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {(operation.rooms || []).map(room => {
+                        const usedCount = operation.stations.filter(station => station.room === room).length;
+                        return (
+                          <span key={room} className="inline-flex items-center gap-2 rounded-lg border border-teal-100 bg-white px-2 py-1 text-xs font-bold text-teal-800">
+                            {room}
+                            <span className="rounded-full bg-teal-50 px-1.5 py-0.5 text-[10px] text-teal-600">{usedCount} trạm</span>
+                            <button
+                              type="button"
+                              onClick={() => removeRoom(room)}
+                              disabled={!canEdit}
+                              className="text-teal-300 hover:text-rose-600 disabled:hover:text-teal-300"
+                              title="Xóa phòng/khu vực"
+                            >
+                              <X size={13} />
+                            </button>
+                          </span>
+                        );
+                      })}
+                      {(operation.rooms || []).length === 0 && (
+                        <p className="text-xs font-semibold text-teal-700">Chưa có phòng/khu vực. Thêm phòng để gán cho từng trạm.</p>
+                      )}
+                    </div>
+                  </div>
+                )}
                 <div className="mt-4">
                   <p className="text-xs font-black uppercase text-slate-500 mb-2">Tạo nhanh khu vực từ gói thiết bị</p>
                   {getEventVenue(selectedEvent) === 'EBUS' && ebusPackageLocks.size > 0 && (
@@ -1998,13 +2146,36 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                               className="w-full min-w-0 border border-slate-200 rounded-lg px-3 py-2 text-sm font-black text-slate-800 bg-white"
                               placeholder="Tên khu vực"
                             />
-                            <input
-                              value={station.areaDescription ?? station.room ?? ''}
-                              disabled={!canEdit}
-                              onChange={event => updateStation(station.id, { areaDescription: event.target.value, room: event.target.value })}
-                              className="w-full min-w-0 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-600 bg-white"
-                              placeholder="Mô tả nhỏ: tầng, vị trí, gần cửa..."
-                            />
+                            {getEventVenue(selectedEvent) === 'EH' ? (
+                              <div className="grid grid-cols-1 md:grid-cols-[220px_minmax(0,1fr)] gap-2">
+                                <select
+                                  value={station.room || ''}
+                                  disabled={!canEdit || (operation.rooms || []).length === 0}
+                                  onChange={event => updateStation(station.id, { room: event.target.value })}
+                                  className="w-full min-w-0 border border-slate-200 rounded-lg px-3 py-2 text-xs font-black text-teal-700 bg-white"
+                                >
+                                  <option value="">Chọn phòng/khu vực</option>
+                                  {(operation.rooms || []).map(room => (
+                                    <option key={room} value={room}>{room}</option>
+                                  ))}
+                                </select>
+                                <input
+                                  value={station.areaDescription || ''}
+                                  disabled={!canEdit}
+                                  onChange={event => updateStation(station.id, { areaDescription: event.target.value })}
+                                  className="w-full min-w-0 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-600 bg-white"
+                                  placeholder="Mô tả nhỏ: vị trí trong phòng, gần cửa..."
+                                />
+                              </div>
+                            ) : (
+                              <input
+                                value={station.areaDescription ?? station.room ?? ''}
+                                disabled={!canEdit}
+                                onChange={event => updateStation(station.id, { areaDescription: event.target.value, room: event.target.value })}
+                                className="w-full min-w-0 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-600 bg-white"
+                                placeholder="Mô tả nhỏ: tầng, vị trí, gần cửa..."
+                              />
+                            )}
                             <p className="text-xs text-slate-500 leading-relaxed break-words">
                               {station.packageName ? `Gói/trạm trong khu vực: ${station.packageName}` : 'Chưa chọn gói/trạm cho khu vực này'}
                             </p>
@@ -2105,7 +2276,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                                 updateAgendaBlock(block.id, {
                                   stationId: station?.id,
                                   title: station?.name || block.title,
-                                  room: station?.areaDescription || station?.room,
+                                  room: station?.room || station?.areaDescription,
                                   endTime: addMinutes(block.startTime, station?.durationMinutes || 15)
                                 });
                               }}
@@ -2603,14 +2774,18 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
               {liveViewMode === 'ROOM' && (
               <section className="bg-white border border-slate-200 rounded-lg p-4">
                 <h3 className="font-black text-slate-900 flex items-center gap-2"><Building2 size={18} />Màn hình nhân viên tại phòng</h3>
-                <p className="mt-1 text-xs text-slate-500">Chọn khu vực/phòng để xem lần lượt nhóm nào sẽ đến, đang đến hoặc đã xong.</p>
+                <p className="mt-1 text-xs text-slate-500">
+                  {getEventVenue(selectedEvent) === 'EH'
+                    ? 'Chọn phòng/khu vực để xem tất cả đoàn EH cùng ngày đang dùng phòng đó.'
+                    : 'Chọn khu vực/phòng để xem lần lượt nhóm nào sẽ đến, đang đến hoặc đã xong.'}
+                </p>
                 <select
                   value={selectedRoomAgenda?.room || ''}
-                  disabled={roomAgendas.length === 0}
+                  disabled={effectiveRoomAgendas.length === 0}
                   onChange={event => handleLiveRoomSelect(event.target.value)}
                   className="mt-4 w-full border rounded-lg px-3 py-2 text-sm font-black"
                 >
-                  {roomAgendas.map(item => <option key={item.room} value={item.room}>{item.room}</option>)}
+                  {effectiveRoomAgendas.map(item => <option key={item.room} value={item.room}>{item.room}</option>)}
                 </select>
                 <div className="mt-4 rounded-lg border border-violet-100 bg-violet-50 p-4">
                   <p className="text-xs font-black uppercase text-violet-700">Đang theo dõi khu vực</p>
@@ -2619,19 +2794,19 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                     <div className="rounded-lg bg-white/80 border border-violet-100 p-3">
                       <p className="text-xs font-black uppercase text-violet-600">Đang đón</p>
                       <p className="mt-1 text-lg font-black text-violet-950">{activeRoomBlock ? activeRoomBlock.groupName : 'Chưa có nhóm'}</p>
-                      <p className="text-xs text-violet-700">{activeRoomBlock ? `${activeRoomBlock.startTime}-${activeRoomBlock.endTime} • ${activeRoomBlock.title}` : 'Không có nhóm đang ở phòng'}</p>
+                      <p className="text-xs text-violet-700">{activeRoomBlock ? `${activeRoomBlock.startTime}-${activeRoomBlock.endTime} • ${activeRoomBlock.eventName ? `${activeRoomBlock.eventName} • ` : ''}${activeRoomBlock.title}` : 'Không có nhóm đang ở phòng'}</p>
                     </div>
                     <div className="rounded-lg bg-white/80 border border-violet-100 p-3">
                       <p className="text-xs font-black uppercase text-violet-600">Tiếp theo</p>
                       <p className="mt-1 text-lg font-black text-violet-950">{nextRoomBlock ? nextRoomBlock.groupName : 'Không còn nhóm'}</p>
-                      <p className="text-xs text-violet-700">{nextRoomBlock ? `${nextRoomBlock.startTime}-${nextRoomBlock.endTime} • ${nextRoomBlock.title}` : 'Không có lượt tiếp theo'}</p>
+                      <p className="text-xs text-violet-700">{nextRoomBlock ? `${nextRoomBlock.startTime}-${nextRoomBlock.endTime} • ${nextRoomBlock.eventName ? `${nextRoomBlock.eventName} • ` : ''}${nextRoomBlock.title}` : 'Không có lượt tiếp theo'}</p>
                     </div>
                   </div>
                   <div className="mt-3 rounded-lg bg-white/90 border border-violet-100 p-4 text-center">
                     <p className="text-xs font-black uppercase text-violet-600">{activeRoomBlock ? 'Thời gian còn lại của lượt hiện tại' : 'Thời gian tới lượt tiếp theo'}</p>
                     <p className="mt-1 text-3xl font-black text-violet-950">{getCountdownLabel(focusRoomBlock, liveNow)}</p>
                     {focusRoomBlock && (
-                      <p className="mt-1 text-xs font-bold text-violet-700">{focusRoomBlock.groupName} • {focusRoomBlock.startTime}-{focusRoomBlock.endTime}</p>
+                      <p className="mt-1 text-xs font-bold text-violet-700">{focusRoomBlock.eventName ? `${focusRoomBlock.eventName} • ` : ''}{focusRoomBlock.groupName} • {focusRoomBlock.startTime}-{focusRoomBlock.endTime}</p>
                     )}
                   </div>
                 </div>
@@ -2639,10 +2814,10 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                   {(selectedRoomAgenda?.blocks || []).map(block => {
                     const state = getBlockState(block, liveNow);
                     return (
-                      <div key={`${block.groupId}-${block.id}`} className={`rounded-lg border p-3 flex items-center justify-between gap-3 ${state === 'NOW' ? 'border-emerald-200 bg-emerald-50' : state === 'UPCOMING' ? 'border-amber-100 bg-amber-50' : 'border-slate-100 bg-slate-50'}`}>
+                      <div key={`${block.eventId || 'event'}-${block.groupId}-${block.id}`} className={`rounded-lg border p-3 flex items-center justify-between gap-3 ${state === 'NOW' ? 'border-emerald-200 bg-emerald-50' : state === 'UPCOMING' ? 'border-amber-100 bg-amber-50' : 'border-slate-100 bg-slate-50'}`}>
                         <div>
                           <p className="font-black text-slate-900">{block.groupName}</p>
-                          <p className="text-xs text-slate-500">{block.title}</p>
+                          <p className="text-xs text-slate-500">{block.eventName ? `${block.eventName} • ` : ''}{block.title}</p>
                         </div>
                         <div className="text-right">
                           <p className="font-black text-slate-700">{block.startTime}-{block.endTime}</p>
