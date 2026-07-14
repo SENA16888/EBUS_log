@@ -66,6 +66,7 @@ interface EinsteinHouseOSProps {
   inventory: InventoryItem[];
   employees: Employee[];
   packages: ComboPackage[];
+  sharedEhRooms?: string[];
   educationActivities?: EducationActivity[];
   learningTracks?: LearningTrack[];
   canEdit?: boolean;
@@ -77,6 +78,7 @@ interface EinsteinHouseOSProps {
   initialEventId?: string;
   liveProgramId?: string;
   onUpdateEvent: (eventId: string, updates: Partial<Event>) => void;
+  onUpdateSharedEhRooms?: (rooms: string[]) => void;
 }
 
 export type EinsteinHouseModuleTab = 'CONTROL' | 'DESIGN' | 'AGENDA' | 'TASKS' | 'KNOWLEDGE' | 'LIVE' | 'REPORT';
@@ -390,6 +392,25 @@ const buildRotations = (studentCount: number, stations: HouseOperationStation[],
     route: stationIds.map((_, routeIndex) => stationIds[(routeIndex + index) % stationIds.length]).filter(Boolean)
   }));
 };
+
+const preserveRotations = (
+  currentRotations: HouseOperationRotationGroup[] = [],
+  studentCount: number,
+  stations: HouseOperationStation[],
+  requestedGroupCount?: number
+) =>
+  buildRotations(studentCount, stations, requestedGroupCount).map((generated, index) => {
+    const existing = currentRotations[index];
+    if (!existing) return generated;
+    return {
+      ...generated,
+      id: existing.id,
+      name: existing.name,
+      studentCount: existing.studentCount,
+      color: existing.color,
+      logoId: existing.logoId
+    };
+  });
 
 const getAgendaActivityStartTime = (agenda: HouseOperationAgendaBlock[], event: Event) => {
   const firstExperience = agenda.find(block => block.kind === 'EXPERIENCE_AM' || block.kind === 'EXPERIENCE_PM');
@@ -1023,6 +1044,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
   inventory,
   employees,
   packages,
+  sharedEhRooms = [],
   educationActivities = [],
   learningTracks = [],
   canEdit = true,
@@ -1033,7 +1055,8 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
   activeModuleTab,
   initialEventId,
   liveProgramId,
-  onUpdateEvent
+  onUpdateEvent,
+  onUpdateSharedEhRooms
 }) => {
   const [selectedEventId, setSelectedEventId] = useState(initialEventId || events[0]?.id || '');
   const [activeTab, setActiveTab] = useState<ModuleTab>(activeModuleTab || (liveOnly ? 'LIVE' : 'CONTROL'));
@@ -1158,6 +1181,10 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
       (ebusPackageLocks.get(packageId) || []).map(lock => ({ station, lock }))
     ));
   }, [ebusPackageLocks, operation, selectedEvent]);
+  const ehRoomOptions = useMemo(
+    () => getOperationRooms(sharedEhRooms.length > 0 ? sharedEhRooms : operation?.rooms, []),
+    [operation?.rooms, sharedEhRooms]
+  );
 
   const liveGroupAgendas = useMemo(
     () => selectedEvent && operation ? buildLiveGroupAgendas(groupActivityAgendas, operation, selectedEvent) : [],
@@ -1247,9 +1274,11 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
   const addRoom = () => {
     const name = newRoomName.trim();
     if (!name) return;
+    const nextRooms = dedupeRoomNames([...ehRoomOptions, name]);
+    onUpdateSharedEhRooms?.(nextRooms);
     saveOperation(current => ({
       ...current,
-      rooms: dedupeRoomNames([...(current.rooms || []), name])
+      rooms: nextRooms
     }));
     setNewRoomName('');
   };
@@ -1258,9 +1287,11 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
     if (!room) return;
     const isUsed = (operation?.stations || []).some(station => station.room === room);
     if (isUsed && !window.confirm(`Xóa phòng "${room}" và bỏ gán khỏi các trạm đang dùng phòng này?`)) return;
+    const nextRooms = ehRoomOptions.filter(item => item !== room);
+    onUpdateSharedEhRooms?.(nextRooms);
     saveOperation(current => ({
       ...current,
-      rooms: (current.rooms || []).filter(item => item !== room),
+      rooms: nextRooms,
       stations: current.stations.map(station =>
         station.room === room ? { ...station, room: '' } : station
       )
@@ -1314,7 +1345,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
         ...current,
         stations,
         agenda: current.agenda.length > 0 ? recalcStructuredAgenda(selectedEvent!, stations, current.agenda) : buildAgenda(selectedEvent!, stations),
-        rotations: buildRotations(current.studentCount || getStudentCount(selectedEvent!), stations, current.groupCount)
+        rotations: preserveRotations(current.rotations, current.studentCount || getStudentCount(selectedEvent!), stations, current.groupCount)
       };
     });
   };
@@ -1326,7 +1357,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
         ...current,
         stations,
         agenda: current.agenda.length > 0 ? recalcStructuredAgenda(selectedEvent!, stations, current.agenda) : buildAgenda(selectedEvent!, stations),
-        rotations: buildRotations(current.studentCount || getStudentCount(selectedEvent!), stations, current.groupCount)
+        rotations: preserveRotations(current.rotations, current.studentCount || getStudentCount(selectedEvent!), stations, current.groupCount)
       };
     });
   };
@@ -1337,8 +1368,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
       return {
         ...current,
         stations,
-        agenda: recalcStructuredAgenda(selectedEvent!, stations, current.agenda),
-        rotations: buildRotations(current.studentCount || getStudentCount(selectedEvent!), stations, current.groupCount)
+        agenda: recalcStructuredAgenda(selectedEvent!, stations, current.agenda)
       };
     });
   };
@@ -1356,7 +1386,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
         ...current,
         stations,
         agenda: recalcStructuredAgenda(selectedEvent!, stations, current.agenda),
-        rotations: buildRotations(current.studentCount || getStudentCount(selectedEvent!), stations, current.groupCount)
+        rotations: preserveRotations(current.rotations, current.studentCount || getStudentCount(selectedEvent!), stations, current.groupCount)
       };
     });
   };
@@ -1386,7 +1416,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
         ...current,
         stations,
         agenda: recalcStructuredAgenda(selectedEvent!, stations, current.agenda),
-        rotations: buildRotations(current.studentCount || getStudentCount(selectedEvent!), stations, current.groupCount)
+        rotations: preserveRotations(current.rotations, current.studentCount || getStudentCount(selectedEvent!), stations, current.groupCount)
       };
     });
   };
@@ -1474,7 +1504,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
         ...current,
         stations,
         agenda: recalcStructuredAgenda(selectedEvent!, stations, current.agenda.filter(block => block.stationId !== stationId)),
-        rotations: buildRotations(current.studentCount || getStudentCount(selectedEvent!), stations, current.groupCount),
+        rotations: preserveRotations(current.rotations, current.studentCount || getStudentCount(selectedEvent!), stations, current.groupCount),
         tasks: current.tasks.filter(task => task.stationId !== stationId)
       };
     });
@@ -1599,7 +1629,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
     saveOperation(current => ({
       ...current,
       groupCount,
-      rotations: buildRotations(current.studentCount || getStudentCount(selectedEvent!), current.stations, groupCount)
+      rotations: preserveRotations(current.rotations, current.studentCount || getStudentCount(selectedEvent!), current.stations, groupCount)
     }));
   };
 
@@ -1990,7 +2020,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                     <input value={operation.theme || ''} disabled={!canEdit} onChange={e => saveOperation(cur => ({ ...cur, theme: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm" />
                   </Field>
                   <Field label="Số học sinh">
-                    <input type="number" value={operation.studentCount || 0} disabled={!canEdit} onChange={e => saveOperation(cur => ({ ...cur, studentCount: Number(e.target.value), rotations: buildRotations(Number(e.target.value) || 1, cur.stations, cur.groupCount) }))} className="w-full border rounded-lg px-3 py-2 text-sm" />
+                    <input type="number" value={operation.studentCount || 0} disabled={!canEdit} onChange={e => saveOperation(cur => ({ ...cur, studentCount: Number(e.target.value), rotations: preserveRotations(cur.rotations, Number(e.target.value) || 1, cur.stations, cur.groupCount) }))} className="w-full border rounded-lg px-3 py-2 text-sm" />
                   </Field>
                   <Field label="Số giáo viên">
                     <input type="number" value={operation.teacherCount || 0} disabled={!canEdit} onChange={e => saveOperation(cur => ({ ...cur, teacherCount: Number(e.target.value) }))} className="w-full border rounded-lg px-3 py-2 text-sm" />
@@ -1998,7 +2028,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                 </div>
                 {getEventVenue(selectedEvent) === 'EH' && (
                   <div className="mt-4 rounded-lg border border-teal-100 bg-teal-50/50 p-3">
-                    <p className="text-xs font-black uppercase text-teal-700">Danh sách phòng/khu vực EH</p>
+                    <p className="text-xs font-black uppercase text-teal-700">Danh sách phòng/khu vực EH dùng chung</p>
                     <div className="mt-2 flex gap-2">
                       <input
                         value={newRoomName}
@@ -2024,7 +2054,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                       </button>
                     </div>
                     <div className="mt-3 flex flex-wrap gap-2">
-                      {(operation.rooms || []).map(room => {
+                      {ehRoomOptions.map(room => {
                         const usedCount = operation.stations.filter(station => station.room === room).length;
                         return (
                           <span key={room} className="inline-flex items-center gap-2 rounded-lg border border-teal-100 bg-white px-2 py-1 text-xs font-bold text-teal-800">
@@ -2042,7 +2072,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                           </span>
                         );
                       })}
-                      {(operation.rooms || []).length === 0 && (
+                      {ehRoomOptions.length === 0 && (
                         <p className="text-xs font-semibold text-teal-700">Chưa có phòng/khu vực. Thêm phòng để gán cho từng trạm.</p>
                       )}
                     </div>
@@ -2150,12 +2180,15 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                               <div className="grid grid-cols-1 md:grid-cols-[220px_minmax(0,1fr)] gap-2">
                                 <select
                                   value={station.room || ''}
-                                  disabled={!canEdit || (operation.rooms || []).length === 0}
+                                  disabled={!canEdit || ehRoomOptions.length === 0}
                                   onChange={event => updateStation(station.id, { room: event.target.value })}
                                   className="w-full min-w-0 border border-slate-200 rounded-lg px-3 py-2 text-xs font-black text-teal-700 bg-white"
                                 >
                                   <option value="">Chọn phòng/khu vực</option>
-                                  {(operation.rooms || []).map(room => (
+                                  {station.room && !ehRoomOptions.includes(station.room) && (
+                                    <option value={station.room}>{station.room} (ngoài danh sách chung)</option>
+                                  )}
+                                  {ehRoomOptions.map(room => (
                                     <option key={room} value={room}>{room}</option>
                                   ))}
                                 </select>

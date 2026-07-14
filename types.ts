@@ -979,4 +979,5 @@ export interface AppState {
   payrollAdjustments?: PayrollAdjustment[];
   educationActivities?: EducationActivity[];
   interactiveDevices?: InteractiveDeviceProfile[];
+  ehRooms?: string[];
 }

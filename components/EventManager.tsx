@@ -21,6 +21,7 @@ interface EventManagerProps {
   employees?: Employee[];
   quotations?: Quotation[];
   saleOrders?: any[];
+  sharedEhRooms?: string[];
   educationActivities?: EducationActivity[];
   learningTracks?: LearningTrack[];
   currentUserId?: string;
@@ -47,6 +48,7 @@ interface EventManagerProps {
   onLinkQuotation?: (eventId: string, quotationId: string) => void;
   onFinalizeOrder?: (eventId: string) => void;
   onUpdateEvent?: (eventId: string, updates: Partial<Event>) => void;
+  onUpdateSharedEhRooms?: (rooms: string[]) => void;
   onRegisterStaff?: (eventId: string, action: 'REGISTER' | 'CANCEL') => void;
   onLinkSaleOrder?: (eventId: string, saleOrderId: string, link: boolean) => void;
   onChecklistScan?: (payload: { eventId: string; barcode: string; direction: ChecklistDirection; status?: ChecklistStatus; quantity?: number; note?: string }) => void;
@@ -1315,6 +1317,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
   employees = [],
   quotations = [],
   saleOrders = [],
+  sharedEhRooms = [],
   educationActivities = [],
   learningTracks = [],
   currentUserId,
@@ -1341,6 +1344,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
   onLinkQuotation,
   onFinalizeOrder,
   onUpdateEvent,
+  onUpdateSharedEhRooms,
   onRegisterStaff,
   onLinkSaleOrder,
   onChecklistScan,
@@ -4790,6 +4794,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
                   inventory={inventory}
                   employees={employees}
                   packages={packages}
+                  sharedEhRooms={sharedEhRooms}
                   educationActivities={educationActivities}
                   learningTracks={learningTracks}
                   canEdit={canEdit && !!onUpdateEvent}
@@ -4799,6 +4804,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
                   initialEventId={selectedEvent.id}
                   liveProgramId={activeContentProgram?.id}
                   onUpdateEvent={handleUpdateActiveContentEvent}
+                  onUpdateSharedEhRooms={onUpdateSharedEhRooms}
                 />
               )}
 

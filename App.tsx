@@ -141,6 +141,21 @@ const getPublicLiveEvents = (events: Event[], publicEvent: Event, sourceEvent: E
     .filter(event => (event.organizationVenue || 'EH') === 'EH' && getPublicEventPrimaryDate(event) === publicDate);
 };
 
+const dedupeTextList = (values: string[]) =>
+  Array.from(new Set(values.map(value => value.trim()).filter(Boolean)));
+
+const extractEhRoomsFromEvents = (events: Event[]) =>
+  dedupeTextList(events
+    .filter(event => (event.organizationVenue || 'EH') === 'EH')
+    .flatMap(event => [
+      ...(event.houseOperation?.rooms || []),
+      ...(event.houseOperation?.stations || []).map(station => station.room).filter(Boolean) as string[],
+      ...(event.contentPrograms || []).flatMap(program => [
+        ...(program.houseOperation?.rooms || []),
+        ...(program.houseOperation?.stations || []).map(station => station.room).filter(Boolean) as string[]
+      ])
+    ]));
+
 const getSessionId = () => {
   try {
     if (typeof sessionStorage !== 'undefined') {
@@ -270,7 +285,8 @@ const createInitialAppState = (): AppState => ({
   userAccounts: DEFAULT_USER_ACCOUNTS,
   payrollAdjustments: [],
   educationActivities: MOCK_EDUCATION_ACTIVITIES,
-  interactiveDevices: MOCK_INTERACTIVE_DEVICES
+  interactiveDevices: MOCK_INTERACTIVE_DEVICES,
+  ehRooms: []
 });
 
 const buildLearningProfileForUser = (
@@ -408,7 +424,8 @@ const App: React.FC = () => {
       payrollAdjustments: state.payrollAdjustments || [],
       educationActivities: state.educationActivities && state.educationActivities.length > 0 ? state.educationActivities : MOCK_EDUCATION_ACTIVITIES,
       interactiveDevices: (state.interactiveDevices && state.interactiveDevices.length > 0 ? state.interactiveDevices : MOCK_INTERACTIVE_DEVICES)
-        .map(normalizeInteractiveDeviceAgendaCopy)
+        .map(normalizeInteractiveDeviceAgendaCopy),
+      ehRooms: Array.isArray(state.ehRooms) ? dedupeTextList(state.ehRooms) : extractEhRoomsFromEvents(state.events || [])
     };
   };
 
@@ -985,6 +1002,11 @@ const App: React.FC = () => {
   const handleUpdateInteractiveDevices = (devices: InteractiveDeviceProfile[]) => {
     setAppState(prev => ({ ...prev, interactiveDevices: devices }));
     addLog('Cập nhật cấu hình Thiết bị tương tác / phát thanh trung tâm', 'INFO');
+  };
+
+  const handleUpdateEhRooms = (rooms: string[]) => {
+    setAppState(prev => ({ ...prev, ehRooms: dedupeTextList(rooms) }));
+    addLog(`Cập nhật danh sách phòng/khu vực EH dùng chung (${rooms.length} phòng)`, 'INFO');
   };
 
   const handleOpenEducationLesson = (link: EducationLessonLink) => {
@@ -2275,13 +2297,15 @@ const App: React.FC = () => {
           inventory={appState.inventory}
           employees={appState.employees}
           packages={appState.packages}
+          sharedEhRooms={appState.ehRooms || []}
           educationActivities={appState.educationActivities || []}
           canEdit={false}
           liveOnly
           publicMode
             initialEventId={publicLiveEventId}
-            liveProgramId={publicLiveProgramId || undefined}
-            onUpdateEvent={() => undefined}
+          liveProgramId={publicLiveProgramId || undefined}
+          onUpdateEvent={() => undefined}
+          onUpdateSharedEhRooms={() => undefined}
           />
         ) : (
           <div className="min-h-[70vh] flex items-center justify-center">
@@ -2453,6 +2477,7 @@ const App: React.FC = () => {
           employees={appState.employees}
           quotations={appState.quotations}
           saleOrders={appState.saleOrders || []}
+          sharedEhRooms={appState.ehRooms || []}
           educationActivities={appState.educationActivities || []}
           learningTracks={appState.learningTracks || []}
           currentUserId={currentUser?.id}
@@ -2479,6 +2504,7 @@ const App: React.FC = () => {
           onToggleItemDone={guard('EVENTS_EDIT', handleToggleEventItemDone)}
           onToggleStaffDone={guard('EVENTS_EDIT', handleToggleEventStaffDone)}
           onUpdateEvent={guard('EVENTS_EDIT', handleUpdateEvent)}
+          onUpdateSharedEhRooms={guard('EVENTS_EDIT', handleUpdateEhRooms)}
           onRegisterStaff={handleRegisterEventStaff}
           onLinkSaleOrder={guard('EVENTS_EDIT', handleLinkSaleOrderToEvent)}
           onChecklistScan={guard('EVENTS_EDIT', handleChecklistScan)}
