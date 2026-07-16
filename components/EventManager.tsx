@@ -51,6 +51,7 @@ interface EventManagerProps {
   onUpdateSharedEhRooms?: (rooms: string[]) => void;
   onRegisterStaff?: (eventId: string, action: 'REGISTER' | 'CANCEL') => void;
   onLinkSaleOrder?: (eventId: string, saleOrderId: string, link: boolean) => void;
+  onSyncDoneItemsToChecklist?: (eventId: string) => void;
   onChecklistScan?: (payload: { eventId: string; barcode: string; direction: ChecklistDirection; status?: ChecklistStatus; quantity?: number; note?: string }) => void;
   onUpdateChecklistNote?: (eventId: string, itemId: string, note: string) => void;
   onSaveChecklistSignature?: (eventId: string, payload: { direction: ChecklistDirection; manager?: ChecklistSignature; operator?: ChecklistSignature; note?: string; itemsSnapshot?: { itemId: string; name?: string; orderQty: number; scannedOut: number; scannedIn: number; damaged: number; lost: number; missing: number; }[]; createSlip?: boolean }) => void;
@@ -1347,6 +1348,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
   onUpdateSharedEhRooms,
   onRegisterStaff,
   onLinkSaleOrder,
+  onSyncDoneItemsToChecklist,
   onChecklistScan,
   onUpdateChecklistNote,
   onSaveChecklistSignature
@@ -1509,6 +1511,15 @@ export const EventManager: React.FC<EventManagerProps> = ({
   const [viewingItem, setViewingItem] = useState<InventoryItem | null>(null);
 
   const selectedEvent = events.find(e => e.id === selectedEventId);
+  const sortedSelectedEventItems = useMemo(
+    () => selectedEvent
+      ? selectedEvent.items
+        .map((item, index) => ({ item, index }))
+        .sort((a, b) => Number(Boolean(a.item.done)) - Number(Boolean(b.item.done)) || a.index - b.index)
+        .map(entry => entry.item)
+      : [],
+    [selectedEvent]
+  );
   const contentProgramViews = useMemo(
     () => selectedEvent ? getContentProgramViews(selectedEvent) : [],
     [selectedEvent]
@@ -2495,6 +2506,11 @@ export const EventManager: React.FC<EventManagerProps> = ({
     if (!window.confirm(confirmMsg)) return;
     onRemoveEventItems(selectedEventId, selectedItemIds);
     setSelectedItemIds([]);
+  };
+
+  const handleSyncDoneItemsToChecklist = () => {
+    if (!selectedEventId || !onSyncDoneItemsToChecklist) return;
+    onSyncDoneItemsToChecklist(selectedEventId);
   };
 
   const handleItemQuantityChange = (itemId: string, qty: number) => {
@@ -3805,6 +3821,13 @@ export const EventManager: React.FC<EventManagerProps> = ({
                         Đồng bộ từ {activeContentProgram?.name || 'chương trình'}
                       </button>
                       <button
+                        onClick={handleSyncDoneItemsToChecklist}
+                        disabled={!selectedEvent?.items.some(item => item.done) || !onSyncDoneItemsToChecklist}
+                        className={`px-4 py-2 rounded-lg text-sm font-bold border ${selectedEvent?.items.some(item => item.done) && onSyncDoneItemsToChecklist ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100' : 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'}`}
+                      >
+                        Đồng bộ sang Checklist Barcode
+                      </button>
+                      <button
                         onClick={handleRemoveSelectedItems}
                         disabled={selectedItemIds.length === 0}
                         className={`px-4 py-2 rounded-lg text-sm font-bold border ${selectedItemIds.length === 0 ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed' : 'bg-red-50 text-red-600 border-red-200 hover:bg-red-100'}`}
@@ -3838,7 +3861,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
                         </tr>
                       </thead>
                       <tbody className="divide-y">
-                        {selectedEvent.items.map((alloc, i) => {
+                        {sortedSelectedEventItems.map((alloc, i) => {
                           const item = inventory.find(inv => inv.id === alloc.itemId);
                           const availableNow = item?.availableQuantity ?? 0;
                           const displayAvailable = Math.max(0, availableNow);

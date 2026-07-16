@@ -1770,6 +1770,63 @@ const App: React.FC = () => {
     }));
   };
 
+  const handleSyncDoneItemsToChecklist = (eventId: string) => {
+    let eventName = '';
+    let syncedCount = 0;
+
+    setAppState(prev => {
+      const event = prev.events.find(e => e.id === eventId);
+      if (!event) return prev;
+
+      const doneItems = event.items.filter(item => item.done && item.quantity > 0);
+      if (doneItems.length === 0) return prev;
+
+      eventName = event.name;
+      const checklist = normalizeChecklist(event.checklist);
+      const outbound = { ...checklist.outbound };
+      const timestamp = new Date().toISOString();
+      const logs = [...checklist.logs];
+
+      doneItems.forEach(allocation => {
+        const targetQty = Math.max(0, Math.round(allocation.quantity || 0));
+        if (targetQty <= 0 || outbound[allocation.itemId] === targetQty) return;
+
+        const inventoryItem = prev.inventory.find(item => item.id === allocation.itemId);
+        outbound[allocation.itemId] = targetQty;
+        syncedCount += 1;
+        logs.unshift({
+          id: `sync-done-${Date.now()}-${allocation.itemId}-${Math.random().toString(36).slice(2, 6)}`,
+          itemId: allocation.itemId,
+          itemName: inventoryItem?.name,
+          barcode: inventoryItem?.barcode,
+          direction: 'OUT',
+          status: 'OK',
+          quantity: targetQty,
+          note: 'Đồng bộ từ tick Đã xong trong Order Thiết Bị',
+          timestamp
+        });
+      });
+
+      if (syncedCount === 0) return prev;
+
+      return {
+        ...prev,
+        events: prev.events.map(e => e.id !== eventId ? e : {
+          ...e,
+          checklist: {
+            ...checklist,
+            outbound,
+            logs: logs.slice(0, 50)
+          }
+        })
+      };
+    });
+
+    if (syncedCount > 0) {
+      addLog(`Đồng bộ ${syncedCount} thiết bị đã tick xong sang Checklist Barcode cho sự kiện "${eventName}".`, 'INFO');
+    }
+  };
+
   const handleToggleEventStaffDone = (eventId: string, employeeId: string, done: boolean, staffKey?: string) => {
     setAppState(prev => ({
       ...prev,
@@ -2502,6 +2559,7 @@ const App: React.FC = () => {
           onLinkQuotation={guard('EVENTS_EDIT', handleLinkQuotation)}
           onFinalizeOrder={guard('EVENTS_EDIT', handleFinalizeOrder)}
           onToggleItemDone={guard('EVENTS_EDIT', handleToggleEventItemDone)}
+          onSyncDoneItemsToChecklist={guard('EVENTS_EDIT', handleSyncDoneItemsToChecklist)}
           onToggleStaffDone={guard('EVENTS_EDIT', handleToggleEventStaffDone)}
           onUpdateEvent={guard('EVENTS_EDIT', handleUpdateEvent)}
           onUpdateSharedEhRooms={guard('EVENTS_EDIT', handleUpdateEhRooms)}
