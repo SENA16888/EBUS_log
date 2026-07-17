@@ -248,8 +248,12 @@ const getExperienceStations = (stations: HouseOperationStation[], agenda: HouseO
   return stations.filter(station => !commonStationIds.has(station.id));
 };
 
-const getDefaultRoundDuration = (stations: HouseOperationStation[]) =>
-  Math.max(20, ...stations.map(station => station.durationMinutes || 20));
+const getDefaultRoundDuration = (stations: HouseOperationStation[]) => {
+  const durations = stations
+    .map(station => Math.max(1, Number(station.durationMinutes) || 0))
+    .filter(duration => duration > 0);
+  return durations.length > 0 ? Math.max(...durations) : 20;
+};
 
 const buildAgenda = (event: Event, stations: HouseOperationStation[]): HouseOperationAgendaBlock[] => {
   const start = getProgramStart(event);
