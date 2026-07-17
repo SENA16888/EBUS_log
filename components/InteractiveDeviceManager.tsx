@@ -129,9 +129,59 @@ const VENUE_LOCATIONS: Record<EventVenueType, string> = {
   EBUS: 'EBUS - sự kiện bên ngoài'
 };
 
+const PRIMARY_CONTENT_PROGRAM_ID = 'primary-content-program';
+
 const getEventVenue = (event: Event): EventVenueType => event.organizationVenue || 'EH';
 
 const getDeviceVenue = (device: InteractiveDeviceProfile): EventVenueType => device.broadcastVenue || 'EH';
+
+const getEventScheduleForBroadcastProgram = (event: Event) => {
+  if (event.schedule && event.schedule.length > 0) return event.schedule;
+  if (event.startDate) return [{ date: event.startDate, sessions: event.session ? [event.session] : ['MORNING' as const] }];
+  return [];
+};
+
+const getBroadcastProgramEvents = (event: Event): Event[] => {
+  const defaultSchedule = getEventScheduleForBroadcastProgram(event);
+  const defaultDate = defaultSchedule[0]?.date || event.startDate || new Date().toISOString().slice(0, 10);
+  const defaultSessions = defaultSchedule[0]?.sessions || (event.session ? [event.session] : ['MORNING' as const]);
+  const programs = [
+    {
+      id: PRIMARY_CONTENT_PROGRAM_ID,
+      name: event.primaryContentProgram?.name || 'Chương trình chính',
+      date: event.primaryContentProgram?.date || defaultDate,
+      sessions: event.primaryContentProgram?.sessions && event.primaryContentProgram.sessions.length > 0
+        ? event.primaryContentProgram.sessions
+        : defaultSessions,
+      layout: event.layout,
+      houseOperation: event.houseOperation,
+      isPrimary: true
+    },
+    ...(event.contentPrograms || []).map(program => ({
+      id: program.id,
+      name: program.name,
+      date: program.date || defaultDate,
+      sessions: program.sessions && program.sessions.length > 0 ? program.sessions : defaultSessions,
+      layout: program.layout,
+      houseOperation: program.houseOperation,
+      isPrimary: false
+    }))
+  ];
+
+  return programs.map(program => ({
+    ...event,
+    id: program.isPrimary ? event.id : `${event.id}::${program.id}`,
+    name: program.isPrimary ? event.name : `${event.name} • ${program.name}`,
+    startDate: program.date,
+    endDate: program.date,
+    session: program.sessions[0],
+    schedule: [{ date: program.date, sessions: program.sessions }],
+    layout: program.layout,
+    houseOperation: program.houseOperation,
+    primaryContentProgram: undefined,
+    contentPrograms: undefined
+  }));
+};
 
 const getHouseOperationAgenda = (event: Event): HouseOperationAgendaBlock[] => {
   const operation = event.houseOperation as (Event['houseOperation'] & { timeline?: HouseOperationAgendaBlock[] }) | undefined;
@@ -550,10 +600,14 @@ export const InteractiveDeviceManager: React.FC<InteractiveDeviceManagerProps> =
     }
     return [];
   }, [device.youtubeFallbackUrl, device.youtubePlaylist]);
+  const broadcastProgramEvents = useMemo(
+    () => events.flatMap(getBroadcastProgramEvents),
+    [events]
+  );
 
   const todayEvents = useMemo(
-    () => events.filter(event => isEventActiveOnDate(event, todayKey) && getEventVenue(event) === broadcastVenue),
-    [broadcastVenue, events, todayKey]
+    () => broadcastProgramEvents.filter(event => isEventActiveOnDate(event, todayKey) && getEventVenue(event) === broadcastVenue),
+    [broadcastProgramEvents, broadcastVenue, todayKey]
   );
 
   const activeEventMusic = useMemo(() => {
@@ -576,13 +630,13 @@ export const InteractiveDeviceManager: React.FC<InteractiveDeviceManagerProps> =
   ) || effectiveBackgroundTracks[0];
 
   const announcements = useMemo(() => {
-    const suppressFixedLunch = hasEventLunchAnnouncement(device, events, todayKey);
+    const suppressFixedLunch = hasEventLunchAnnouncement(device, broadcastProgramEvents, todayKey);
     const list = [
       ...buildDailyAnnouncements(device, todayKey, suppressFixedLunch),
-      ...buildEventAnnouncements(device, events, todayKey)
+      ...buildEventAnnouncements(device, broadcastProgramEvents, todayKey)
     ];
     return list.sort((a, b) => a.time.getTime() - b.time.getTime() || b.priority - a.priority);
-  }, [device, events, todayKey]);
+  }, [broadcastProgramEvents, device, todayKey]);
 
   useEffect(() => {
     const activeIds = new Set(announcements.map(item => item.id));
