@@ -166,6 +166,7 @@ const getProgramStart = (event: Event) =>
 
 const DEFAULT_EVENT_WELCOME_RULE_ID = 'bc-event-start';
 const FIXED_LUNCH_SCHEDULE_ID = 'bc-lunch';
+const EXPERIENCE_WARNING_RULE_ID = 'bc-before-block-end';
 
 const hasExperienceAnchor = (event: Event) =>
   getHouseOperationAgenda(event).some(block => block.kind === 'EXPERIENCE_AM' || block.kind === 'EXPERIENCE_PM');
@@ -1102,6 +1103,30 @@ export const InteractiveDeviceManager: React.FC<InteractiveDeviceManagerProps> =
     upsertEventMusicSetting(eventId, { trackIds: Array.from(currentIds), enabled: currentIds.size > 0 });
   };
 
+  const experienceWarningRule = (device.eventRules || []).find(rule => rule.id === EXPERIENCE_WARNING_RULE_ID);
+  const experienceWarningLeadMinutes = Math.max(1, Math.abs(experienceWarningRule?.offsetMinutes ?? 5));
+
+  const updateExperienceWarningRule = (patch: Partial<BroadcastEventRule>) => {
+    if (!experienceWarningRule) return;
+    commitDevice({
+      eventRules: (device.eventRules || []).map(rule =>
+        rule.id === EXPERIENCE_WARNING_RULE_ID ? { ...rule, ...patch } : rule
+      )
+    });
+  };
+
+  const updateExperienceWarningLeadMinutes = (value: number) => {
+    const leadMinutes = Math.max(1, Math.min(60, Math.round(value || 1)));
+    const currentTemplate = experienceWarningRule?.messageTemplate || '';
+    const nextTemplate = currentTemplate.match(/Còn\s+\d+\s+phút\s+nữa/i)
+      ? currentTemplate.replace(/Còn\s+\d+\s+phút\s+nữa/i, `Còn ${leadMinutes} phút nữa`)
+      : `Còn ${leadMinutes} phút nữa là kết thúc lượt trải nghiệm hiện tại. Các nhóm vui lòng hoàn thiện hoạt động và chuẩn bị di chuyển.`;
+    updateExperienceWarningRule({
+      offsetMinutes: -leadMinutes,
+      messageTemplate: nextTemplate
+    });
+  };
+
   return (
     <div className="space-y-4">
       <audio ref={audioRef} className="hidden" />
@@ -1568,6 +1593,41 @@ export const InteractiveDeviceManager: React.FC<InteractiveDeviceManagerProps> =
         <section className="bg-white border border-slate-200 rounded-lg p-4">
           <h3 className="font-bold text-slate-900 flex items-center gap-2"><BellRing size={18} className="text-amber-600" /> Rule theo sự kiện</h3>
           <p className="text-xs text-slate-500 mt-1">Nếu hôm nay có sự kiện và có agenda vận hành Einstein House, hệ thống tự phát thông báo đoàn.</p>
+          {experienceWarningRule && (
+            <div className="mt-3 border border-amber-200 bg-amber-50 rounded-lg p-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-bold text-amber-900">Báo sớm trước khi hết lượt trải nghiệm</p>
+                  <p className="text-xs text-amber-700 mt-1">
+                    Đang {experienceWarningRule.enabled ? 'bật' : 'tắt'} • báo trước {experienceWarningLeadMinutes} phút so với giờ kết thúc mỗi lượt.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => updateExperienceWarningRule({ enabled: !experienceWarningRule.enabled })}
+                  disabled={!canEdit}
+                  className={`inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg border text-sm font-bold ${
+                    experienceWarningRule.enabled ? 'border-amber-300 bg-white text-amber-800' : 'border-slate-200 bg-white text-slate-500'
+                  } disabled:opacity-50`}
+                >
+                  <BellRing size={16} />
+                  {experienceWarningRule.enabled ? 'Tắt báo sớm' : 'Bật báo sớm'}
+                </button>
+              </div>
+              <label className="block mt-3">
+                <span className="text-xs font-bold text-amber-800">Báo trước bao nhiêu phút</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={60}
+                  value={experienceWarningLeadMinutes}
+                  onChange={e => updateExperienceWarningLeadMinutes(Number(e.target.value))}
+                  disabled={!canEdit || !experienceWarningRule.enabled}
+                  className="mt-1 w-full border border-amber-200 bg-white rounded-lg px-3 py-2 text-sm font-semibold text-slate-800 disabled:opacity-60"
+                />
+              </label>
+            </div>
+          )}
           <div className="mt-3 border border-blue-100 bg-blue-50 rounded-lg p-3">
             <div className="flex items-center gap-2 font-bold text-sm text-blue-800">
               <Music2 size={17} />
@@ -1654,7 +1714,9 @@ export const InteractiveDeviceManager: React.FC<InteractiveDeviceManagerProps> =
                 />
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-bold text-slate-900">{rule.title}</p>
-                  <p className="text-xs text-slate-500 mt-0.5">{rule.trigger}{rule.blockKind ? ` • ${rule.blockKind}` : ''} • offset {rule.offsetMinutes} phút</p>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    {rule.trigger}{rule.blockKind ? ` • ${rule.blockKind}` : ''} • {rule.trigger === 'BEFORE_BLOCK_END' ? `báo trước ${Math.abs(rule.offsetMinutes)} phút` : `offset ${rule.offsetMinutes} phút`}
+                  </p>
                   <p className="text-xs text-slate-600 mt-1 line-clamp-2">{rule.messageTemplate}</p>
                   <div className="mt-2 grid sm:grid-cols-[150px_1fr] gap-2 items-center">
                     <span className="text-xs font-bold text-slate-500">Âm thanh thông báo</span>
