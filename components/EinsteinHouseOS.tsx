@@ -1364,6 +1364,13 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
     }));
   };
 
+  const syncAgendaForStations = (stations: HouseOperationStation[], sourceAgenda: HouseOperationAgendaBlock[]) => {
+    if (stations.length === 0) return [];
+    return sourceAgenda.length > 0
+      ? recalcStructuredAgenda(selectedEvent!, stations, sourceAgenda)
+      : buildAgenda(selectedEvent!, stations);
+  };
+
   const addTask = () => {
     if (!newTaskTitle.trim()) return;
     saveOperation(current => ({
@@ -1387,7 +1394,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
       return {
         ...current,
         stations,
-        agenda: current.agenda.length > 0 ? recalcStructuredAgenda(selectedEvent!, stations, current.agenda) : buildAgenda(selectedEvent!, stations),
+        agenda: syncAgendaForStations(stations, current.agenda),
         rotations: preserveRotations(current.rotations, current.studentCount || getStudentCount(selectedEvent!), stations, current.groupCount)
       };
     });
@@ -1399,7 +1406,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
       return {
         ...current,
         stations,
-        agenda: current.agenda.length > 0 ? recalcStructuredAgenda(selectedEvent!, stations, current.agenda) : buildAgenda(selectedEvent!, stations),
+        agenda: syncAgendaForStations(stations, current.agenda),
         rotations: preserveRotations(current.rotations, current.studentCount || getStudentCount(selectedEvent!), stations, current.groupCount)
       };
     });
@@ -1411,7 +1418,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
       return {
         ...current,
         stations,
-        agenda: recalcStructuredAgenda(selectedEvent!, stations, current.agenda)
+        agenda: syncAgendaForStations(stations, current.agenda)
       };
     });
   };
@@ -1428,7 +1435,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
       return {
         ...current,
         stations,
-        agenda: recalcStructuredAgenda(selectedEvent!, stations, current.agenda),
+        agenda: syncAgendaForStations(stations, current.agenda),
         rotations: preserveRotations(current.rotations, current.studentCount || getStudentCount(selectedEvent!), stations, current.groupCount)
       };
     });
@@ -1458,7 +1465,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
       return {
         ...current,
         stations,
-        agenda: recalcStructuredAgenda(selectedEvent!, stations, current.agenda),
+        agenda: syncAgendaForStations(stations, current.agenda),
         rotations: preserveRotations(current.rotations, current.studentCount || getStudentCount(selectedEvent!), stations, current.groupCount)
       };
     });
@@ -1546,7 +1553,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
       return {
         ...current,
         stations,
-        agenda: recalcStructuredAgenda(selectedEvent!, stations, current.agenda.filter(block => block.stationId !== stationId)),
+        agenda: syncAgendaForStations(stations, current.agenda.filter(block => block.stationId !== stationId)),
         rotations: preserveRotations(current.rotations, current.studentCount || getStudentCount(selectedEvent!), stations, current.groupCount),
         tasks: current.tasks.filter(task => task.stationId !== stationId)
       };
