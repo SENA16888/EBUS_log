@@ -10,6 +10,7 @@ import {
   Radio, Wand2, TimerReset, ClipboardCheck, Library, PlayCircle, BarChart3, Pencil
 } from 'lucide-react';
 import { EventExportModal } from './EventExportModal';
+import { EventDossierExportModal } from './EventDossierExportModal';
 import { EventChecklist } from './EventChecklist';
 import { EinsteinHouseOS, EinsteinHouseModuleTab } from './EinsteinHouseOS';
 import { calcLineTotal } from '../services/pricing';
@@ -1364,6 +1365,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
   const [showExportModal, setShowExportModal] = useState(false);
   const [showPrintModal, setShowPrintModal] = useState(false);
   const [showExportPDFModal, setShowExportPDFModal] = useState(false);
+  const [showEventDossierModal, setShowEventDossierModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   
   // Create Event Form State
@@ -3583,6 +3585,13 @@ export const EventManager: React.FC<EventManagerProps> = ({
                       );
                     })}
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowEventDossierModal(true)}
+                    className="flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-black text-white shadow-sm transition hover:bg-blue-700"
+                  >
+                    <Download size={16}/> Xuất hồ sơ sự kiện
+                  </button>
                   {isAdmin && onDeleteEvent && (
                     <button
                       onClick={() => setShowDeleteConfirm(true)}
@@ -6048,6 +6057,19 @@ export const EventManager: React.FC<EventManagerProps> = ({
           inventory={inventory}
           employees={employees || []}
           onClose={() => setShowExportPDFModal(false)}
+        />
+      )}
+
+      {selectedEvent && (
+        <EventDossierExportModal
+          isOpen={showEventDossierModal}
+          event={selectedEvent}
+          inventory={inventory}
+          employees={employees || []}
+          quotation={linkedQuotation}
+          saleOrders={linkedSaleOrders}
+          currentUserName={currentUserName}
+          onClose={() => setShowEventDossierModal(false)}
         />
       )}
     </div>
