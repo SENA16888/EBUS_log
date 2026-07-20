@@ -3,12 +3,22 @@ import {
   Event,
   EventExpense,
   EventLayout,
+  EventStaffAllocation,
   HouseOperationInstance,
   InventoryItem,
   Quotation,
   SaleOrder
 } from '../types';
 import { calcLineTotal } from './pricing';
+import {
+  STAFF_HOURLY_RATE,
+  StaffCostGroup,
+  calculateGroupedStaffCosts,
+  getStaffCostGroups,
+  getStaffSessions
+} from './staffCompensation';
+
+const EVENT_DOSSIER_LOGO_URL = new URL('../logo.png', import.meta.url).href;
 
 export type EventDossierSection =
   | 'PLAN'
@@ -162,7 +172,7 @@ export const getEventDossierSectionCounts = (event: Event) => {
   const programs = getPrograms(event);
   return {
     PLAN: 1,
-    STAFF: event.staff?.length || 0,
+    STAFF: getStaffCostGroups(event.staff || []).length,
     EXPENSES: (event.expenses?.length || 0) + (event.staff?.length ? 1 : 0),
     ADVANCES: (event.advanceRequests?.length || 0) + (
       event.advancePaidAmount || event.advanceSkipped || event.advancePaidConfirmed || event.advanceRefundedConfirmed || event.paymentCompleted ? 1 : 0
@@ -217,16 +227,129 @@ const getScaleLabel = (event: Event) => {
 const getStaffName = (employeeId: string, employees: Employee[]) =>
   employees.find(employee => employee.id === employeeId)?.name || employeeId || 'Chưa phân công';
 
-const getStaffShift = (staff: NonNullable<Event['staff']>[number]) => {
-  const sessions = staff.sessions?.length ? staff.sessions : staff.session ? [staff.session] : [];
-  return [
-    staff.shiftDate ? formatDate(staff.shiftDate) : '',
-    sessions.map(session => SESSION_LABELS[session]).join(' + ')
-  ].filter(Boolean).join(' • ') || 'Chưa cập nhật';
+const uniqueValues = (values: Array<string | undefined>) =>
+  Array.from(new Set(values.map(value => value?.trim()).filter((value): value is string => Boolean(value))));
+
+const cleanStaffTask = (task?: string) =>
+  (task || 'Chưa cập nhật nhiệm vụ')
+    .replace(/^(?:(?:sáng|chiều|tối)\s*(?:[•|\-–:]\s*)?)+/iu, '')
+    .trim() || 'Chưa cập nhật nhiệm vụ';
+
+const getStaffGroupTaskLines = (group: StaffCostGroup) => uniqueValues(group.items.map(item => {
+  const allocation = item.allocation;
+  const sessions = getStaffSessions(allocation).map(session => SESSION_LABELS[session]).join(' + ');
+  return [sessions, cleanStaffTask(allocation.task)].filter(Boolean).join(' • ');
+}));
+
+const getStaffGroupRateLabel = (group: StaffCostGroup) => {
+  const hourly = group.items.every(item => item.allocation.unit === 'HOUR');
+  const rates = uniqueValues(group.items.map(item => {
+    const rate = Number(item.allocation.rate) || (hourly ? STAFF_HOURLY_RATE : 0);
+    return rate ? `${formatMoney(rate)}${hourly ? '/giờ' : ''}` : undefined;
+  }));
+  return rates.join(' + ') || 'Theo phân công';
 };
 
-const calculateStaffCosts = (event: Event) =>
-  (event.staff || []).reduce((sum, staff) => sum + (Number(staff.salary) || Number(staff.quantity) * Number(staff.rate) || 0), 0);
+const getStaffGroupQuantityLabel = (group: StaffCostGroup) => {
+  if (group.items.every(item => item.allocation.unit === 'HOUR')) return `${group.totalHours} giờ`;
+  if (group.items.length === 1) {
+    const allocation = group.items[0].allocation;
+    return `${allocation.quantity || 0} ${UNIT_LABELS[allocation.unit].toLowerCase()}`;
+  }
+  return `${group.items.length} phân công`;
+};
+
+const getAllocationProgramIndex = (
+  allocation: EventStaffAllocation,
+  programs: DossierProgram[]
+) => {
+  if (programs.length <= 1) return 0;
+  const task = (allocation.task || '').toLocaleLowerCase('vi-VN');
+  const autoKey = allocation.autoKey || '';
+
+  for (let index = 1; index < programs.length; index += 1) {
+    const program = programs[index];
+    if (autoKey.startsWith(`staff-slot-${program.id}-`)) return index;
+    if (program.name && task.includes(program.name.toLocaleLowerCase('vi-VN'))) return index;
+  }
+
+  const allocationSessions = getStaffSessions(allocation);
+  const matchingPrograms = programs
+    .map((program, index) => ({ program, index }))
+    .filter(({ program }) => !allocation.shiftDate || !program.date || program.date === allocation.shiftDate)
+    .filter(({ program }) => {
+      if (!allocationSessions.length || !program.sessions?.length) return true;
+      return allocationSessions.some(session => program.sessions?.includes(session));
+    });
+  if (matchingPrograms.length === 1) return matchingPrograms[0].index;
+
+  if (allocation.stationId) {
+    const stationPrograms = matchingPrograms.filter(({ program }) =>
+      (program.operation?.stations || []).some(station => station.id === allocation.stationId)
+      || (program.layout?.blocks || []).some(block => block.id === allocation.stationId)
+    );
+    if (stationPrograms.length === 1) return stationPrograms[0].index;
+  }
+
+  return matchingPrograms[0]?.index ?? 0;
+};
+
+type ProgramStaffSummary = {
+  program: DossierProgram;
+  allocations: EventStaffAllocation[];
+  employeeIds: Set<string>;
+  tasks: Set<string>;
+  stationNames: Set<string>;
+  cost: number;
+};
+
+const getProgramStaffSummaries = (event: Event, programs: DossierProgram[]): ProgramStaffSummary[] => {
+  const summaries = programs.map(program => ({
+    program,
+    allocations: [] as EventStaffAllocation[],
+    employeeIds: new Set<string>(),
+    tasks: new Set<string>(),
+    stationNames: new Set<string>(),
+    cost: 0
+  }));
+
+  getStaffCostGroups(event.staff || []).forEach(group => {
+    const itemsByProgram = new Map<number, typeof group.items>();
+    group.items.forEach(item => {
+      const programIndex = getAllocationProgramIndex(item.allocation, programs);
+      const current = itemsByProgram.get(programIndex) || [];
+      current.push(item);
+      itemsByProgram.set(programIndex, current);
+    });
+    const weightedPrograms = Array.from(itemsByProgram.entries()).map(([programIndex, items]) => ({
+      programIndex,
+      items,
+      weight: items.reduce((sum, item) => sum + (item.hours || Number(item.allocation.quantity) || 1), 0)
+    }));
+    const totalWeight = weightedPrograms.reduce((sum, entry) => sum + entry.weight, 0) || 1;
+    let allocatedCost = 0;
+
+    weightedPrograms.forEach((entry, entryIndex) => {
+      const summary = summaries[entry.programIndex] || summaries[0];
+      const cost = entryIndex === weightedPrograms.length - 1
+        ? group.totalSalary - allocatedCost
+        : Math.round(group.totalSalary * entry.weight / totalWeight);
+      allocatedCost += cost;
+      summary.cost += cost;
+      entry.items.forEach(item => {
+        const allocation = item.allocation;
+        summary.allocations.push(allocation);
+        summary.employeeIds.add(allocation.employeeId);
+        if (allocation.task) summary.tasks.add(cleanStaffTask(allocation.task));
+        if (allocation.stationName) summary.stationNames.add(allocation.stationName);
+      });
+    });
+  });
+
+  return summaries.filter(summary => summary.allocations.length > 0);
+};
+
+const calculateStaffCosts = (event: Event) => calculateGroupedStaffCosts(event.staff || []);
 
 const calculateExpenseCosts = (event: Event) =>
   (event.expenses || []).reduce((sum, expense) => sum + (Number(expense.amount) || 0), 0);
@@ -253,11 +376,7 @@ const calculateRevenue = (quotation?: Quotation | null, saleOrders: SaleOrder[] 
 
 const brandHeader = () => `
   <div class="brand-header">
-    <div class="brand-mark">⚛</div>
-    <div>
-      <div class="brand-name"><span>EIN</span>STEIN <b>HOUSE</b></div>
-      <div class="brand-tagline">Every Child is A Genius</div>
-    </div>
+    <img class="brand-logo" src="${htmlEscape(EVENT_DOSSIER_LOGO_URL)}" alt="Einstein House"/>
   </div>
 `;
 
@@ -294,11 +413,11 @@ const buildPlanSection = (event: Event, employees: Employee[], preparedBy: strin
         <tr>
           <td class="center strong">${index + 1}</td>
           <td class="strong">${htmlEscape(station.name)}</td>
-          <td>${htmlEscape([
-            program.name,
-            station.room ? `Khu vực: ${station.room}` : '',
-            station.equipment?.length ? `Thiết bị: ${station.equipment.map(item => `${item.name} x${item.quantity}`).join(', ')}` : ''
-          ].filter(Boolean).join(' • '))}</td>
+          <td class="plan-content-detail">
+            <strong>${htmlEscape(program.name)}</strong>
+            ${station.room ? `<br/>Khu vực: ${htmlEscape(station.room)}` : ''}
+            ${station.equipment?.length ? `<br/><span class="equipment-list"><strong>Thiết bị:</strong> ${htmlEscape(station.equipment.map(item => `${item.name} x${item.quantity}`).join('; '))}</span>` : ''}
+          </td>
           <td>${multiline(station.objective)}</td>
           <td>${htmlEscape([
             station.durationMinutes ? `${station.durationMinutes} phút` : '',
@@ -319,11 +438,41 @@ const buildPlanSection = (event: Event, employees: Employee[], preparedBy: strin
         `).join('')
       : emptyRow(5, 'Chưa thiết kế nội dung/trạm cho sự kiện');
 
+  const programStaffSummaries = getProgramStaffSummaries(event, programs);
+  const staffActionRows = programStaffSummaries.length > 0
+    ? programStaffSummaries.map((summary, index) => {
+        const staffNames = uniqueValues(Array.from(summary.employeeIds).map(employeeId => getStaffName(employeeId, employees)));
+        const tasks = uniqueValues(Array.from(summary.tasks));
+        const stations = uniqueValues(Array.from(summary.stationNames));
+        const programSessions = (summary.program.sessions || []).map(session => SESSION_LABELS[session]).join(' + ');
+        return `
+          <tr>
+            <td class="center">${index + 1}</td>
+            <td>Nhân sự - ${htmlEscape(summary.program.name)}</td>
+            <td><strong>${summary.employeeIds.size} nhân sự</strong>${stations.length ? `<br/>Trạm: ${htmlEscape(stations.join(', '))}` : ''}${tasks.length ? `<br/>Nhiệm vụ: ${htmlEscape(tasks.join('; '))}` : ''}</td>
+            <td>${htmlEscape(staffNames.join(', ') || profile.einsteinPic || preparedBy || 'Chưa phân công')}</td>
+            <td>${htmlEscape([formatDate(summary.program.date, true), programSessions].filter(Boolean).join(' • '))}</td>
+            <td></td>
+            <td class="money">${formatMoney(summary.cost)}</td>
+            <td>Đã gộp chính sách nhân sự theo ngày</td>
+          </tr>
+        `;
+      }).join('')
+    : `
+        <tr>
+          <td class="center">1</td><td>Nhân sự</td><td>Chưa phân công nhân sự</td>
+          <td>${htmlEscape(profile.einsteinPic || preparedBy || 'Chưa phân công')}</td>
+          <td>${htmlEscape([getEventDateLabel(event), getProgramTimeLabel(event)].filter(Boolean).join(' • '))}</td>
+          <td></td><td class="money">0 đ</td><td></td>
+        </tr>
+      `;
+  const staffActionRowCount = Math.max(1, programStaffSummaries.length);
+
   const timelineRows = [...(event.timeline || [])]
     .sort((a, b) => a.datetime.localeCompare(b.datetime))
     .map((entry, index) => `
       <tr>
-        <td class="center">${index + 2}</td>
+        <td class="center">${index + staffActionRowCount + 1}</td>
         <td>${htmlEscape(TIMELINE_PHASE_LABELS[entry.phase])}</td>
         <td>${multiline(entry.note)}</td>
         <td>${htmlEscape(profile.einsteinPic || preparedBy || 'TEAM')}</td>
@@ -337,7 +486,7 @@ const buildPlanSection = (event: Event, employees: Employee[], preparedBy: strin
   const staffCosts = calculateStaffCosts(event);
   const expenseRows = (event.expenses || []).map((expense, index) => `
     <tr>
-      <td class="center">${index + 2 + (event.timeline?.length || 0)}</td>
+      <td class="center">${index + staffActionRowCount + 1 + (event.timeline?.length || 0)}</td>
       <td>${htmlEscape(EXPENSE_CATEGORY_LABELS[expense.category])}</td>
       <td>${multiline(expense.description)}</td>
       <td>${htmlEscape(profile.einsteinPic || preparedBy || 'TEAM')}</td>
@@ -348,7 +497,6 @@ const buildPlanSection = (event: Event, employees: Employee[], preparedBy: strin
     </tr>
   `).join('');
   const totalCosts = staffCosts + calculateExpenseCosts(event);
-  const staffNames = (event.staff || []).map(staff => getStaffName(staff.employeeId, employees));
   const eventType = profile.eventType ? EVENT_TYPE_LABELS[profile.eventType] : 'Chương trình trải nghiệm khoa học';
   const audience = getAudienceLabel(event);
   const contact = profile.schoolContact;
@@ -409,13 +557,7 @@ const buildPlanSection = (event: Event, employees: Employee[], preparedBy: strin
         <thead><tr><th>STT</th><th>Hạng mục</th><th>Nội dung</th><th>PIC</th><th>Thời gian triển khai</th><th>Mục tiêu</th><th>Ngân sách</th><th>Ghi chú</th></tr></thead>
         <tbody>
           <tr class="group-row"><td colspan="6">Vận hành</td><td class="money">${formatMoney(totalCosts)}</td><td></td></tr>
-          <tr>
-            <td class="center">1</td><td>Nhân sự</td>
-            <td>${htmlEscape(event.staff?.length ? `${event.staff.length} phân công nhân sự` : 'Chưa phân công nhân sự')}</td>
-            <td>${htmlEscape(staffNames.join(', ') || profile.einsteinPic || preparedBy || 'Chưa phân công')}</td>
-            <td>${htmlEscape([titleDate, timeLabel].filter(Boolean).join(' • '))}</td><td></td>
-            <td class="money">${formatMoney(staffCosts)}</td><td></td>
-          </tr>
+          ${staffActionRows}
           ${timelineRows}
           ${expenseRows}
           <tr class="total-row"><td colspan="6">Tổng tiền</td><td class="money">${formatMoney(totalCosts)}</td><td></td></tr>
@@ -433,27 +575,34 @@ const buildPlanSection = (event: Event, employees: Employee[], preparedBy: strin
 };
 
 const buildStaffSection = (event: Event, employees: Employee[]) => {
-  const rows = (event.staff || []).map((staff, index) => {
-    const employee = employees.find(item => item.id === staff.employeeId);
+  const groups = getStaffCostGroups(event.staff || []);
+  const rows = groups.map((group, index) => {
+    const employee = employees.find(item => item.id === group.employeeId);
+    const taskLines = getStaffGroupTaskLines(group);
+    const shiftLabel = [
+      group.shiftDate ? formatDate(group.shiftDate) : '',
+      group.sessions.map(session => SESSION_LABELS[session]).join(' + ')
+    ].filter(Boolean).join(' • ');
+    const stationLabel = group.stationNames.join(', ');
     return `
       <tr>
         <td class="center">${index + 1}</td>
-        <td><strong>${htmlEscape(employee?.name || staff.employeeId)}</strong><br/><span class="muted">${htmlEscape(employee?.phone || '')}</span></td>
-        <td>${htmlEscape(staff.task || employee?.role || 'Chưa cập nhật')}</td>
-        <td>${htmlEscape([staff.stationName, getStaffShift(staff)].filter(Boolean).join(' • '))}</td>
-        <td class="center">${htmlEscape(`${staff.quantity || 0} ${UNIT_LABELS[staff.unit].toLowerCase()}`)}</td>
-        <td class="money">${formatMoney(staff.rate)}</td>
-        <td class="money"><strong>${formatMoney(staff.salary || staff.quantity * staff.rate)}</strong></td>
+        <td><strong>${htmlEscape(employee?.name || group.employeeId)}</strong><br/><span class="muted">${htmlEscape(employee?.phone || '')}</span></td>
+        <td>${taskLines.map(line => `<div class="staff-task-line">${htmlEscape(line)}</div>`).join('')}</td>
+        <td>${stationLabel ? `<strong>${htmlEscape(stationLabel)}</strong><br/>` : ''}${htmlEscape(shiftLabel || 'Chưa cập nhật')}</td>
+        <td class="center"><strong>${htmlEscape(getStaffGroupQuantityLabel(group))}</strong><br/><span class="muted">${group.items.length} phân công</span></td>
+        <td class="money">${htmlEscape(getStaffGroupRateLabel(group))}</td>
+        <td class="money"><strong>${formatMoney(group.totalSalary)}</strong>${group.isDayPolicyGroup ? '<br/><span class="policy-note">8h/ngày • trần 310.000đ</span>' : ''}</td>
       </tr>
     `;
   }).join('');
   return `
     <section class="pdf-section appendix-section">
       ${sectionHeading('Danh sách nhân sự & phân công', event.name)}
-      <table class="data-table">
+      <table class="data-table staff-table">
         <thead><tr><th>STT</th><th>Nhân sự</th><th>Nhiệm vụ</th><th>Trạm / Ca làm</th><th>Khối lượng</th><th>Đơn giá</th><th>Thành tiền</th></tr></thead>
         <tbody>${rows || emptyRow(7)}</tbody>
-        <tfoot><tr><td colspan="6">Tổng chi phí nhân sự</td><td class="money">${formatMoney(calculateStaffCosts(event))}</td></tr></tfoot>
+        <tfoot><tr><td colspan="6">Tổng chi phí nhân sự sau khi gộp chính sách ngày</td><td class="money">${formatMoney(calculateStaffCosts(event))}</td></tr></tfoot>
       </table>
       ${documentFooter(event)}
     </section>
@@ -655,9 +804,9 @@ const buildDesignSection = (event: Event) => {
         ].filter(Boolean).join(' • '))}</p>
         ${buildLayoutPreview(program.layout)}
         <h3 class="minor-heading">Thiết kế trạm</h3>
-        <table class="data-table"><thead><tr><th>STT</th><th>Trạm</th><th>Phòng</th><th>Thời lượng</th><th>Mục tiêu</th><th>Thiết bị</th><th>Checklist</th></tr></thead><tbody>${stationRows || emptyRow(7)}</tbody></table>
-        ${rotationRows ? `<h3 class="minor-heading">Phân nhóm & luân chuyển trạm</h3><table class="data-table"><thead><tr><th>STT</th><th>Nhóm</th><th>Số học sinh</th><th>Lộ trình</th></tr></thead><tbody>${rotationRows}</tbody></table>` : ''}
-        ${blockRows ? `<h3 class="minor-heading">Block trên sơ đồ</h3><table class="data-table"><thead><tr><th>STT</th><th>Khu vực</th><th>Gói hoạt động</th><th>Nhân sự phụ trách</th></tr></thead><tbody>${blockRows}</tbody></table>` : ''}
+        <table class="data-table station-design-table"><thead><tr><th>STT</th><th>Trạm</th><th>Phòng</th><th>Thời lượng</th><th>Mục tiêu</th><th>Thiết bị</th><th>Checklist</th></tr></thead><tbody>${stationRows || emptyRow(7)}</tbody></table>
+        ${rotationRows ? `<h3 class="minor-heading">Phân nhóm & luân chuyển trạm</h3><table class="data-table rotation-table"><thead><tr><th>STT</th><th>Nhóm</th><th>Số học sinh</th><th>Lộ trình</th></tr></thead><tbody>${rotationRows}</tbody></table>` : ''}
+        ${blockRows ? `<h3 class="minor-heading">Block trên sơ đồ</h3><table class="data-table block-table"><thead><tr><th>STT</th><th>Khu vực</th><th>Gói hoạt động</th><th>Nhân sự phụ trách</th></tr></thead><tbody>${blockRows}</tbody></table>` : ''}
       </div>
     `;
   }).join('');
@@ -701,47 +850,53 @@ const buildEquipmentSection = (event: Event, inventory: InventoryItem[]) => {
 const dossierStyles = `
   <style>
     * { box-sizing: border-box; }
-    .dossier-root { width: 100%; margin: 0; background: #fff; color: #111827; font-family: Arial, Helvetica, sans-serif; font-size: 10px; line-height: 1.32; }
+    .dossier-root { width: 100%; margin: 0; background: #fff; color: #111827; font-family: Arial, 'Helvetica Neue', Helvetica, 'Noto Sans', 'DejaVu Sans', sans-serif; font-size: 10px; line-height: 1.32; font-variant-ligatures: none; }
+    .dossier-root table, .dossier-root th, .dossier-root td, .dossier-root div, .dossier-root p, .dossier-root span, .dossier-root strong { font-family: Arial, 'Helvetica Neue', Helvetica, 'Noto Sans', 'DejaVu Sans', sans-serif; }
     .pdf-section { position: relative; width: 100%; padding: 10px 12px 28px; background: #fff; page-break-after: always; break-after: page; }
     .pdf-section:last-child { page-break-after: auto; break-after: auto; }
     .appendix-section { min-height: 1020px; padding: 24px 28px 48px; }
-    .brand-header { min-height: 62px; display: flex; align-items: center; justify-content: center; gap: 9px; border: 1px solid #d1d5db; padding: 8px 12px; }
-    .brand-mark { width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: #1670c5; color: #fff; font-size: 24px; font-weight: 900; border: 5px solid #f97316; }
-    .brand-name { color: #4f9b39; font-size: 20px; line-height: 1; font-weight: 900; letter-spacing: -.5px; }
-    .brand-name span, .brand-name b { color: #f97316; }
-    .brand-tagline { color: #3b82c4; text-align: center; font-size: 9px; font-weight: 700; margin-top: 3px; letter-spacing: .4px; }
-    .plan-title { border: 1px solid #b7b7b7; border-top: 0; padding: 4px; text-align: center; font-family: 'Times New Roman', serif; font-weight: 700; font-size: 12px; }
-    .event-title { border: 1px solid #b7b7b7; border-top: 0; padding: 4px; text-align: center; color: #a80000; font-family: 'Times New Roman', serif; font-weight: 800; font-size: 17px; }
+    .brand-header { min-height: 62px; display: flex; align-items: center; justify-content: center; border: 1px solid #d1d5db; padding: 6px 12px; }
+    .brand-logo { display: block; width: 230px; max-width: 72%; height: auto; max-height: 54px; object-fit: contain; }
+    .plan-title { border: 1px solid #b7b7b7; border-top: 0; padding: 4px; text-align: center; font-weight: 700; font-size: 12px; }
+    .event-title { border: 1px solid #b7b7b7; border-top: 0; padding: 4px; text-align: center; color: #a80000; font-weight: 800; font-size: 17px; }
     .compact-table, .data-table, .signature-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-    .compact-table th, .compact-table td { border: 1px solid #7d7d7d; padding: 3px 4px; vertical-align: top; font-family: 'Times New Roman', serif; font-size: 8.7px; line-height: 1.2; overflow-wrap: anywhere; }
+    .compact-table th, .compact-table td { border: 1px solid #7d7d7d; padding: 3px 4px; vertical-align: top; font-size: 8.7px; line-height: 1.2; overflow-wrap: anywhere; word-break: normal; }
     .compact-table th { text-align: center; font-weight: 700; background: #fff; }
     .plan-time .label-cell, .label-cell { width: 19%; }
-    .yellow-title { margin-top: 4px; border: 1px solid #8a7b45; background: #ffe699; padding: 3px 4px; font-family: 'Times New Roman', serif; font-weight: 700; font-size: 9.5px; }
-    .plan-copy { border-left: 1px solid #7d7d7d; border-right: 1px solid #7d7d7d; padding: 3px 4px; font-family: 'Times New Roman', serif; font-size: 8.7px; }
+    .yellow-title { margin-top: 4px; border: 1px solid #8a7b45; background: #ffe699; padding: 3px 4px; font-weight: 700; font-size: 9.5px; }
+    .plan-copy { border-left: 1px solid #7d7d7d; border-right: 1px solid #7d7d7d; padding: 3px 4px; font-size: 8.7px; }
     .plan-copy p { margin: 0 0 2px; }
-    .single-line { border: 1px solid #7d7d7d; padding: 3px 4px; font-family: 'Times New Roman', serif; font-size: 8.7px; }
-    .plan-content-table th:nth-child(1) { width: 3%; } .plan-content-table th:nth-child(2) { width: 17%; } .plan-content-table th:nth-child(3) { width: 23%; } .plan-content-table th:nth-child(4) { width: 25%; } .plan-content-table th:nth-child(5) { width: 32%; }
+    .single-line { border: 1px solid #7d7d7d; padding: 3px 4px; font-size: 8.7px; }
+    .plan-content-table th:nth-child(1) { width: 3%; } .plan-content-table th:nth-child(2) { width: 15%; } .plan-content-table th:nth-child(3) { width: 38%; } .plan-content-table th:nth-child(4) { width: 19%; } .plan-content-table th:nth-child(5) { width: 25%; }
+    .plan-content-detail, .equipment-list { line-height: 1.28; overflow-wrap: break-word; }
     .action-table th:nth-child(1) { width: 4%; } .action-table th:nth-child(2) { width: 15%; } .action-table th:nth-child(3) { width: 23%; } .action-table th:nth-child(4) { width: 13%; } .action-table th:nth-child(5) { width: 14%; } .action-table th:nth-child(6) { width: 9%; } .action-table th:nth-child(7) { width: 11%; } .action-table th:nth-child(8) { width: 11%; }
     .group-row td { background: #f5f1e7; font-weight: 700; } .total-row td { font-weight: 800; }
     .center { text-align: center; } .money { text-align: right; white-space: nowrap; } .strong { font-weight: 700; }
-    .date-sign { text-align: right; padding: 10px 8px 3px; font-family: 'Times New Roman', serif; font-style: italic; font-size: 9px; }
-    .signature-table td { width: 50%; border: 1px solid #5f6368; text-align: center; vertical-align: top; padding: 5px; font-family: 'Times New Roman', serif; font-size: 9px; }
+    .date-sign { text-align: right; padding: 10px 8px 3px; font-style: italic; font-size: 9px; }
+    .signature-table td { width: 50%; border: 1px solid #5f6368; text-align: center; vertical-align: top; padding: 5px; font-size: 9px; }
     .signature-space { height: 45px; }
     .document-footer { position: absolute; left: 28px; right: 28px; bottom: 14px; display: flex; justify-content: space-between; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 5px; font-size: 8px; }
     .plan-section .document-footer { left: 12px; right: 12px; bottom: 6px; }
     .appendix-heading { margin-bottom: 20px; }
     .appendix-heading .brand-header { border: 0; justify-content: flex-start; min-height: 50px; padding: 0 0 12px; border-bottom: 2px solid #163b65; }
-    .appendix-heading .brand-mark { width: 32px; height: 32px; font-size: 19px; border-width: 4px; }
-    .appendix-heading .brand-name { font-size: 17px; }
-    .appendix-kicker { color: #c2410c; font-size: 9px; font-weight: 800; letter-spacing: 1.5px; margin-top: 16px; }
+    .appendix-heading .brand-logo { width: 205px; max-width: 45%; max-height: 48px; }
+    .appendix-kicker { color: #c2410c; font-size: 9px; font-weight: 800; letter-spacing: 0; margin-top: 16px; }
     .appendix-heading h1 { margin: 4px 0 2px; color: #123a64; font-size: 25px; line-height: 1.1; }
     .appendix-heading p { margin: 0; color: #64748b; font-size: 11px; font-weight: 600; }
     .data-table { margin: 10px 0 18px; font-size: 9px; }
-    .data-table th, .data-table td { border: 1px solid #cbd5e1; padding: 7px 6px; vertical-align: top; overflow-wrap: anywhere; }
-    .data-table th { background: #163b65; color: #fff; text-transform: uppercase; font-size: 8px; letter-spacing: .25px; text-align: center; }
+    .data-table th, .data-table td { border: 1px solid #cbd5e1; padding: 7px 6px; vertical-align: top; overflow-wrap: break-word; word-break: normal; }
+    .data-table th { background: #163b65; color: #fff; text-transform: uppercase; font-size: 8px; letter-spacing: 0; text-align: center; }
     .data-table tbody tr:nth-child(even) td { background: #f8fafc; }
     .data-table tfoot td { background: #fff2cc; color: #7c2d12; font-weight: 800; }
     .data-table tfoot td:first-child { text-align: right; }
+    .staff-table th:nth-child(1) { width: 6%; } .staff-table th:nth-child(2) { width: 16%; } .staff-table th:nth-child(3) { width: 26%; } .staff-table th:nth-child(4) { width: 20%; } .staff-table th:nth-child(5) { width: 9%; } .staff-table th:nth-child(6) { width: 10%; } .staff-table th:nth-child(7) { width: 13%; }
+    .staff-task-line + .staff-task-line { margin-top: 4px; padding-top: 4px; border-top: 1px dashed #cbd5e1; }
+    .policy-note { color: #c2410c; font-size: 7px; font-weight: 800; white-space: normal; }
+    .station-design-table th:nth-child(1) { width: 6%; } .station-design-table th:nth-child(2) { width: 14%; } .station-design-table th:nth-child(3) { width: 8%; } .station-design-table th:nth-child(4) { width: 8%; } .station-design-table th:nth-child(5) { width: 17%; } .station-design-table th:nth-child(6) { width: 31%; } .station-design-table th:nth-child(7) { width: 16%; }
+    .station-design-table td:nth-child(6) { font-size: 8.4px; line-height: 1.28; }
+    .rotation-table th:nth-child(1) { width: 6%; } .rotation-table th:nth-child(2) { width: 14%; } .rotation-table th:nth-child(3) { width: 10%; } .rotation-table th:nth-child(4) { width: 70%; }
+    .rotation-table td:nth-child(4) { line-height: 1.35; }
+    .block-table th:nth-child(1) { width: 6%; } .block-table th:nth-child(2) { width: 22%; } .block-table th:nth-child(3) { width: 36%; } .block-table th:nth-child(4) { width: 36%; }
     .empty-cell, .empty-block { text-align: center; color: #94a3b8; font-style: italic; padding: 24px !important; }
     .empty-block { border: 1px dashed #cbd5e1; border-radius: 8px; background: #f8fafc; }
     .muted { color: #64748b; font-size: 8px; } .warning { color: #b45309; font-weight: 700; } .url-text { color: #2563eb; font-size: 7px; }
@@ -756,7 +911,7 @@ const dossierStyles = `
     .metric-grid .negative { background: #fff1f2; border-color: #fecdd3; } .metric-grid .negative strong { color: #be123c; }
     .status-banner { margin: 8px 0 14px; border-left: 4px solid #2563eb; background: #eff6ff; color: #1e3a8a; padding: 10px 12px; }
     .subheading, .program-title { color: #163b65; font-size: 14px; margin: 18px 0 6px; padding-bottom: 5px; border-bottom: 1px solid #cbd5e1; }
-    .minor-heading { color: #475569; font-size: 10px; text-transform: uppercase; letter-spacing: .6px; margin: 14px 0 4px; }
+    .minor-heading { color: #475569; font-size: 10px; text-transform: uppercase; letter-spacing: 0; margin: 14px 0 4px; }
     .program-block { page-break-inside: auto; break-inside: auto; margin-bottom: 22px; }
     .program-meta { color: #64748b; font-size: 9px; margin: -2px 0 8px; }
     .timeline-table th:nth-child(1) { width: 7%; } .timeline-table th:nth-child(2) { width: 22%; } .timeline-table th:nth-child(4) { width: 19%; }
@@ -801,6 +956,17 @@ const sanitizeFilename = (value: string) => value
   .replace(/^_+|_+$/g, '')
   .slice(0, 110);
 
+const waitForDocumentImages = async (container: HTMLElement) => {
+  const images = Array.from(container.querySelectorAll('img'));
+  await Promise.all(images.map(image => {
+    if (image.complete) return Promise.resolve();
+    return new Promise<void>(resolve => {
+      image.addEventListener('load', () => resolve(), { once: true });
+      image.addEventListener('error', () => resolve(), { once: true });
+    });
+  }));
+};
+
 export const exportEventDossier = async (
   event: Event,
   inventory: InventoryItem[],
@@ -818,6 +984,7 @@ export const exportEventDossier = async (
   wrapper.style.background = '#ffffff';
   wrapper.innerHTML = buildEventDossierHtml(event, inventory, options);
   document.body.appendChild(wrapper);
+  await waitForDocumentImages(wrapper);
 
   const defaultFilename = `Ho_so_su_kien_${sanitizeFilename(event.eventProfile?.code || event.name || event.id)}.pdf`;
   try {

@@ -14,6 +14,15 @@ import { EventDossierExportModal } from './EventDossierExportModal';
 import { EventChecklist } from './EventChecklist';
 import { EinsteinHouseOS, EinsteinHouseModuleTab } from './EinsteinHouseOS';
 import { calcLineTotal } from '../services/pricing';
+import {
+  STAFF_DAILY_CAP,
+  STAFF_HOURLY_RATE,
+  calculateStaffCompensation,
+  getStaffCompensationNote,
+  getStaffCostGroups,
+  getStaffSessions,
+  getStaffWorkHours
+} from '../services/staffCompensation';
 
 interface EventManagerProps {
   events: Event[];
@@ -496,22 +505,6 @@ const areAdvanceRequestsEquivalent = (left: EventAdvanceRequest[], right: EventA
     createdAt: item.createdAt || ''
   })));
 
-const getStaffSessions = (staff?: Pick<EventStaffAllocation, 'session' | 'sessions'>): EventSession[] => {
-  if (!staff) return [];
-  if (staff.sessions && staff.sessions.length > 0) return staff.sessions as EventSession[];
-  return staff.session ? [staff.session as EventSession] : [];
-};
-
-const STAFF_HOURLY_RATE = 30000;
-const STAFF_WATER_ALLOWANCE_HALF_DAY = 10000;
-const STAFF_WATER_ALLOWANCE_FULL_DAY = 20000;
-const STAFF_MEAL_ALLOWANCE_FULL_DAY = 50000;
-const STAFF_DAILY_CAP = 310000;
-const STAFF_SESSION_HOURS: Record<EventSession, number> = {
-  MORNING: 4,
-  AFTERNOON: 4,
-  EVENING: 4
-};
 const AUTO_STAFF_SLOT_SOURCE = 'AUTO_STATION_SLOT' as const;
 
 type AutoStaffSlotStation = {
@@ -536,131 +529,6 @@ type AutoStaffSlot = {
 };
 
 const makeEventManagerId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-
-const getStaffAllocationKey = (staff: EventStaffAllocation, index?: number) =>
-  staff.id || staff.autoKey || `${staff.employeeId}-${staff.shiftDate || 'no-date'}-${getStaffSessions(staff).join('-') || staff.session || 'no-session'}-${index ?? 0}`;
-
-const getStaffWorkHours = (sessions: EventSession[]) =>
-  Math.min(8, Math.max(1, sessions.reduce((sum, session) => sum + (STAFF_SESSION_HOURS[session] || 4), 0)));
-
-const calculateStaffCompensation = (hours: number, rate = STAFF_HOURLY_RATE) => {
-  const normalizedHours = Math.max(0, Number(hours) || 0);
-  const base = normalizedHours * rate;
-  const allowance = normalizedHours >= 8
-    ? STAFF_MEAL_ALLOWANCE_FULL_DAY + STAFF_WATER_ALLOWANCE_FULL_DAY
-    : normalizedHours >= 4
-      ? STAFF_WATER_ALLOWANCE_HALF_DAY
-      : 0;
-  const total = Math.min(STAFF_DAILY_CAP, base + allowance);
-  return { base, allowance, total };
-};
-
-const getStaffCompensationNote = (hours: number, rate = STAFF_HOURLY_RATE) => {
-  const { allowance, total } = calculateStaffCompensation(hours, rate);
-  const allowanceText = hours >= 8
-    ? 'ăn 50.000đ + nước 20.000đ'
-    : hours >= 4
-      ? 'nước 10.000đ'
-      : 'chưa có phụ cấp';
-  return `${hours}h x ${rate.toLocaleString()}đ/h + ${allowanceText}${total >= STAFF_DAILY_CAP ? ' • chạm trần 310.000đ/ngày' : allowance > 0 ? '' : ''}`;
-};
-
-type StaffCostGroupItem = {
-  allocation: EventStaffAllocation;
-  index: number;
-  key: string;
-  hours: number;
-};
-
-type StaffCostGroup = {
-  key: string;
-  employeeId: string;
-  shiftDate?: string;
-  items: StaffCostGroupItem[];
-  sessions: EventSession[];
-  stationNames: string[];
-  totalHours: number;
-  totalSalary: number;
-  isDayPolicyGroup: boolean;
-};
-
-const getStaffAllocationHours = (staff: EventStaffAllocation) => {
-  if (staff.unit !== 'HOUR') return 0;
-  const quantity = Number(staff.quantity) || 0;
-  return quantity > 0 ? quantity : getStaffWorkHours(getStaffSessions(staff));
-};
-
-const calculateStaffDayGroupCompensation = (items: StaffCostGroupItem[]) => {
-  const totalHours = items.reduce((sum, item) => sum + item.hours, 0);
-  const base = items.reduce((sum, item) => {
-    const rate = Number(item.allocation.rate) || STAFF_HOURLY_RATE;
-    return sum + item.hours * rate;
-  }, 0);
-  const allowance = totalHours >= 8
-    ? STAFF_MEAL_ALLOWANCE_FULL_DAY + STAFF_WATER_ALLOWANCE_FULL_DAY
-    : totalHours >= 4
-      ? STAFF_WATER_ALLOWANCE_HALF_DAY
-      : 0;
-  return {
-    totalHours,
-    total: Math.min(STAFF_DAILY_CAP, base + allowance)
-  };
-};
-
-const getStaffCostGroups = (staffList: EventStaffAllocation[] = []): StaffCostGroup[] => {
-  const groups = new Map<string, StaffCostGroup>();
-  staffList.forEach((allocation, index) => {
-    const key = allocation.unit === 'HOUR' && allocation.shiftDate
-      ? `day-${allocation.employeeId}-${allocation.shiftDate}`
-      : `single-${getStaffAllocationKey(allocation, index)}`;
-    const item: StaffCostGroupItem = {
-      allocation,
-      index,
-      key: getStaffAllocationKey(allocation, index),
-      hours: getStaffAllocationHours(allocation)
-    };
-    const existing = groups.get(key);
-    if (existing) {
-      existing.items.push(item);
-      return;
-    }
-    groups.set(key, {
-      key,
-      employeeId: allocation.employeeId,
-      shiftDate: allocation.shiftDate,
-      items: [item],
-      sessions: [],
-      stationNames: [],
-      totalHours: 0,
-      totalSalary: 0,
-      isDayPolicyGroup: false
-    });
-  });
-
-  return Array.from(groups.values()).map(group => {
-    const sessions = new Set<EventSession>();
-    const stationNames = new Set<string>();
-    group.items.forEach(item => {
-      getStaffSessions(item.allocation).forEach(session => sessions.add(session));
-      if (item.allocation.stationName) stationNames.add(item.allocation.stationName);
-    });
-    const allHourly = group.items.every(item => item.allocation.unit === 'HOUR');
-    const groupedPay = allHourly
-      ? calculateStaffDayGroupCompensation(group.items)
-      : {
-          totalHours: group.items.reduce((sum, item) => sum + (Number(item.allocation.quantity) || 0), 0),
-          total: group.items.reduce((sum, item) => sum + (Number(item.allocation.salary) || 0), 0)
-        };
-    return {
-      ...group,
-      sessions: Array.from(sessions),
-      stationNames: Array.from(stationNames),
-      totalHours: groupedPay.totalHours,
-      totalSalary: groupedPay.total,
-      isDayPolicyGroup: allHourly && group.shiftDate !== undefined && groupedPay.totalHours >= 8
-    };
-  });
-};
 
 const getAutoStaffSlotStations = (event: Event): AutoStaffSlotStation[] => {
   const houseStations = event.houseOperation?.stations || [];
