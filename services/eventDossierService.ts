@@ -956,6 +956,15 @@ const sanitizeFilename = (value: string) => value
   .replace(/^_+|_+$/g, '')
   .slice(0, 110);
 
+const buildEventDossierFilename = (event: Event) => {
+  const code = sanitizeFilename(event.eventProfile?.code || '');
+  const name = sanitizeFilename(event.name || '');
+  const fallback = sanitizeFilename(event.id || 'su_kien');
+  const parts = [code, name].filter(Boolean);
+  const uniqueParts = parts.filter((part, index) => parts.indexOf(part) === index);
+  return `Ho_so_su_kien_${(uniqueParts.length ? uniqueParts : [fallback]).join('_')}.pdf`;
+};
+
 const waitForDocumentImages = async (container: HTMLElement) => {
   const images = Array.from(container.querySelectorAll('img'));
   await Promise.all(images.map(image => {
@@ -986,7 +995,7 @@ export const exportEventDossier = async (
   document.body.appendChild(wrapper);
   await waitForDocumentImages(wrapper);
 
-  const defaultFilename = `Ho_so_su_kien_${sanitizeFilename(event.eventProfile?.code || event.name || event.id)}.pdf`;
+  const defaultFilename = buildEventDossierFilename(event);
   try {
     await html2pdf().set({
       filename: options.filename || defaultFilename,
