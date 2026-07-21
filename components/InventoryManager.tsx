@@ -3,7 +3,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { InventoryItem, InventoryReceipt, InventoryReceiptItem } from '../types';
 import { 
   Search, X, Trash2, AlertTriangle, Wrench,
-  ShoppingCart, Info, Settings2, Link as LinkIcon, CheckCircle, CalendarClock, Printer, History, FilePlus
+  ShoppingCart, Info, Settings2, Link as LinkIcon, CheckCircle, CalendarClock, Printer, History, FilePlus, Download
 } from 'lucide-react';
 import JsBarcode from 'jsbarcode';
 import { findDuplicateBarcodeItem, generateBarcode, normalizeBarcode } from '../services/barcodeService';
@@ -184,6 +184,94 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
     const matchesLowStock = !showLowStockOnly || isLowStock;
     return matchesSearch && matchesCategory && matchesLowStock;
   });
+
+  const purchaseExportItems = inventory.filter(item => {
+    const needle = searchTerm.toLowerCase();
+    const matchesSearch = item.name.toLowerCase().includes(needle) ||
+                          item.id.toLowerCase().includes(needle) ||
+                          (item.barcode || '').toLowerCase().includes(needle);
+    const matchesCategory = filterCategory === 'All' || item.category === filterCategory;
+    const isLowStock = item.availableQuantity <= (item.minStock || 0);
+    return matchesSearch && matchesCategory && isLowStock;
+  });
+
+  const escapeCsvCell = (value: unknown) => {
+    const text = value === undefined || value === null ? '' : String(value);
+    const safeText = /^[=+\-@]/.test(text) ? `'${text}` : text;
+    return `"${safeText.replace(/"/g, '""')}"`;
+  };
+
+  const handleExportPurchaseList = () => {
+    if (purchaseExportItems.length === 0) {
+      alert('Không có mã sắp hết hàng để xuất.');
+      return;
+    }
+
+    const headers = [
+      'Mã sản phẩm',
+      'Barcode',
+      'Tên sản phẩm',
+      'Danh mục',
+      'Loại hàng',
+      'Vị trí kho',
+      'Tổng số lượng',
+      'Sẵn kho',
+      'Đang sử dụng',
+      'Bảo trì',
+      'Hỏng',
+      'Mất',
+      'Ngưỡng cảnh báo',
+      'Số lượng cần mua',
+      'Dự kiến mua',
+      'Thời gian dự kiến',
+      'Giá thuê',
+      'Đơn vị tiêu hao',
+      'Số lần sử dụng tối đa',
+      'Ghi chú kỹ thuật / sản xuất',
+      'Link mua hàng / NCC'
+    ];
+
+    const rows = purchaseExportItems.map(item => {
+      const reorderQuantity = Math.max(0, (item.minStock || 0) - (item.availableQuantity || 0));
+      return [
+        item.id,
+        item.barcode || '',
+        item.name,
+        item.category,
+        item.lifecycle === 'CONSUMABLE' ? 'Tiêu hao' : 'Khấu hao',
+        item.location || '',
+        item.totalQuantity || 0,
+        item.availableQuantity || 0,
+        item.inUseQuantity || 0,
+        item.maintenanceQuantity || 0,
+        item.brokenQuantity || 0,
+        item.lostQuantity || 0,
+        item.minStock || 0,
+        reorderQuantity,
+        item.plannedQuantity || '',
+        item.plannedEta || '',
+        item.rentalPrice || 0,
+        item.consumableUnit || '',
+        item.maxUsage || '',
+        item.productionNote || '',
+        item.purchaseLink || ''
+      ];
+    });
+
+    const csv = ['sep=,', ...[headers, ...rows]
+      .map(row => row.map(escapeCsvCell).join(','))
+    ].join('\r\n');
+    const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const today = new Date().toISOString().slice(0, 10);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Danh_sach_mua_sam_sap_het_hang_${today}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  };
 
   const getStatusMaxQty = (item: InventoryItem | null, type: string) => {
     if (!item) return 0;
@@ -804,9 +892,18 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
           <p className="text-sm text-slate-500 font-medium leading-snug">Quản lý nhập xuất, bảo trì và mua sắm bổ sung. Mọi bổ sung kho phải đi qua phiếu nhập có nguồn gốc.</p>
         </div>
         <div className="flex flex-col gap-2 w-full sm:w-auto items-stretch sm:items-end">
-          <div className="flex gap-2 w-full sm:w-auto">
+          <div className="flex flex-wrap gap-2 w-full sm:w-auto">
             <button onClick={() => handleOpenPrintModal()} className="flex-1 sm:flex-none bg-white text-slate-700 border border-slate-200 px-4 py-2.5 rounded-xl hover:bg-slate-100 transition flex items-center justify-center gap-2 text-[11px] font-black uppercase tracking-widest shadow-md">
               <Printer size={16} /> In mã
+            </button>
+            <button
+              type="button"
+              onClick={handleExportPurchaseList}
+              disabled={purchaseExportItems.length === 0}
+              title="Xuất danh sách mã sắp hết hàng cho đội mua sắm"
+              className="flex-1 sm:flex-none bg-emerald-600 text-white px-4 py-2.5 rounded-xl hover:bg-emerald-700 transition flex items-center justify-center gap-2 text-[11px] font-black uppercase tracking-widest shadow-md disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed disabled:shadow-none"
+            >
+              <Download size={16} /> Xuất Excel
             </button>
             {canCreateReceipt && (
               <button
