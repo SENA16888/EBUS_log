@@ -226,6 +226,14 @@ const getEventVenueTone = (venue?: EventVenueType) => {
     };
 };
 
+const getEventStudentCount = (event: Event) => {
+  const count = event.studentCount
+    ?? event.houseOperation?.studentCount
+    ?? event.eventProfile?.attendanceMax
+    ?? event.eventProfile?.attendanceMin;
+  return typeof count === 'number' && Number.isFinite(count) && count > 0 ? count : undefined;
+};
+
 const AUTO_ADVANCE_SOURCE: EventAdvanceRequest['source'] = 'AUTO_PROFILE';
 const AUTO_ADVANCE_PREFIX = 'profile-auto';
 const AUTO_TIMELINE_SOURCE: EventTimelineEntry['source'] = 'AUTO_LOGISTICS';
@@ -1241,6 +1249,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
     name: '',
     client: '',
     location: '',
+    studentCount: '',
     organizationVenue: 'EH' as EventVenueType
   });
   const [newEventSchedule, setNewEventSchedule] = useState<EventScheduleItem[]>([]);
@@ -1780,12 +1789,17 @@ export const EventManager: React.FC<EventManagerProps> = ({
     const endDate = sortedSchedule[sortedSchedule.length - 1].date;
     const primarySession = sortedSchedule[0].sessions?.[0] || 'MORNING';
     const defaultTimeRange = getDefaultProfileTimeRange(primarySession);
+    const studentCount = Number(newEventData.studentCount);
+    const normalizedStudentCount = Number.isFinite(studentCount) && studentCount > 0
+      ? Math.floor(studentCount)
+      : undefined;
     const newEvent: Event = {
       id: `EVT-${Date.now()}`,
       name: newEventData.name,
       client: newEventData.client,
       location: newEventData.location,
       organizationVenue: newEventData.organizationVenue,
+      studentCount: normalizedStudentCount,
       startDate,
       endDate,
       session: primarySession,
@@ -1807,7 +1821,11 @@ export const EventManager: React.FC<EventManagerProps> = ({
         programSession: primarySession,
         programTimeStart: defaultTimeRange.start,
         programTimeEnd: defaultTimeRange.end,
-        addressDetail: newEventData.location
+        addressDetail: newEventData.location,
+        ...(normalizedStudentCount ? {
+          attendanceMin: normalizedStudentCount,
+          attendanceMax: normalizedStudentCount
+        } : {})
       },
       timeline: [],
       layout: {
@@ -1818,7 +1836,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
     };
     onCreateEvent(newEvent);
     setShowCreateEventModal(false);
-    setNewEventData({ name: '', client: '', location: '', organizationVenue: 'EH' });
+    setNewEventData({ name: '', client: '', location: '', studentCount: '', organizationVenue: 'EH' });
     setNewEventSchedule([]);
     setNewScheduleDate('');
     setSelectedEventId(newEvent.id);
@@ -2927,6 +2945,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
                           const end = schedule[schedule.length - 1]?.date || event.endDate;
                           const venue = getEventVenue(event);
                           const venueTone = getEventVenueTone(venue);
+                          const studentCount = getEventStudentCount(event);
                           const registeredByCurrentUser = isCurrentUserRegisteredForEvent(event);
                           return (
                             <>
@@ -2941,6 +2960,11 @@ export const EventManager: React.FC<EventManagerProps> = ({
                                 <Calendar size={12}/> {start}{end && end !== start ? ` → ${end}` : ''}
                               </p>
                               <div className="mt-2 flex items-center gap-2 flex-wrap">
+                                {studentCount && (
+                                  <div className="inline-flex items-center gap-1 text-[10px] font-bold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full">
+                                    <Users size={10}/> {studentCount.toLocaleString('vi-VN')} HS
+                                  </div>
+                                )}
                                 {uniqueSessions.map(session => (
                                   <div key={session} className="inline-flex items-center gap-1 text-[10px] font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full">
                                     {SESSION_LABELS[session]}
@@ -2997,6 +3021,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
                           const end = schedule[schedule.length - 1]?.date || event.endDate;
                           const venue = getEventVenue(event);
                           const venueTone = getEventVenueTone(venue);
+                          const studentCount = getEventStudentCount(event);
                           const registeredByCurrentUser = isCurrentUserRegisteredForEvent(event);
                           return (
                             <>
@@ -3011,6 +3036,11 @@ export const EventManager: React.FC<EventManagerProps> = ({
                                 <Calendar size={12}/> {start}{end && end !== start ? ` → ${end}` : ''}
                               </p>
                               <div className="mt-2 flex items-center gap-2 flex-wrap">
+                                {studentCount && (
+                                  <div className="inline-flex items-center gap-1 text-[10px] font-bold bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full">
+                                    <Users size={10}/> {studentCount.toLocaleString('vi-VN')} HS
+                                  </div>
+                                )}
                                 {uniqueSessions.map(session => (
                                   <div key={session} className="inline-flex items-center gap-1 text-[10px] font-bold bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full">
                                     {SESSION_LABELS[session]}
@@ -5626,6 +5656,16 @@ export const EventManager: React.FC<EventManagerProps> = ({
               <input type="text" className="w-full border border-slate-300 rounded-xl p-3" value={newEventData.name} onChange={e => setNewEventData({...newEventData, name: e.target.value})} placeholder="Tên sự kiện" />
               <input type="text" className="w-full border border-slate-300 rounded-xl p-3" value={newEventData.client} onChange={e => setNewEventData({...newEventData, client: e.target.value})} placeholder="Khách hàng" />
               <input type="text" className="w-full border border-slate-300 rounded-xl p-3" value={newEventData.location} onChange={e => setNewEventData({...newEventData, location: e.target.value})} placeholder="Địa điểm" />
+              <input
+                type="number"
+                min="0"
+                step="1"
+                inputMode="numeric"
+                className="w-full border border-slate-300 rounded-xl p-3"
+                value={newEventData.studentCount}
+                onChange={e => setNewEventData({ ...newEventData, studentCount: e.target.value })}
+                placeholder="Số lượng học sinh"
+              />
               <div className="grid grid-cols-2 gap-2">
                 {EVENT_VENUE_OPTIONS.map(option => (
                   <button

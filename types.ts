@@ -564,6 +564,7 @@ export interface Event {
   client: string;
   location: string;
   organizationVenue?: EventVenueType;
+  studentCount?: number;
   startDate: string;
   endDate: string;
   status: EventStatus;

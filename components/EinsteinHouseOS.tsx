@@ -235,6 +235,7 @@ const getProgramStart = (event: Event) => event.eventProfile?.programTimeStart |
 
 const getStudentCount = (event: Event) =>
   event.houseOperation?.studentCount ||
+  event.studentCount ||
   event.eventProfile?.attendanceMax ||
   event.eventProfile?.attendanceMin ||
   64;
