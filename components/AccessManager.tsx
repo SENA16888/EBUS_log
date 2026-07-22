@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Employee, UserAccount, AccessRole, AccessPermission } from '../types';
 import { ACCESS_PERMISSION_GROUPS, ACCESS_PERMISSION_VERSION, getDefaultPermissionsForRole, normalizePhone } from '../services/accessControl';
-import { X, ShieldCheck, UserPlus, Trash2, RefreshCw, ListChecks } from 'lucide-react';
+import { X, ShieldCheck, UserPlus, Trash2, RefreshCw, ListChecks, Search } from 'lucide-react';
 
 interface AccessManagerProps {
   isOpen: boolean;
@@ -44,8 +44,20 @@ export const AccessManager: React.FC<AccessManagerProps> = ({
   });
   const [bulkTarget, setBulkTarget] = useState<BulkTarget>('STAFF');
   const [bulkPermission, setBulkPermission] = useState<AccessPermission>('EMPLOYEES_VIEW');
+  const [accountSearch, setAccountSearch] = useState('');
 
   const sortedAccounts = useMemo(() => [...accounts].sort((a, b) => a.name.localeCompare(b.name)), [accounts]);
+  const filteredAccounts = useMemo(() => {
+    const keyword = accountSearch.trim().toLowerCase();
+    const phoneKeyword = normalizePhone(accountSearch);
+    if (!keyword && !phoneKeyword) return sortedAccounts;
+
+    return sortedAccounts.filter(account => {
+      const name = account.name.toLowerCase();
+      const phone = normalizePhone(account.phone);
+      return name.includes(keyword) || (phoneKeyword && phone.includes(phoneKeyword));
+    });
+  }, [accountSearch, sortedAccounts]);
   const sortedEmployees = useMemo(() => [...employees].sort((a, b) => a.name.localeCompare(b.name)), [employees]);
   const bulkTargetAccounts = useMemo(() => {
     return sortedAccounts.filter(account => {
@@ -245,7 +257,27 @@ export const AccessManager: React.FC<AccessManagerProps> = ({
           </div>
 
           <div className="lg:col-span-2 space-y-4 max-h-[70vh] overflow-y-auto pr-2">
-            {sortedAccounts.map(account => (
+            <div className="sticky top-0 z-10 bg-white pb-2">
+              <div className="relative">
+                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Tim theo ten hoac so dien thoai"
+                  value={accountSearch}
+                  onChange={e => setAccountSearch(e.target.value)}
+                  className="w-full border border-slate-200 rounded-xl pl-9 pr-3 py-2.5 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                />
+              </div>
+              <div className="mt-2 text-xs text-slate-500">
+                Dang hien thi <strong>{filteredAccounts.length}</strong>/{sortedAccounts.length} tai khoan.
+              </div>
+            </div>
+
+            {filteredAccounts.length === 0 ? (
+              <div className="border border-dashed border-slate-200 rounded-xl p-6 text-center text-sm text-slate-500">
+                Khong tim thay tai khoan phu hop.
+              </div>
+            ) : filteredAccounts.map(account => (
               <div key={account.id} className="border border-slate-100 rounded-xl p-4 shadow-sm">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                   <div>
