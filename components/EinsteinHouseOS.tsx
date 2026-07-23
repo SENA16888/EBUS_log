@@ -1221,6 +1221,13 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
       : [selectedEvent];
 
     return sourceEvents.map(event => {
+      if (event.id === selectedEvent.id) {
+        return {
+          event: selectedEvent,
+          groups: liveGroupAgendas
+        };
+      }
+
       const currentOperation = event.id === selectedEvent.id
         ? operation
         : ensureOperation(event, inventory, employees, packages);
@@ -1237,7 +1244,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
         groups: buildLiveGroupAgendas(standardGroups, currentOperation, event)
       };
     }).filter(item => item.groups.length > 0);
-  }, [employees, events, inventory, operation, packages, selectedEvent]);
+  }, [employees, events, inventory, liveGroupAgendas, operation, packages, selectedEvent]);
 
   const roomAgendas = useMemo(
     () => buildRoomAgendasFromLiveGroups(liveGroupAgendas, selectedEvent),
