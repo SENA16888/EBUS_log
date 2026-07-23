@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { QRCodeSVG } from 'qrcode.react';
 import {
   AlertTriangle,
   BarChart3,
@@ -1874,6 +1875,9 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
   const liveTimingAnchor = getLiveTimingAnchor(operation, selectedEvent);
   const actualArrival = operation.live?.actualArrivalTime || liveTimingAnchor;
   const liveDelta = timeToMinutes(actualArrival) - timeToMinutes(liveTimingAnchor);
+  const publicLiveUrl = typeof window !== 'undefined'
+    ? `${window.location.origin}${window.location.pathname}?ehLive=${selectedEvent.id}${liveProgramId ? `&ehProgram=${encodeURIComponent(liveProgramId)}` : ''}`
+    : '';
   const viewingEducationItems = (viewingEducationContext?.links || []).map(link => {
     const activity = educationActivities.find(item => item.id === link.activityId);
     const theme = activity?.themes.find(item => item.id === link.themeId);
@@ -2808,10 +2812,38 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                     <p className="text-xs font-black uppercase text-blue-700">Link xem LIVE không cần đăng nhập</p>
                     <input
                       readOnly
-                      value={`${window.location.origin}${window.location.pathname}?ehLive=${selectedEvent.id}${liveProgramId ? `&ehProgram=${encodeURIComponent(liveProgramId)}` : ''}`}
+                      value={publicLiveUrl}
                       className="mt-2 w-full border border-blue-100 rounded-lg px-3 py-2 text-xs font-bold text-blue-900 bg-white"
                       onFocus={event => event.currentTarget.select()}
                     />
+                    <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="flex flex-wrap gap-2">
+                        <a
+                          href={publicLiveUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-xs font-black text-white hover:bg-blue-700"
+                        >
+                          <PlayCircle size={15} />
+                          Mở LIVE
+                        </a>
+                        <button
+                          type="button"
+                          onClick={() => void navigator.clipboard?.writeText(publicLiveUrl)}
+                          className="rounded-lg border border-blue-100 bg-white px-3 py-2 text-xs font-black text-blue-700 hover:bg-blue-50"
+                        >
+                          Sao chép link
+                        </button>
+                        <p className="basis-full text-[11px] font-semibold text-blue-700">
+                          QR dùng đúng link LIVE {getEventVenue(selectedEvent) === 'EH' ? 'EH' : 'EBUS'} ở trên.
+                        </p>
+                      </div>
+                      {publicLiveUrl && (
+                        <div className="w-fit shrink-0 rounded-lg border border-blue-100 bg-white p-2 shadow-sm">
+                          <QRCodeSVG value={publicLiveUrl} size={132} level="M" includeMargin />
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
 
