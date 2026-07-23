@@ -6,152 +6,676 @@
   <title>Hướng dẫn sử dụng | EINSTEIN BUS _ AI</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg: #0f172a;
-      --card: #0b1224;
-      --text: #e2e8f0;
-      --muted: #94a3b8;
-      --accent: #38bdf8;
-      --accent-2: #c084fc;
+      --bg: #f8fafc;
+      --panel: #ffffff;
+      --panel-soft: #f1f5f9;
+      --text: #0f172a;
+      --muted: #475569;
+      --line: #e2e8f0;
+      --blue: #2563eb;
+      --teal: #0f766e;
+      --amber: #b45309;
+      --rose: #be123c;
+      --ink: #111827;
     }
     * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
     body {
       margin: 0;
       font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      background: radial-gradient(circle at 10% 20%, rgba(56, 189, 248, 0.08), transparent 25%), radial-gradient(circle at 80% 0, rgba(192, 132, 252, 0.1), transparent 28%), var(--bg);
+      background: var(--bg);
       color: var(--text);
-      padding: 32px 16px 64px;
-      line-height: 1.6;
+      line-height: 1.65;
     }
+    a { color: var(--blue); font-weight: 700; text-decoration: none; }
     .shell {
-      max-width: 960px;
+      width: min(1180px, calc(100% - 32px));
       margin: 0 auto;
+      padding: 28px 0 64px;
     }
     .hero {
-      background: linear-gradient(135deg, rgba(56, 189, 248, 0.14), rgba(192, 132, 252, 0.14));
-      border: 1px solid rgba(148, 163, 184, 0.18);
-      border-radius: 20px;
-      padding: 28px 32px;
-      box-shadow: 0 20px 60px -30px rgba(0, 0, 0, 0.7);
-    }
-    h1 {
-      margin: 0 0 12px;
-      font-size: 28px;
-      letter-spacing: -0.02em;
-    }
-    p.lead {
-      margin: 0;
-      color: var(--muted);
-      font-size: 15px;
-    }
-    .grid {
       display: grid;
-      gap: 16px;
-      margin-top: 20px;
-      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 20px;
+      grid-template-columns: 1.4fr 0.8fr;
+      align-items: end;
+      padding: 28px;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      border-radius: 8px;
+      box-shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
     }
-    .card {
-      background: var(--card);
-      border: 1px solid rgba(148, 163, 184, 0.12);
-      border-radius: 16px;
-      padding: 18px 20px;
-      box-shadow: 0 10px 30px -18px rgba(0, 0, 0, 0.6);
-    }
-    h2 {
-      margin: 0 0 10px;
-      font-size: 20px;
-      letter-spacing: -0.01em;
-    }
-    h3 {
-      margin: 12px 0 8px;
-      font-size: 15px;
-      color: #e2e8f0;
-    }
-    ul, ol { padding-left: 18px; margin: 8px 0; color: var(--muted); }
-    li { margin: 4px 0; }
-    .pill {
+    .eyebrow {
       display: inline-flex;
       align-items: center;
       gap: 8px;
-      padding: 8px 12px;
+      padding: 6px 10px;
+      border: 1px solid #bfdbfe;
       border-radius: 999px;
-      background: rgba(56, 189, 248, 0.14);
-      color: #0ea5e9;
-      font-weight: 600;
+      background: #eff6ff;
+      color: #1d4ed8;
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    h1 {
+      margin: 14px 0 10px;
+      font-size: clamp(30px, 5vw, 52px);
+      line-height: 1.05;
+      letter-spacing: 0;
+    }
+    .lead {
+      margin: 0;
+      max-width: 760px;
+      color: var(--muted);
+      font-size: 16px;
+    }
+    .hero-box {
+      border: 1px solid var(--line);
+      background: var(--panel-soft);
+      border-radius: 8px;
+      padding: 16px;
+    }
+    .hero-box strong { display: block; margin-bottom: 6px; }
+    .toc {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      margin: 18px 0;
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding: 10px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.94);
+      backdrop-filter: blur(10px);
+      border-radius: 8px;
+    }
+    .toc a {
+      flex: 0 0 auto;
+      padding: 8px 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      color: var(--ink);
       font-size: 13px;
+      white-space: nowrap;
+    }
+    .section {
+      margin-top: 18px;
+      padding: 22px;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      border-radius: 8px;
+    }
+    h2 {
+      margin: 0 0 12px;
+      font-size: 24px;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+    h3 {
+      margin: 18px 0 8px;
+      font-size: 16px;
+      line-height: 1.25;
+    }
+    p { margin: 8px 0; color: var(--muted); }
+    ul, ol { margin: 8px 0 0; padding-left: 20px; color: var(--muted); }
+    li { margin: 5px 0; }
+    .grid {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    }
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+      background: #fff;
+    }
+    .card h3 { margin-top: 0; }
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: #eef2ff;
+      color: #3730a3;
+      font-size: 12px;
+      font-weight: 800;
+    }
+    .flow {
+      display: grid;
+      gap: 10px;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      counter-reset: step;
+    }
+    .step {
+      position: relative;
+      min-height: 112px;
+      padding: 16px 14px 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+    }
+    .step::before {
+      counter-increment: step;
+      content: counter(step);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 26px;
+      height: 26px;
+      margin-bottom: 10px;
+      border-radius: 999px;
+      background: var(--blue);
+      color: #fff;
+      font-size: 13px;
+      font-weight: 800;
+    }
+    .step strong { display: block; margin-bottom: 4px; }
+    .note {
+      border-left: 4px solid var(--amber);
+      background: #fffbeb;
+      color: #78350f;
+      padding: 12px 14px;
+      border-radius: 6px;
+    }
+    .warning {
+      border-left: 4px solid var(--rose);
+      background: #fff1f2;
+      color: #881337;
+      padding: 12px 14px;
+      border-radius: 6px;
+    }
+    .ok {
+      border-left: 4px solid var(--teal);
+      background: #ecfdf5;
+      color: #064e3b;
+      padding: 12px 14px;
+      border-radius: 6px;
     }
     .inline {
       color: var(--text);
-      font-weight: 600;
+      font-weight: 800;
     }
-    .muted { color: var(--muted); }
-    a { color: var(--accent); font-weight: 600; text-decoration: none; }
+    .kbd {
+      display: inline-block;
+      padding: 2px 6px;
+      border: 1px solid var(--line);
+      border-bottom-width: 2px;
+      border-radius: 6px;
+      background: #fff;
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 800;
+    }
+    footer {
+      margin-top: 22px;
+      color: #64748b;
+      font-size: 13px;
+      text-align: center;
+    }
+    @media (max-width: 820px) {
+      .shell { width: min(100% - 20px, 1180px); padding-top: 12px; }
+      .hero { grid-template-columns: 1fr; padding: 20px; }
+      .section { padding: 18px; }
+    }
   </style>
 </head>
 <body>
-  <div class="shell">
-    <div class="hero">
-      <div class="pill">EINSTEIN BUS _ AI · Hướng dẫn nhanh</div>
-      <h1>Vận hành kho & sự kiện tự tin, không bỏ sót bước</h1>
-      <p class="lead">Tận dụng dashboard mới để nhìn nhanh sức khỏe kho, sự kiện, báo giá và bán hàng. Dành cho team vận hành, kinh doanh và admin.</p>
-    </div>
-
-    <div class="grid">
-      <div class="card">
-        <h2>Bắt đầu trong 5 phút</h2>
-        <ol>
-          <li>Vào <span class="inline">Kho hàng</span> để thêm thiết bị (tên, số lượng, giá cho thuê/bán).</li>
-          <li>Tạo <span class="inline">Gói thiết bị</span> từ danh mục để báo giá hoặc xuất nhanh.</li>
-          <li>Lập <span class="inline">Báo giá khách</span> hoặc đơn <span class="inline">Hàng bán</span> khi cần bán lẻ.</li>
-          <li>Tạo <span class="inline">Sự kiện</span>, gắn báo giá (nếu có), thêm thiết bị/gói, phân công nhân sự.</li>
-          <li>Xuất kho cho sự kiện, hoàn tất thì <span class="inline">Trả kho</span> và cập nhật tình trạng (bảo trì/hỏng/mất).</li>
-        </ol>
+  <main class="shell">
+    <section class="hero">
+      <div>
+        <span class="eyebrow">EINSTEIN BUS _ AI · Hướng dẫn vận hành</span>
+        <h1>Quản lý kho, sự kiện, giáo dục, bán hàng và vận hành Einstein House</h1>
+        <p class="lead">Tài liệu này cập nhật theo phiên bản hiện tại của phần mềm: có Firebase sync, phân quyền, barcode, kiểm kho, báo giá, bán hàng, hồ sơ sự kiện, Einstein House OS, Elearning, nội dung giáo dục và hệ thống phát thanh tự động.</p>
       </div>
-
-      <div class="card">
-        <h2>Dashboard tổng quan</h2>
-        <ul>
-          <li>KPI nhanh: thiết bị toàn kho, đang xuất, tổng sự kiện, doanh thu ròng, báo giá đã chốt, số gói, nhân sự, hàng bán.</li>
-          <li>Biểu đồ doanh thu 6 tháng, trạng thái sự kiện, phân bố danh mục kho.</li>
-          <li>Danh sách nhanh: sự kiện sắp tới, cảnh báo tồn kho thấp, đơn bán gần nhất, báo giá gần nhất.</li>
-          <li>Chọn tab thanh bên để đi sâu vào từng module.</li>
-        </ul>
+      <div class="hero-box">
+        <strong>Nguyên tắc dùng nhanh</strong>
+        <p>Nhập dữ liệu nền trước, tạo gói/báo giá, lập sự kiện, xuất kho, vận hành onsite, trả kho và chốt báo cáo. Mỗi thao tác quan trọng đều nên để lại ghi chú rõ ràng.</p>
       </div>
+    </section>
 
-      <div class="card">
-        <h2>Luồng Sự kiện & Kho</h2>
-        <h3>Kho hàng</h3>
-        <ul>
-          <li>Thêm mới, nhập hàng loạt hoặc cập nhật tình trạng (đang dùng, bảo trì, hỏng, mất).</li>
-          <li>Dùng ô tìm kiếm và bộ lọc để kiểm tra nhanh số tồn.</li>
-        </ul>
-        <h3>Sự kiện</h3>
-        <ul>
-          <li>Chọn thiết bị/gói → nhập số lượng → hệ thống trừ tồn kho.</li>
-          <li>Gán nhân sự (ca/ngày), ghi chú nhiệm vụ và checklist từng bước.</li>
-          <li>Khi kết thúc, trả lại hàng để kho cập nhật tồn và đánh dấu hoàn thành.</li>
-        </ul>
-      </div>
+    <nav class="toc" aria-label="Mục lục">
+      <a href="#bat-dau">Bắt đầu</a>
+      <a href="#tong-quan">Dashboard</a>
+      <a href="#kho">Kho & barcode</a>
+      <a href="#kiem-kho">Kiểm kho</a>
+      <a href="#bao-gia-ban-hang">Báo giá & bán hàng</a>
+      <a href="#su-kien">Sự kiện</a>
+      <a href="#einstein-house">Einstein House OS</a>
+      <a href="#giao-duc">Nội dung GD</a>
+      <a href="#phat-thanh">Thiết bị tương tác</a>
+      <a href="#nhan-su">Nhân sự</a>
+      <a href="#elearning">Elearning</a>
+      <a href="#admin">Admin</a>
+    </nav>
 
-      <div class="card">
-        <h2>Báo giá & Hàng bán</h2>
-        <ul>
-          <li>Tạo báo giá từ gói/thiết bị; khi khách chốt, đồng bộ báo giá sang sự kiện để sinh danh mục xuất.</li>
-          <li>Quản lý đơn bán lẻ: xuất, xác nhận bán, lập phiếu trả hàng nếu khách trả lại.</li>
-          <li>Gắn đơn bán với sự kiện để theo dõi doanh thu theo nhóm.</li>
-        </ul>
-        <h3>Mẹo & lưu ý</h3>
-        <ul>
-          <li>Dùng <span class="inline">Trợ lý AI</span> (nút bong bóng góc phải) để hỏi nhanh: tồn kho, sự kiện đang mượn thiết bị, hoặc cảnh báo thiếu hàng.</li>
-          <li>Mọi thay đổi được lưu lên <span class="inline">Firebase</span>, làm mới trang không mất dữ liệu.</li>
-          <li>Activity Log ở góc phải trên giúp rà lại thao tác gần nhất.</li>
-          <li>Nếu nhập số trả kho vượt số đã xuất, hệ thống sẽ cảnh báo để tránh sai lệch.</li>
-        </ul>
-        <p class="muted">Cần thêm hỗ trợ? Liên hệ quản trị viên dự án hoặc mở Activity Log để xem ai đã thao tác gần nhất.</p>
+    <section id="bat-dau" class="section">
+      <h2>Bắt Đầu</h2>
+      <div class="flow">
+        <div class="step"><strong>Đăng nhập</strong><p>Dùng tài khoản được cấp. Nếu không thấy module cần dùng, liên hệ Admin để kiểm tra quyền.</p></div>
+        <div class="step"><strong>Chuẩn hóa dữ liệu nền</strong><p>Nhập kho, nhân sự, gói thiết bị, hàng bán và nội dung giáo dục trước khi tạo nhiều sự kiện.</p></div>
+        <div class="step"><strong>Tạo báo giá hoặc sự kiện</strong><p>Báo giá giúp chốt cấu hình nhanh. Sự kiện là nơi điều phối thiết bị, nhân sự, chi phí và checklist.</p></div>
+        <div class="step"><strong>Xuất kho và vận hành</strong><p>Dùng barcode/checklist để giao nhận, ghi nhận thiếu, hỏng, mất và chữ ký bàn giao.</p></div>
+        <div class="step"><strong>Chốt dữ liệu</strong><p>Trả kho, xác nhận doanh thu/chi phí, xuất hồ sơ sự kiện và rà lại nhật ký thao tác.</p></div>
       </div>
-    </div>
-  </div>
+      <p class="note"><span class="inline">Lưu ý:</span> dữ liệu được lưu local và đồng bộ Firebase khi cấu hình môi trường đầy đủ. Không chia sẻ API key hoặc file môi trường nội bộ ra ngoài.</p>
+    </section>
+
+    <section id="tong-quan" class="section">
+      <h2>Dashboard Tổng Quan</h2>
+      <div class="grid">
+        <div class="card">
+          <h3>KPI nhanh</h3>
+          <ul>
+            <li>Thiết bị toàn kho, thiết bị đang xuất, số sự kiện, báo giá đã chốt.</li>
+            <li>Doanh thu ròng, đơn bán, số gói/combo, số nhân sự.</li>
+            <li>Cảnh báo tồn thấp và các danh sách cần xử lý gần nhất.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Biểu đồ</h3>
+          <ul>
+            <li>Doanh thu theo tháng.</li>
+            <li>Trạng thái sự kiện.</li>
+            <li>Phân bổ danh mục kho.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="kho" class="section">
+      <h2>Kho Hàng & Barcode</h2>
+      <div class="grid">
+        <div class="card">
+          <h3>Quản lý thiết bị</h3>
+          <ul>
+            <li>Thêm mới hoặc sửa thiết bị với tên, danh mục, mô tả, ảnh, vị trí, giá thuê, số lượng và ngưỡng tồn tối thiểu.</li>
+            <li>Phân loại vòng đời: tài sản khấu hao hoặc vật tư tiêu hao.</li>
+            <li>Theo dõi số sẵn kho, đang dùng, bảo trì, hỏng, mất và số lần sử dụng.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Nhập kho</h3>
+          <ul>
+            <li>Tạo phiếu nhập với nguồn nhập, ghi chú và nhiều dòng hàng.</li>
+            <li>Nhập vào mã đã có, tạo mã mới hoặc ghi nhận hàng dự kiến mua/sản xuất.</li>
+            <li>Xuất danh sách mua hàng cho các mã thiếu hoặc đã lên kế hoạch.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Barcode</h3>
+          <ul>
+            <li>Hệ thống tự sinh mã nếu thiết bị chưa có barcode.</li>
+            <li>Tìm thiết bị bằng mã hoặc tên.</li>
+            <li>In tem theo danh sách chọn, điều chỉnh số lượng tem và chiều cao nhãn.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Cập nhật tình trạng</h3>
+          <ul>
+            <li>Chuyển hàng sang bảo trì, báo hỏng, báo mất, sửa xong hoặc thanh lý.</li>
+            <li>Ghi chú lý do mỗi lần đổi trạng thái để dễ đối soát.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="kiem-kho" class="section">
+      <h2>Kiểm Kho</h2>
+      <div class="grid">
+        <div class="card">
+          <h3>Tạo phiên kiểm</h3>
+          <ul>
+            <li>Chọn đối chiếu theo <span class="inline">số sẵn kho</span> hoặc <span class="inline">tổng kho</span>.</li>
+            <li>Đặt tên phiên, thêm ghi chú và bắt đầu quét barcode.</li>
+            <li>Mã chưa có trong hệ thống được đưa vào danh sách barcode lạ.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Nhập số kiểm</h3>
+          <ul>
+            <li>Quét mã rồi nhấn <span class="kbd">Enter</span>, hoặc tìm thiết bị thủ công.</li>
+            <li>Dùng chế độ đặt số lượng hoặc cộng thêm số lượng.</li>
+            <li>Đánh dấu thiết bị đã dán tem thực tế nếu cần rà soát nhãn.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Xuất kết quả</h3>
+          <ul>
+            <li>Lưu phiên kiểm để có lịch sử.</li>
+            <li>Xuất CSV cho bảng lệch kho.</li>
+            <li>Mở bản in hoặc xuất PDF biên bản kiểm kho.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="bao-gia-ban-hang" class="section">
+      <h2>Báo Giá, Gói Thiết Bị & Bán Hàng</h2>
+      <div class="grid">
+        <div class="card">
+          <h3>Gói thiết bị</h3>
+          <ul>
+            <li>Tạo combo từ nhiều thiết bị, khai báo số lượng từng mã.</li>
+            <li>Phân loại gói giáo dục hoặc gói hỗ trợ sự kiện.</li>
+            <li>Dùng gói để báo giá, xuất kho nhanh hoặc tạo trạm trong Einstein House OS.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Báo giá</h3>
+          <ul>
+            <li>Tạo báo giá từ thiết bị lẻ và gói.</li>
+            <li>Cập nhật số lượng, giảm giá, thuế, ghi chú và hạn hiệu lực.</li>
+            <li>Xem chi tiết và xuất PDF gửi khách.</li>
+            <li>Khi khách chốt, liên kết báo giá sang sự kiện để sinh danh mục cần chuẩn bị.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Hàng bán</h3>
+          <ul>
+            <li>Quản lý danh mục hàng bán với ảnh, giá, link mua và barcode.</li>
+            <li>Lập đơn theo khách hàng hoặc gắn với sự kiện.</li>
+            <li>Hỗ trợ chiết khấu theo dòng, chiết khấu đơn, quét mã thanh toán từng phần và lịch sử đơn.</li>
+            <li>Ghi nhận trả hàng/refund để doanh thu ròng không bị sai.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="su-kien" class="section">
+      <h2>Sự Kiện & Vận Hành</h2>
+      <div class="grid">
+        <div class="card">
+          <h3>Tạo và quản lý sự kiện</h3>
+          <ul>
+            <li>Nhập tên, khách hàng, địa điểm, loại venue, sĩ số học sinh, ngày và ca.</li>
+            <li>Quản lý lịch nhiều ngày, trạng thái sắp diễn ra, đang chạy, hoàn tất hoặc hủy.</li>
+            <li>Theo dõi quy trình 5 bước: chốt đơn, lên kế hoạch, đóng gói, tổ chức, hoàn tất.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Hồ sơ sự kiện</h3>
+          <ul>
+            <li>Lưu thông tin trường/đối tác, người liên hệ, mục tiêu, nhóm tuổi, quy mô và phạm vi bán hàng.</li>
+            <li>Ước tính hậu cần theo địa bàn, tuyến đường, chi phí vận chuyển và mốc thời gian.</li>
+            <li>Xuất hồ sơ sự kiện gồm kế hoạch, nhân sự, chi phí, timeline, layout và danh mục thiết bị.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Thiết bị & checklist</h3>
+          <ul>
+            <li>Thêm thiết bị lẻ hoặc gói vào sự kiện, kiểm soát số lượng xuất/trả.</li>
+            <li>Checklist barcode chiều đi và chiều về, ghi nhận OK, hỏng, mất, thiếu.</li>
+            <li>Ký bàn giao quản lý/kỹ thuật hoặc người vận hành theo từng lượt.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Nhân sự, chi phí và lợi nhuận</h3>
+          <ul>
+            <li>Phân công nhân sự theo giờ, ngày hoặc khoản cố định; chọn ca sáng/chiều/tối.</li>
+            <li>Nhân sự có thể đăng ký hoặc hủy đăng ký ca nếu được cấp quyền.</li>
+            <li>Ghi chi phí vận chuyển, in ấn, vật tư, ăn uống, lưu trú và các khoản khác.</li>
+            <li>Theo dõi tạm ứng, hoàn ứng, thanh toán và lợi nhuận sự kiện.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Timeline và sơ đồ trạm</h3>
+          <ul>
+            <li>Lập timeline trước, trong và sau sự kiện.</li>
+            <li>Thiết kế sơ đồ trạm bằng các block kéo/thả trên ảnh mặt bằng hoặc canvas trống.</li>
+            <li>Gắn trạm với gói, nhân sự phụ trách và màu nhận diện.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="einstein-house" class="section">
+      <h2>Einstein House OS</h2>
+      <p>Module này dùng cho các chương trình tại Einstein House hoặc sự kiện có cấu trúc trạm trải nghiệm.</p>
+      <div class="grid">
+        <div class="card">
+          <h3>CONTROL</h3>
+          <ul>
+            <li>Chọn sự kiện, tạo cấu hình vận hành, cập nhật sĩ số, số giáo viên, số nhóm và phòng.</li>
+            <li>Quản lý trạng thái tổng, ghi chú live và thông tin vận hành nhanh.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>DESIGN</h3>
+          <ul>
+            <li>Tạo trạm từ gói thiết bị, từ mẫu mặc định hoặc từ khu vực trống.</li>
+            <li>Khai báo mục tiêu, SOP, checklist, thiết bị, phòng, thời lượng và nội dung giáo dục liên kết.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>AGENDA</h3>
+          <ul>
+            <li>Tự sinh agenda theo giờ bắt đầu, số trạm và sĩ số.</li>
+            <li>Chia nhóm luân chuyển, tách ca sáng/chiều, thêm nghỉ giữa giờ hoặc hoạt động chung.</li>
+            <li>Kiểm tra cảnh báo trùng phòng/trùng trạm và điều chỉnh thời lượng.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>TASKS</h3>
+          <ul>
+            <li>Tạo task chuẩn bị, gán người phụ trách, deadline và trạng thái.</li>
+            <li>Ghi nhận incident, mức độ nghiêm trọng, người xử lý và trạng thái đã giải quyết.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>KNOWLEDGE</h3>
+          <ul>
+            <li>Mở nhanh hướng dẫn sử dụng thiết bị, nội dung giáo dục và kịch bản dẫn đoàn theo từng trạm.</li>
+            <li>Liên kết với module Nội dung GD và Elearning.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>LIVE & REPORT</h3>
+          <ul>
+            <li>Chạy live theo nhóm hoặc phòng, xem trạm hiện tại và mốc tiếp theo.</li>
+            <li>Ghi feedback từ guide, giáo viên hoặc nội bộ.</li>
+            <li>Tổng hợp báo cáo sau chương trình.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="giao-duc" class="section">
+      <h2>Nội Dung Giáo Dục</h2>
+      <div class="grid">
+        <div class="card">
+          <h3>Hoạt động và chủ đề</h3>
+          <ul>
+            <li>Tạo hoạt động giáo dục, nhóm tuổi, mô tả và các chủ đề con.</li>
+            <li>Mỗi chủ đề có hướng dẫn sử dụng, nội dung sư phạm, kịch bản dẫn đoàn và mục tiêu học tập.</li>
+            <li>Có thể sinh lại khung nội dung mẫu để biên tập nhanh.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Liên kết học liệu</h3>
+          <ul>
+            <li>Gắn thiết bị lẻ hoặc gói học liệu vào từng chủ đề.</li>
+            <li>Gắn bài học Elearning để nhân sự học trước khi chạy trạm.</li>
+            <li>Mở nhanh bài học liên quan từ màn hình nội dung.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="phat-thanh" class="section">
+      <h2>Thiết Bị Tương Tác & Phát Thanh</h2>
+      <div class="grid">
+        <div class="card">
+          <h3>Thiết bị và chế độ chạy</h3>
+          <ul>
+            <li>Quản lý thiết bị phát thanh/trình chiếu theo địa điểm.</li>
+            <li>Bật/tắt tự động, chọn chế độ tablet, chỉnh âm lượng nền và âm lượng thông báo.</li>
+            <li>Hỗ trợ wake lock để màn hình thiết bị phát không tự tắt khi đang vận hành.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Âm thanh</h3>
+          <ul>
+            <li>Thêm audio bằng upload file, URL hoặc voice AI từ nội dung nhập.</li>
+            <li>Quản lý playlist YouTube nền, chế độ một bài hoặc lặp toàn bộ.</li>
+            <li>Thiết lập giảm âm nền khi phát thông báo.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Lịch và luật phát</h3>
+          <ul>
+            <li>Lên lịch thông báo theo giờ, thứ trong tuần và mức ưu tiên.</li>
+            <li>Thiết lập giờ mở cửa, giờ im lặng và ngoại lệ nghỉ trưa.</li>
+            <li>Tự phát theo sự kiện: bắt đầu sự kiện, bắt đầu/kết thúc block, trước khi hết lượt, nghỉ trưa và closing.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Nhật ký phát</h3>
+          <ul>
+            <li>Xem thông báo đã phát, nguồn phát thủ công/lịch/sự kiện và thời điểm phát.</li>
+            <li>Dùng nhật ký để kiểm tra sự cố âm thanh hoặc sai lịch.</li>
+          </ul>
+        </div>
+      </div>
+      <p class="warning"><span class="inline">Trước khi chạy thực tế:</span> kiểm tra loa, âm lượng, quyền autoplay của trình duyệt, đường truyền mạng và thiết bị phát nền.</p>
+    </section>
+
+    <section id="nhan-su" class="section">
+      <h2>Nhân Sự & Lương</h2>
+      <div class="grid">
+        <div class="card">
+          <h3>Danh sách nhân sự</h3>
+          <ul>
+            <li>Thêm/sửa nhân sự với vai trò, số điện thoại, email, ảnh đại diện và đơn giá mặc định.</li>
+            <li>Ẩn nhân sự không còn hoạt động mà không làm mất lịch sử sự kiện.</li>
+            <li>Tìm nhanh theo tên, vai trò hoặc số điện thoại.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Bảng công</h3>
+          <ul>
+            <li>Lọc theo tháng và venue.</li>
+            <li>Tổng hợp ca tham gia, số giờ/ngày, công theo quy tắc và phụ cấp/thưởng.</li>
+            <li>In bảng lương để đối soát nội bộ.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="elearning" class="section">
+      <h2>Elearning</h2>
+      <div class="grid">
+        <div class="card">
+          <h3>Học và làm bài</h3>
+          <ul>
+            <li>Xem lộ trình theo nhóm kỹ năng: vận hành, nội dung, bán hàng, hậu cần và leadership.</li>
+            <li>Mở bài học video/PDF, đọc tóm tắt và kỹ năng cần đạt.</li>
+            <li>Làm quiz trắc nghiệm hoặc câu hỏi mở, xem điểm và phản hồi.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Theo dõi tiến độ</h3>
+          <ul>
+            <li>Xem hồ sơ học tập, bài đã hoàn thành, tổng điểm, badge và thứ hạng.</li>
+            <li>Leaderboard cá nhân và tiến độ đội nhóm cho quản lý.</li>
+            <li>Quản lý quyền làm lại bài nếu cần đánh giá lại.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Biên tập nội dung</h3>
+          <ul>
+            <li>Thêm/sửa lộ trình, bài học, kỹ năng và câu hỏi.</li>
+            <li>Import nhanh câu hỏi quiz theo định dạng nội bộ.</li>
+            <li>Thiết lập điều kiện thăng bậc nghề nghiệp theo thâm niên, số sự kiện và điểm trung bình.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="admin" class="section">
+      <h2>Admin, Phân Quyền, Nhật Ký & AI</h2>
+      <div class="grid">
+        <div class="card">
+          <h3>Tài khoản và phân quyền</h3>
+          <ul>
+            <li>Tạo tài khoản theo số điện thoại, tên, vai trò Admin/Manager/Staff và nhân sự liên kết.</li>
+            <li>Cấp hoặc thu hồi quyền theo từng module: xem, sửa, xóa, quản lý truy cập.</li>
+            <li>Áp quyền hàng loạt theo nhóm vai trò và reset quyền mặc định.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Nhật ký hoạt động</h3>
+          <ul>
+            <li>Activity Log ở góc phải hiển thị thao tác mới nhất.</li>
+            <li>Trang Nhật ký cho phép tìm kiếm, lọc theo loại log, người thao tác và trạng thái phiên online.</li>
+            <li>Dùng log để truy vết khi dữ liệu bị sửa sai hoặc cần biết ai vừa thao tác.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Trợ lý AI</h3>
+          <ul>
+            <li>Mở bong bóng chat để hỏi nhanh về tồn kho, sự kiện, thiết bị đang mượn hoặc cảnh báo thiếu hàng.</li>
+            <li>AI trả lời dựa trên dữ liệu hiện có trong app; vẫn cần đối chiếu số liệu quan trọng trước khi chốt vận hành.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Đồng bộ dữ liệu</h3>
+          <ul>
+            <li>Ứng dụng lưu dữ liệu local để tránh mất thao tác khi làm mới trang.</li>
+            <li>Khi Firebase được cấu hình, dữ liệu đồng bộ theo collection và có cơ chế version để giảm xung đột ghi.</li>
+            <li>Phiên học Elearning theo người dùng được lưu riêng để giữ tiến độ cá nhân.</li>
+          </ul>
+        </div>
+      </div>
+      <p class="ok"><span class="inline">Khuyến nghị vận hành:</span> trước mỗi sự kiện lớn, kiểm tra quyền người dùng, dữ liệu kho, checklist barcode, lịch phát thanh, timeline và danh sách nhân sự đã được cập nhật.</p>
+    </section>
+
+    <section class="section">
+      <h2>Checklist Trước Khi Chạy Sự Kiện</h2>
+      <div class="grid">
+        <div class="card">
+          <span class="tag">Kho</span>
+          <ul>
+            <li>Thiết bị đủ số lượng và đúng trạng thái sẵn kho.</li>
+            <li>Barcode đã dán và quét thử được.</li>
+            <li>Phiếu xuất/checklist đã chuẩn bị.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <span class="tag">Sự kiện</span>
+          <ul>
+            <li>Hồ sơ khách, lịch, địa điểm, map và người liên hệ đã đúng.</li>
+            <li>Nhân sự, ca làm, nhiệm vụ và chi phí dự kiến đã nhập.</li>
+            <li>Timeline hậu cần và sơ đồ trạm đã rà soát.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <span class="tag">Einstein House</span>
+          <ul>
+            <li>Agenda, nhóm luân chuyển, phòng và trạm không bị trùng.</li>
+            <li>Task chuẩn bị, incident plan và nội dung giáo dục đã sẵn sàng.</li>
+            <li>Live view đã chọn đúng nhóm/phòng.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <span class="tag">Âm thanh</span>
+          <ul>
+            <li>Lịch phát, luật sự kiện, playlist nền và giờ im lặng đã đúng.</li>
+            <li>Thiết bị phát không ngủ màn hình, loa và mạng hoạt động ổn định.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      EINSTEIN BUS _ AI · Tài liệu hướng dẫn cập nhật cho bản phần mềm hiện tại.
+    </footer>
+  </main>
 </body>
 </html>
