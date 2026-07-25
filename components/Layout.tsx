@@ -2,20 +2,21 @@
 import React from 'react';
 import { 
   LayoutDashboard, Package, CalendarDays, 
-  Settings, Layers, Users, FileText, BookOpen, ShoppingBag, LucideIcon, GraduationCap, LogOut, ClipboardList, ScanBarcode, LibraryBig, RadioTower
+  Settings, Layers, Users, FileText, BookOpen, ShoppingBag, LucideIcon, GraduationCap, LogOut, ClipboardList, ScanBarcode, LibraryBig, RadioTower, ChartNoAxesCombined
 } from 'lucide-react';
 import { ActivityLog } from './ActivityLog';
 import { LogEntry, UserAccount } from '../types';
 
 interface LayoutProps {
   children: React.ReactNode;
-  activeTab: 'dashboard' | 'inventory' | 'stocktake' | 'events' | 'education' | 'interactiveDevices' | 'packages' | 'employees' | 'quotations' | 'sales' | 'elearning' | 'logs';
-  onTabChange: (tab: 'dashboard' | 'inventory' | 'stocktake' | 'events' | 'education' | 'interactiveDevices' | 'packages' | 'employees' | 'quotations' | 'sales' | 'elearning' | 'logs') => void;
+  activeTab: 'dashboard' | 'reports' | 'inventory' | 'stocktake' | 'events' | 'education' | 'interactiveDevices' | 'packages' | 'employees' | 'quotations' | 'sales' | 'elearning' | 'logs';
+  onTabChange: (tab: 'dashboard' | 'reports' | 'inventory' | 'stocktake' | 'events' | 'education' | 'interactiveDevices' | 'packages' | 'employees' | 'quotations' | 'sales' | 'elearning' | 'logs') => void;
   logs: LogEntry[];
   currentUser?: UserAccount | null;
   canManageAccess?: boolean;
   canViewLogs?: boolean;
   canViewDashboard?: boolean;
+  canViewReports?: boolean;
   canViewInventory?: boolean;
   canViewStocktake?: boolean;
   canViewPackages?: boolean;
@@ -39,6 +40,7 @@ export const Layout: React.FC<LayoutProps> = ({
   canManageAccess, 
   canViewLogs, 
   canViewDashboard = true,
+  canViewReports = true,
   canViewInventory = true,
   canViewStocktake = true,
   canViewPackages = true,
@@ -54,6 +56,7 @@ export const Layout: React.FC<LayoutProps> = ({
 }) => {
   const tabs: { key: LayoutProps['activeTab']; label: string; icon: LucideIcon }[] = [
     { key: 'dashboard', label: 'Tổng quan', icon: LayoutDashboard },
+    { key: 'reports', label: 'Báo cáo', icon: ChartNoAxesCombined },
     { key: 'inventory', label: 'Kho hàng', icon: Package },
     { key: 'stocktake', label: 'Kiểm kho', icon: ScanBarcode },
     { key: 'packages', label: 'Gói thiết bị', icon: Layers },
@@ -66,6 +69,7 @@ export const Layout: React.FC<LayoutProps> = ({
     { key: 'elearning', label: 'Elearning', icon: GraduationCap }
   ].filter(tab =>
     (tab.key !== 'dashboard' || canViewDashboard) &&
+    (tab.key !== 'reports' || canViewReports) &&
     (tab.key !== 'inventory' || canViewInventory) &&
     (tab.key !== 'stocktake' || canViewStocktake) &&
     (tab.key !== 'packages' || canViewPackages) &&

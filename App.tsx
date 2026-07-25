@@ -15,6 +15,7 @@ import { AdminLogPage } from './components/AdminLogPage';
 import { EinsteinHouseOS } from './components/EinsteinHouseOS';
 import { EducationContentManager } from './components/EducationContentManager';
 import { InteractiveDeviceManager } from './components/InteractiveDeviceManager';
+import { ReportManager } from './components/ReportManager';
 import { AppState, InventoryItem, Event, EventStatus, Transaction, TransactionType, ComboPackage, Employee, Quotation, EventStaffAllocation, EventStaffRegistration, EventExpense, EventAdvanceRequest, LogEntry, ChecklistDirection, ChecklistStatus, ChecklistSignature, EventChecklist, LearningAttempt, LearningProfile, AccessPermission, UserAccount, LearningTrack, InventoryReceipt, InventoryReceiptItem, ActiveSession, PayrollAdjustment, InventoryAuditSession, InventoryAuditItem, InventoryAuditBaseline, EducationActivity, EducationLessonLink, InteractiveDeviceProfile, HouseOperationInstance } from './types';
 import { MOCK_INVENTORY, MOCK_EVENTS, MOCK_TRANSACTIONS, MOCK_PACKAGES, MOCK_EMPLOYEES, MOCK_LEARNING_TRACKS, MOCK_CAREER_RANKS, DEFAULT_USER_ACCOUNTS, MOCK_INVENTORY_RECEIPTS, MOCK_EDUCATION_ACTIVITIES, MOCK_INTERACTIVE_DEVICES } from './constants';
 import { MessageSquare } from 'lucide-react';
@@ -36,7 +37,7 @@ const getEventStaffSessions = (staff?: Pick<EventStaffAllocation, 'session' | 's
 const getEventStaffAllocationKey = (staff: EventStaffAllocation, index?: number) =>
   staff.id || staff.autoKey || `${staff.employeeId}-${staff.shiftDate || 'no-date'}-${getEventStaffSessions(staff).join('-') || staff.session || 'no-session'}-${index ?? 0}`;
 
-type AppTab = 'dashboard' | 'inventory' | 'stocktake' | 'events' | 'education' | 'interactiveDevices' | 'packages' | 'employees' | 'quotations' | 'sales' | 'elearning' | 'logs';
+type AppTab = 'dashboard' | 'reports' | 'inventory' | 'stocktake' | 'events' | 'education' | 'interactiveDevices' | 'packages' | 'employees' | 'quotations' | 'sales' | 'elearning' | 'logs';
 
 const PRIMARY_CONTENT_PROGRAM_ID = 'primary-content-program';
 
@@ -437,6 +438,7 @@ const App: React.FC = () => {
     : undefined;
   const canViewLogs = can('LOGS_VIEW');
   const canViewDashboard = can('DASHBOARD_VIEW');
+  const canViewReports = can('REPORTS_VIEW');
   const canViewInventory = can('INVENTORY_VIEW');
   const canViewStocktake = canViewInventory;
   const canViewPackages = can('PACKAGES_VIEW');
@@ -451,6 +453,7 @@ const App: React.FC = () => {
   const isElearningAdmin = currentUser?.role === 'ADMIN' || currentUser?.role === 'MANAGER';
   const firstAccessibleTab: AppTab =
     (canViewDashboard && 'dashboard') ||
+    (canViewReports && 'reports') ||
     (canViewEvents && 'events') ||
     (canViewEducation && 'education') ||
     (canViewInteractiveDevices && 'interactiveDevices') ||
@@ -549,6 +552,7 @@ const App: React.FC = () => {
   useEffect(() => {
     const tabAccessMap: Record<AppTab, boolean> = {
       dashboard: canViewDashboard,
+      reports: canViewReports,
       inventory: canViewInventory,
       stocktake: canViewStocktake,
       events: canViewEvents,
@@ -568,6 +572,7 @@ const App: React.FC = () => {
   }, [
     activeTab,
     canViewDashboard,
+    canViewReports,
     canViewEmployees,
     canViewInventory,
     canViewStocktake,
@@ -2386,6 +2391,7 @@ const App: React.FC = () => {
       canManageAccess={can('ACCESS_MANAGE')}
       canViewLogs={canViewLogs}
       canViewDashboard={canViewDashboard}
+      canViewReports={canViewReports}
       canViewInventory={canViewInventory}
       canViewStocktake={canViewStocktake}
       canViewPackages={canViewPackages}
@@ -2400,6 +2406,7 @@ const App: React.FC = () => {
       onLogout={handleLogout}
     >
       {activeTab === 'dashboard' && canViewDashboard && <Dashboard appState={appState} />}
+      {activeTab === 'reports' && canViewReports && <ReportManager appState={appState} />}
       {activeTab === 'inventory' && canViewInventory && (
         <InventoryManager 
           inventory={appState.inventory} 

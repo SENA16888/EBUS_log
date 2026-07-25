@@ -1,12 +1,13 @@
 import { AccessPermission, AccessRole, UserAccount } from '../types';
 
-export const ACCESS_PERMISSION_VERSION = 4;
+export const ACCESS_PERMISSION_VERSION = 5;
 
 export const ACCESS_PERMISSION_GROUPS: { group: string; items: { key: AccessPermission; label: string }[] }[] = [
   {
     group: 'Tong quan',
     items: [
-      { key: 'DASHBOARD_VIEW', label: 'Xem dashboard tong quan' }
+      { key: 'DASHBOARD_VIEW', label: 'Xem dashboard tong quan' },
+      { key: 'REPORTS_VIEW', label: 'Xem bao cao tong hop' }
     ]
   },
   {
@@ -92,6 +93,7 @@ export const ALL_ACCESS_PERMISSIONS: AccessPermission[] = ACCESS_PERMISSION_GROU
 const LEGACY_ROLE_VIEW_PERMISSIONS: Record<Exclude<AccessRole, 'ADMIN'>, AccessPermission[]> = {
   MANAGER: [
     'DASHBOARD_VIEW',
+    'REPORTS_VIEW',
     'INVENTORY_VIEW',
     'PACKAGES_VIEW',
     'EVENTS_VIEW',
@@ -156,6 +158,7 @@ export const normalizePermissionsForRole = (
     nextPermissions.add('EDUCATION_EDIT');
     nextPermissions.add('INTERACTIVE_DEVICES_VIEW');
     nextPermissions.add('INTERACTIVE_DEVICES_EDIT');
+    nextPermissions.add('REPORTS_VIEW');
   }
 
   MODULE_VIEW_DEPENDENCIES.forEach(({ view, related }) => {

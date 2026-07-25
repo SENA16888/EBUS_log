@@ -664,6 +664,7 @@ export type AccessRole = 'ADMIN' | 'MANAGER' | 'STAFF';
 
 export type AccessPermission =
   | 'DASHBOARD_VIEW'
+  | 'REPORTS_VIEW'
   | 'INVENTORY_VIEW'
   | 'INVENTORY_EDIT'
   | 'INVENTORY_DELETE'
