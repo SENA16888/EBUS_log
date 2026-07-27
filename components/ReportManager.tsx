@@ -25,7 +25,7 @@ import {
   XAxis,
   YAxis
 } from 'recharts';
-import { AppState, Event, EventExpense, EventStatus, InventoryItem, SaleOrder } from '../types';
+import { AppState, Event, EventExpense, EventStatus, SaleOrder } from '../types';
 import { calcLineTotal } from '../services/pricing';
 
 interface ReportManagerProps {
@@ -65,6 +65,30 @@ const STATUS_COLORS: Record<EventStatus, string> = {
 const formatNumber = (value: number) => value.toLocaleString('vi-VN');
 const formatCurrency = (value: number) => `${Math.round(value || 0).toLocaleString('vi-VN')} đ`;
 const currentMonth = () => new Date().toISOString().slice(0, 7);
+const monthToIndex = (month: string) => {
+  const [year, monthNumber] = month.split('-').map(Number);
+  return year * 12 + monthNumber - 1;
+};
+
+const normalizeMonthRange = (startMonth: string, endMonth: string) => {
+  const fallback = currentMonth();
+  const start = startMonth || fallback;
+  const end = endMonth || start;
+  return monthToIndex(start) <= monthToIndex(end)
+    ? { startMonth: start, endMonth: end }
+    : { startMonth: end, endMonth: start };
+};
+
+const formatMonthLabel = (month: string) => {
+  const [year, monthNumber] = month.split('-').map(Number);
+  if (!year || !monthNumber) return month;
+  return `Tháng ${monthNumber}/${year}`;
+};
+
+const formatRangeLabel = (startMonth: string, endMonth: string) =>
+  startMonth === endMonth
+    ? formatMonthLabel(startMonth)
+    : `${formatMonthLabel(startMonth)} - ${formatMonthLabel(endMonth)}`;
 
 const safeDate = (value?: string) => {
   if (!value) return null;
@@ -72,16 +96,18 @@ const safeDate = (value?: string) => {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 };
 
-const isDateInMonth = (value: string | undefined, month: string) => {
+const isDateInRange = (value: string | undefined, startMonth: string, endMonth: string) => {
   if (!value) return false;
-  return value.slice(0, 7) === month;
+  const monthValue = value.slice(0, 7);
+  return monthToIndex(monthValue) >= monthToIndex(startMonth) && monthToIndex(monthValue) <= monthToIndex(endMonth);
 };
 
-const isEventInMonth = (event: Event, month: string) => {
-  if ((event.schedule || []).some(item => isDateInMonth(item.date, month))) return true;
-  const [year, monthIndex] = month.split('-').map(Number);
-  const periodStart = new Date(year, monthIndex - 1, 1).getTime();
-  const periodEnd = new Date(year, monthIndex, 0, 23, 59, 59, 999).getTime();
+const isEventInRange = (event: Event, startMonth: string, endMonth: string) => {
+  if ((event.schedule || []).some(item => isDateInRange(item.date, startMonth, endMonth))) return true;
+  const [startYear, startMonthNumber] = startMonth.split('-').map(Number);
+  const [endYear, endMonthNumber] = endMonth.split('-').map(Number);
+  const periodStart = new Date(startYear, startMonthNumber - 1, 1).getTime();
+  const periodEnd = new Date(endYear, endMonthNumber, 0, 23, 59, 59, 999).getTime();
   const start = safeDate(event.startDate)?.getTime();
   const end = safeDate(event.endDate || event.startDate)?.getTime();
   if (!start && !end) return false;
@@ -97,9 +123,6 @@ const getOrderRevenue = (order: SaleOrder) => {
   }, 0);
   return Math.max(0, subtotal - (order.orderDiscount || 0));
 };
-
-const sumRecord = (record?: Record<string, number>) =>
-  Object.values(record || {}).reduce((sum, value) => sum + (Number(value) || 0), 0);
 
 const csvCell = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
 
@@ -123,15 +146,18 @@ const escapeHtml = (value: unknown) =>
   }[char] || char));
 
 export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
-  const [month, setMonth] = useState(currentMonth);
+  const [startMonth, setStartMonth] = useState(currentMonth);
+  const [endMonth, setEndMonth] = useState(currentMonth);
 
   const report = useMemo(() => {
+    const period = normalizeMonthRange(startMonth, endMonth);
+    const periodLabel = formatRangeLabel(period.startMonth, period.endMonth);
     const inventoryMap = new Map(appState.inventory.map(item => [item.id, item]));
     const monthlyEvents = appState.events
-      .filter(event => isEventInMonth(event, month))
+      .filter(event => isEventInRange(event, period.startMonth, period.endMonth))
       .sort((a, b) => (a.startDate || '').localeCompare(b.startDate || ''));
 
-    const saleOrders = (appState.saleOrders || []).filter(order => isDateInMonth(order.date, month));
+    const saleOrders = (appState.saleOrders || []).filter(order => isDateInRange(order.date, period.startMonth, period.endMonth));
     const sales = saleOrders.filter(order => (order.type || 'SALE') !== 'RETURN');
     const returns = saleOrders.filter(order => (order.type || '') === 'RETURN');
     const finalizedSales = sales.filter(order => order.status === 'FINALIZED');
@@ -139,7 +165,7 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
     const returnValue = returns.reduce((sum, order) => sum + Math.abs(order.total || order.subtotal || 0), 0);
     const netSaleRevenue = saleRevenue - returnValue;
 
-    const acceptedQuotations = appState.quotations.filter(q => q.status === 'ACCEPTED' && isDateInMonth(q.date, month));
+    const acceptedQuotations = appState.quotations.filter(q => q.status === 'ACCEPTED' && isDateInRange(q.date, period.startMonth, period.endMonth));
     const quotedRevenue = acceptedQuotations.reduce((sum, q) => sum + (q.totalAmount || 0), 0);
     const recognizedRevenue = netSaleRevenue + quotedRevenue;
 
@@ -162,7 +188,7 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
     const staffEntries = monthlyEvents.flatMap(event =>
       (event.staff || []).map(staff => {
         const date = staff.shiftDate || event.startDate || event.endDate || '';
-        if (staff.shiftDate && !isDateInMonth(staff.shiftDate, month)) return null;
+        if (staff.shiftDate && !isDateInRange(staff.shiftDate, period.startMonth, period.endMonth)) return null;
         const employee = appState.employees.find(emp => emp.id === staff.employeeId);
         const salary = Number.isFinite(staff.salary)
           ? Number(staff.salary)
@@ -260,7 +286,7 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
       Object.entries(event.checklist?.lost || {}).forEach(([itemId, qty]) => addDamage(itemId, 0, qty || 0, event.name));
     });
     (appState.transactions || [])
-      .filter(tx => isDateInMonth(tx.date, month))
+      .filter(tx => isDateInRange(tx.date, period.startMonth, period.endMonth))
       .forEach(tx => {
         if (tx.type === 'REPORT_BROKEN') addDamage(tx.itemId, tx.quantity || 0, 0, tx.note || 'Giao dịch kho');
         if (tx.type === 'REPORT_LOST') addDamage(tx.itemId, 0, tx.quantity || 0, tx.note || 'Giao dịch kho');
@@ -270,7 +296,7 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
       .sort((a, b) => (b.damaged + b.lost) - (a.damaged + a.lost));
 
     const receipts = (appState.inventoryReceipts || [])
-      .filter(receipt => isDateInMonth(receipt.createdAt, month))
+      .filter(receipt => isDateInRange(receipt.createdAt, period.startMonth, period.endMonth))
       .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
     const receiptUnits = receipts.reduce((sum, receipt) =>
       sum + (receipt.items || []).reduce((itemSum, item) => itemSum + (item.quantity || 0), 0), 0);
@@ -299,7 +325,8 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
     ];
 
     return {
-      month,
+      period,
+      periodLabel,
       monthlyEvents,
       sales,
       finalizedSales,
@@ -329,7 +356,7 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
       monthlyInventorySnapshot,
       financialRows
     };
-  }, [appState, month]);
+  }, [appState, startMonth, endMonth]);
 
   const totalDamaged = report.damageRows.reduce((sum, row) => sum + row.damaged, 0);
   const totalLost = report.damageRows.reduce((sum, row) => sum + row.lost, 0);
@@ -345,7 +372,7 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
 
   const exportReportCsv = () => {
     const rows: unknown[][] = [
-      ['Báo cáo tháng', report.month],
+      ['Báo cáo giai đoạn', report.periodLabel],
       [],
       ['Tổng quan'],
       ['Chỉ số', 'Giá trị', 'Ghi chú'],
@@ -362,7 +389,7 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
       ['Hạng mục', 'Giá trị', 'Ghi chú'],
       ...report.financialRows.map(row => [row.label, row.value, row.note || '']),
       [],
-      ['Sự kiện trong tháng'],
+      ['Sự kiện trong giai đoạn'],
       ['Tên sự kiện', 'Khách hàng', 'Địa điểm', 'Ngày bắt đầu', 'Ngày kết thúc', 'Trạng thái', 'Chi phí', 'Nhân sự'],
       ...report.monthlyEvents.map(event => [
         event.name,
@@ -408,7 +435,7 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
         receipt.note || ''
       ])
     ];
-    downloadCsv(`bao-cao-thang-${report.month}.csv`, rows);
+    downloadCsv(`bao-cao-${report.period.startMonth}-${report.period.endMonth}.csv`, rows);
   };
 
   const printReport = () => {
@@ -453,7 +480,7 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
     printWindow.document.write(`
       <html>
         <head>
-          <title>Báo cáo tháng ${escapeHtml(report.month)}</title>
+          <title>Báo cáo ${escapeHtml(report.periodLabel)}</title>
           <style>
             body { font-family: Arial, sans-serif; color: #0f172a; padding: 24px; }
             h1 { margin: 0 0 4px; font-size: 24px; }
@@ -469,7 +496,7 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
           </style>
         </head>
         <body>
-          <h1>Báo cáo tổng hợp tháng ${escapeHtml(report.month)}</h1>
+          <h1>Báo cáo tổng hợp ${escapeHtml(report.periodLabel)}</h1>
           <div class="meta">In lúc ${escapeHtml(new Date().toLocaleString('vi-VN'))}</div>
           <div class="grid">
             <div class="box"><div class="label">Sự kiện</div><div class="value">${escapeHtml(report.monthlyEvents.length)}</div></div>
@@ -523,21 +550,44 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
             <div className="flex items-center gap-2 text-xs font-black uppercase text-blue-700">
               <FileText size={16} /> Báo cáo tổng hợp
             </div>
-            <h2 className="text-2xl font-black text-slate-900 mt-1">Báo cáo tháng</h2>
+            <h2 className="text-2xl font-black text-slate-900 mt-1">Báo cáo theo giai đoạn</h2>
             <p className="text-sm text-slate-500 mt-1">
-              Tổng hợp chi phí, hóa đơn, doanh thu, nhân sự, hư hỏng, tiêu hao và số lượng sự kiện trong tháng.
+              Tổng hợp chi phí, hóa đơn, doanh thu, nhân sự, hư hỏng, tiêu hao và số lượng sự kiện theo khoảng tháng đã chọn.
             </p>
           </div>
           <div className="flex flex-col sm:flex-row gap-2">
-            <label className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-semibold text-slate-700">
-              <CalendarDays size={16} />
-              <input
-                type="month"
-                value={month}
-                onChange={event => setMonth(event.target.value || currentMonth())}
-                className="bg-transparent outline-none"
-              />
-            </label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <label className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-semibold text-slate-700">
+                <CalendarDays size={16} />
+                <span className="text-xs text-slate-500 whitespace-nowrap">Từ</span>
+                <input
+                  type="month"
+                  value={startMonth}
+                  onChange={event => setStartMonth(event.target.value || currentMonth())}
+                  className="bg-transparent outline-none min-w-0"
+                />
+              </label>
+              <label className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-semibold text-slate-700">
+                <CalendarDays size={16} />
+                <span className="text-xs text-slate-500 whitespace-nowrap">Đến</span>
+                <input
+                  type="month"
+                  value={endMonth}
+                  onChange={event => setEndMonth(event.target.value || currentMonth())}
+                  className="bg-transparent outline-none min-w-0"
+                />
+              </label>
+            </div>
+            <button
+              onClick={() => {
+                const monthValue = currentMonth();
+                setStartMonth(monthValue);
+                setEndMonth(monthValue);
+              }}
+              className="inline-flex items-center justify-center gap-2 bg-white text-slate-700 border border-slate-200 rounded-lg px-3 py-2 text-sm font-semibold hover:bg-slate-50"
+            >
+              Tháng này
+            </button>
             <button
               onClick={exportReportCsv}
               className="inline-flex items-center justify-center gap-2 bg-blue-600 text-white rounded-lg px-4 py-2 text-sm font-semibold hover:bg-blue-700"
@@ -551,6 +601,9 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
               <Printer size={16} /> In
             </button>
           </div>
+        </div>
+        <div className="mt-3 inline-flex items-center gap-2 rounded-lg bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-700">
+          <CalendarDays size={14} /> {report.periodLabel}
         </div>
       </div>
 
@@ -586,7 +639,7 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
         <StatCard
           title="Nhân sự"
           value={formatNumber(report.staffRows.length)}
-          sub={`${formatNumber(report.staffEntries.length)} lượt phân công trong tháng`}
+          sub={`${formatNumber(report.staffEntries.length)} lượt phân công trong giai đoạn`}
           icon={<Users size={18} />}
           tone="bg-indigo-50 text-indigo-700"
         />
@@ -635,7 +688,7 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
                 </BarChart>
               </ResponsiveContainer>
             ) : (
-              <div className="h-full flex items-center justify-center text-sm text-slate-400">Chưa có dữ liệu tài chính trong tháng.</div>
+              <div className="h-full flex items-center justify-center text-sm text-slate-400">Chưa có dữ liệu tài chính trong giai đoạn.</div>
             )}
           </div>
         </div>
@@ -644,7 +697,7 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
           <div className="flex items-center justify-between mb-3">
             <div>
               <p className="text-xs font-black uppercase text-slate-400">Sự kiện</p>
-              <h3 className="text-base font-bold text-slate-900">Trạng thái trong tháng</h3>
+              <h3 className="text-base font-bold text-slate-900">Trạng thái trong giai đoạn</h3>
             </div>
           </div>
           <div className="h-52">
@@ -720,7 +773,7 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
                 </BarChart>
               </ResponsiveContainer>
             ) : (
-              <div className="h-full flex items-center justify-center text-sm text-slate-400">Chưa có khoản chi trong tháng.</div>
+              <div className="h-full flex items-center justify-center text-sm text-slate-400">Chưa có khoản chi trong giai đoạn.</div>
             )}
           </div>
         </section>
@@ -731,7 +784,7 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
           <div className="flex items-center justify-between mb-3">
             <div>
               <p className="text-xs font-black uppercase text-slate-400">Sự kiện</p>
-              <h3 className="text-base font-bold text-slate-900">Danh sách trong tháng</h3>
+              <h3 className="text-base font-bold text-slate-900">Danh sách trong giai đoạn</h3>
             </div>
             <span className="text-xs font-bold text-slate-500">{formatNumber(report.monthlyEvents.length)} sự kiện</span>
           </div>
@@ -747,7 +800,7 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
               </thead>
               <tbody>
                 {report.monthlyEvents.length === 0 && (
-                  <tr><td colSpan={4} className="py-6 text-center text-slate-400">Không có sự kiện trong tháng.</td></tr>
+                  <tr><td colSpan={4} className="py-6 text-center text-slate-400">Không có sự kiện trong giai đoạn.</td></tr>
                 )}
                 {report.monthlyEvents.map(event => (
                   <tr key={event.id} className="border-b border-slate-50">
@@ -827,7 +880,7 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
               </thead>
               <tbody>
                 {report.damageRows.length === 0 && (
-                  <tr><td colSpan={4} className="py-6 text-center text-slate-400">Không có ghi nhận hư hỏng/mất mát trong tháng.</td></tr>
+                  <tr><td colSpan={4} className="py-6 text-center text-slate-400">Không có ghi nhận hư hỏng/mất mát trong giai đoạn.</td></tr>
                 )}
                 {report.damageRows.map(row => (
                   <tr key={row.itemId} className="border-b border-slate-50">
@@ -864,7 +917,7 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
               </thead>
               <tbody>
                 {report.consumableSummary.length === 0 && (
-                  <tr><td colSpan={3} className="py-6 text-center text-slate-400">Không có hàng tiêu hao trong tháng.</td></tr>
+                  <tr><td colSpan={3} className="py-6 text-center text-slate-400">Không có hàng tiêu hao trong giai đoạn.</td></tr>
                 )}
                 {report.consumableSummary.map(row => (
                   <tr key={row.itemId} className="border-b border-slate-50">
@@ -902,7 +955,7 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
               </thead>
               <tbody>
                 {report.receipts.length === 0 && (
-                  <tr><td colSpan={3} className="py-6 text-center text-slate-400">Không có phiếu nhập trong tháng.</td></tr>
+                  <tr><td colSpan={3} className="py-6 text-center text-slate-400">Không có phiếu nhập trong giai đoạn.</td></tr>
                 )}
                 {report.receipts.map(receipt => (
                   <tr key={receipt.id} className="border-b border-slate-50">
@@ -928,7 +981,7 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
               </thead>
               <tbody>
                 {report.expenseRows.length === 0 && (
-                  <tr><td colSpan={3} className="py-6 text-center text-slate-400">Không có khoản chi trong tháng.</td></tr>
+                  <tr><td colSpan={3} className="py-6 text-center text-slate-400">Không có khoản chi trong giai đoạn.</td></tr>
                 )}
                 {report.expenseRows.map(expense => (
                   <tr key={expense.id} className="border-b border-slate-50">
