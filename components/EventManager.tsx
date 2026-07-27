@@ -5090,7 +5090,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
                         <option value="" className="text-gray-800 font-bold">-- Chọn báo giá để tính lợi nhuận --</option>
                         {quotations.map(q => (
                           <option key={q.id} value={q.id} className="text-gray-800 font-medium">
-                            {q.id} - {q.clientName} ({q.totalAmount.toLocaleString()}đ)
+                            {q.source === 'CONTRACT' ? '[HĐ] ' : ''}{q.id} - {q.clientName} ({q.totalAmount.toLocaleString()}đ)
                           </option>
                         ))}
                       </select>
@@ -5473,7 +5473,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
                         <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-l-2 border-blue-500 pl-2">Doanh thu (A)</p>
                         <p className="text-3xl font-black text-blue-400">{revenue.toLocaleString()}đ</p>
                         <p className="text-[11px] text-slate-400">
-                          {quotationRevenue > 0 && <span className="mr-3">Báo giá: {quotationRevenue.toLocaleString()}đ</span>}
+                          {quotationRevenue > 0 && <span className="mr-3">{linkedQuotation?.source === 'CONTRACT' ? 'Hợp đồng' : 'Báo giá'}: {quotationRevenue.toLocaleString()}đ</span>}
                           {saleOrdersRevenue > 0 && <span>Đơn bán: {saleOrdersRevenue.toLocaleString()}đ</span>}
                           {quotationRevenue === 0 && saleOrdersRevenue === 0 && <span>Chưa có doanh thu</span>}
                         </p>
@@ -5510,6 +5510,8 @@ export const EventManager: React.FC<EventManagerProps> = ({
                         <select className="w-full border rounded-xl p-3 text-sm bg-white outline-none focus:ring-2 focus:ring-blue-500" value={expenseCat} onChange={e => setExpenseCat(e.target.value as any)}>
                           <option value="TRANSPORT_GOODS">Vận chuyển hàng hóa</option>
                           <option value="TRANSPORT_STAFF">Vận chuyển nhân sự</option>
+                          <option value="FUEL">Tiền dầu</option>
+                          <option value="DRIVER_FEE">Tiền tài xế</option>
                           <option value="ACCOMMODATION">Lưu trú / Khách sạn</option>
                           <option value="PRINTING">In ấn / Ấn phẩm</option>
                           <option value="CONSUMABLES">Đồ tiêu hao (Pin, băng dính...)</option>

@@ -305,7 +305,7 @@ export interface EventStaffRegistration {
 
 export interface EventExpense {
   id: string;
-  category: 'TRANSPORT_GOODS' | 'TRANSPORT_STAFF' | 'ACCOMMODATION' | 'PRINTING' | 'CONSUMABLES' | 'CATERING' | 'MISC';
+  category: 'TRANSPORT_GOODS' | 'TRANSPORT_STAFF' | 'FUEL' | 'DRIVER_FEE' | 'ACCOMMODATION' | 'PRINTING' | 'CONSUMABLES' | 'CATERING' | 'MISC';
   subCategory?: string; 
   description: string;
   amount: number;
@@ -631,6 +631,18 @@ export interface QuotationLineItem {
   total: number;
 }
 
+export interface QuotationContractInfo {
+  fileName?: string;
+  fileDataUrl?: string;
+  fileType?: string;
+  sourceText?: string;
+  contractTitle?: string;
+  contractDateTime?: string;
+  contractAmount?: number;
+  contactName?: string;
+  note?: string;
+}
+
 export interface Quotation {
   id: string;
   clientName: string;
@@ -643,6 +655,8 @@ export interface Quotation {
   totalAmount: number;
   note?: string;
   status: 'DRAFT' | 'SENT' | 'ACCEPTED';
+  source?: 'QUOTE' | 'CONTRACT';
+  contract?: QuotationContractInfo;
 }
 
 export interface LogActor {

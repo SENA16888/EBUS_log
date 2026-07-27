@@ -41,6 +41,8 @@ type MoneyRow = {
 const EXPENSE_LABELS: Record<EventExpense['category'], string> = {
   TRANSPORT_GOODS: 'Vận chuyển hàng',
   TRANSPORT_STAFF: 'Di chuyển nhân sự',
+  FUEL: 'Tiền dầu',
+  DRIVER_FEE: 'Tiền tài xế',
   ACCOMMODATION: 'Lưu trú',
   PRINTING: 'In ấn',
   CONSUMABLES: 'Vật tư tiêu hao',

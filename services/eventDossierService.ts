@@ -76,6 +76,8 @@ const EVENT_TYPE_LABELS = {
 const EXPENSE_CATEGORY_LABELS: Record<EventExpense['category'], string> = {
   TRANSPORT_GOODS: 'Vận chuyển hàng hóa',
   TRANSPORT_STAFF: 'Di chuyển nhân sự',
+  FUEL: 'Tiền dầu',
+  DRIVER_FEE: 'Tiền tài xế',
   ACCOMMODATION: 'Lưu trú',
   PRINTING: 'In ấn',
   CONSUMABLES: 'Vật tư tiêu hao',
