@@ -1373,6 +1373,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
   const [expenseDesc, setExpenseDesc] = useState('');
   const [expenseAmount, setExpenseAmount] = useState('');
   const [expenseVatLink, setExpenseVatLink] = useState('');
+  const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
   const [advanceTitle, setAdvanceTitle] = useState('');
   const [advanceNote, setAdvanceNote] = useState('');
   const [advanceAmount, setAdvanceAmount] = useState('');
@@ -2183,18 +2184,42 @@ export const EventManager: React.FC<EventManagerProps> = ({
       alert("Vui lòng nhập số tiền!");
       return;
     }
+    const parsedAmount = Number(expenseAmount);
+    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+      alert("Số tiền chi phí không hợp lệ!");
+      return;
+    }
     onAddExpense(selectedEventId, {
-      id: `EXP-${Date.now()}`,
+      id: editingExpenseId || `EXP-${Date.now()}`,
       category: expenseCat,
       subCategory: expenseSub,
       description: expenseDesc || expenseCat,
-      amount: Number(expenseAmount),
+      amount: parsedAmount,
       vatInvoiceLink: expenseVatLink || undefined
     });
+    setEditingExpenseId(null);
     setExpenseDesc('');
     setExpenseAmount('');
     setExpenseSub('');
     setExpenseVatLink('');
+  };
+
+  const handleStartEditExpense = (expense: EventExpense) => {
+    setEditingExpenseId(expense.id);
+    setExpenseCat(expense.category);
+    setExpenseSub(expense.subCategory || '');
+    setExpenseDesc(expense.description || '');
+    setExpenseAmount(String(expense.amount || ''));
+    setExpenseVatLink(expense.vatInvoiceLink || '');
+  };
+
+  const handleCancelEditExpense = () => {
+    setEditingExpenseId(null);
+    setExpenseDesc('');
+    setExpenseAmount('');
+    setExpenseSub('');
+    setExpenseVatLink('');
+    setExpenseCat('TRANSPORT_GOODS');
   };
 
   const handleAddAdvanceRequestSubmit = () => {
@@ -5502,7 +5527,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
                   {/* Operational Expenses Form */}
                   <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
                     <h4 className="font-bold text-gray-800 text-xs uppercase flex items-center gap-2 border-b pb-3 mb-2">
-                      <TrendingUp className="text-orange-500" size={16} /> Nhập Chi phí vận hành phát sinh
+                      <TrendingUp className="text-orange-500" size={16} /> {editingExpenseId ? 'Sửa chi phí vận hành' : 'Nhập Chi phí vận hành phát sinh'}
                     </h4>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
@@ -5545,7 +5570,20 @@ export const EventManager: React.FC<EventManagerProps> = ({
                         <input className="w-full border rounded-xl p-3 text-sm outline-none focus:ring-2 focus:ring-blue-500" placeholder="https://drive.google.com/... hoặc link cổng hóa đơn" value={expenseVatLink} onChange={e => setExpenseVatLink(e.target.value)} />
                       </div>
                     </div>
-                    <button onClick={handleAddExpenseSubmit} className="w-full bg-slate-800 text-white py-3 rounded-xl text-sm font-black hover:bg-black transition shadow-lg uppercase tracking-widest">Lưu chi phí</button>
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      {editingExpenseId && (
+                        <button
+                          type="button"
+                          onClick={handleCancelEditExpense}
+                          className="sm:w-44 bg-white border border-slate-200 text-slate-600 py-3 rounded-xl text-sm font-black hover:bg-slate-50 transition uppercase tracking-widest"
+                        >
+                          Hủy sửa
+                        </button>
+                      )}
+                      <button onClick={handleAddExpenseSubmit} className="flex-1 bg-slate-800 text-white py-3 rounded-xl text-sm font-black hover:bg-black transition shadow-lg uppercase tracking-widest">
+                        {editingExpenseId ? 'Cập nhật chi phí' : 'Lưu chi phí'}
+                      </button>
+                    </div>
                   </div>
 
                   {/* List Existing Expenses */}
@@ -5568,6 +5606,14 @@ export const EventManager: React.FC<EventManagerProps> = ({
                               </div>
                               <div className="flex items-center gap-4">
                                  <span className="font-bold text-orange-600">{exp.amount.toLocaleString()}đ</span>
+                                 <button
+                                   type="button"
+                                   onClick={() => handleStartEditExpense(exp)}
+                                   className="text-gray-300 hover:text-blue-600"
+                                   title="Sửa chi phí"
+                                 >
+                                   <Pencil size={16}/>
+                                 </button>
                                  <button onClick={() => onRemoveExpense?.(selectedEvent.id, exp.id)} className="text-gray-300 hover:text-red-500"><Trash2 size={16}/></button>
                               </div>
                            </div>

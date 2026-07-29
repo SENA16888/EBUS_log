@@ -2228,7 +2228,18 @@ const App: React.FC = () => {
   const handleAddExpense = (eventId: string, expense: EventExpense) => {
     setAppState(prev => ({
       ...prev,
-      events: prev.events.map(e => e.id !== eventId ? e : { ...e, expenses: [...(e.expenses || []), expense] })
+      events: prev.events.map(e => {
+        if (e.id !== eventId) return e;
+        const expenses = e.expenses || [];
+        const existingIndex = expenses.findIndex(item => item.id === expense.id);
+        if (existingIndex >= 0) {
+          return {
+            ...e,
+            expenses: expenses.map(item => item.id === expense.id ? expense : item)
+          };
+        }
+        return { ...e, expenses: [...expenses, expense] };
+      })
     }));
   };
 
