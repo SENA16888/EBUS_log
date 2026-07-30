@@ -82,13 +82,16 @@ export const OrderManager: React.FC<OrderManagerProps> = ({
     const totalOrders = saleOrdersOnly.length;
     // Giá trị hàng hóa: tổng giá trị danh mục (price * qty) của các đơn xuất (không tính chiết khấu)
     const totalGoodsValue = saleOrdersOnly.reduce((acc, o) => acc + ((o.items || []).reduce((s, it) => s + ((it.price || 0) * (it.quantity || 0)), 0)), 0);
-    // Doanh thu: chỉ tính đơn đã chốt (FINALIZED) và lấy giá sau chiết khấu
+    // Doanh thu: chỉ tính số lượng đã bán, hàng trả về kho không phải hoàn tiền.
     const totalSalesRevenue = saleOrdersOnly
       .filter(o => o.status === 'FINALIZED')
-      .reduce((acc, o) => acc + ((o.items || []).reduce((s, it) => s + calcLineTotal(it.price || 0, it.quantity || 0, it.discount || 0, it.discountPercent || 0), 0)), 0);
-    const totalReturns = returnOrders.reduce((acc, r) => acc + Math.abs(r.total || r.subtotal || 0), 0);
-    const net = Math.max(0, totalSalesRevenue - totalReturns);
-    return { totalOrders, totalGoodsValue, totalSalesRevenue, totalReturns, net };
+      .reduce((acc, o) => acc + Math.max(0, (o.items || []).reduce((s, it) => {
+        const qty = it.soldQuantity ?? 0;
+        return s + calcLineTotal(it.price || 0, qty, it.discount || 0, it.discountPercent || 0);
+      }, 0) - (o.orderDiscount || 0)), 0);
+    const returnedUnits = returnOrders.reduce((acc, r) => acc + (r.items || []).reduce((sum, item) => sum + (item.quantity || 0), 0), 0);
+    const net = totalSalesRevenue;
+    return { totalOrders, totalGoodsValue, totalSalesRevenue, returnedUnits, net };
   }, [saleOrdersOnly, returnOrders]);
 
   const getOrderRevenue = (order: SaleOrder) => {
@@ -329,26 +332,17 @@ export const OrderManager: React.FC<OrderManagerProps> = ({
     });
     const rows = Array.from(returnItemsMap.values()).map((item, index) => {
       const qty = item.quantity || 0;
-      const discount = item.discount || 0;
-      const discountPercent = item.discountPercent || 0;
-      const lineValue = Math.max(0, calcLineTotal(item.price || 0, qty, discount, discountPercent));
-      const discountLabel = `${discount.toLocaleString()}đ${discountPercent ? ` (${discountPercent}%)` : ''}`;
       return `
         <tr>
           <td>${index + 1}</td>
           <td>${getBarcode(item.itemId, item.barcode) || '-'}</td>
           <td>${item.name}</td>
           <td class="right">${qty}</td>
-          <td class="right">${discountLabel}</td>
-          <td class="right">${lineValue.toLocaleString()}đ</td>
-          <td class="right">${lineValue.toLocaleString()}đ</td>
+          <td>Trả sản phẩm chưa bán về kho</td>
         </tr>
       `;
     }).join('');
-    const totalReturn = Array.from(returnItemsMap.values()).reduce((acc, item) => {
-      const lineValue = Math.max(0, calcLineTotal(item.price || 0, item.quantity || 0, item.discount || 0, item.discountPercent || 0));
-      return acc + lineValue;
-    }, 0);
+    const totalReturnQty = Array.from(returnItemsMap.values()).reduce((acc, item) => acc + (item.quantity || 0), 0);
     const body = `
       ${header}
       <table>
@@ -358,21 +352,19 @@ export const OrderManager: React.FC<OrderManagerProps> = ({
             <th>Barcode</th>
             <th>Tên SP</th>
             <th class="right">SL trả</th>
-            <th class="right">Chiết khấu</th>
-            <th class="right">Giá trị hàng trả</th>
-            <th class="right">Tổng</th>
+            <th>Ghi chú</th>
           </tr>
         </thead>
         <tbody>
           ${rows}
           <tr>
-            <td colspan="5" class="right"><strong>Tổng</strong></td>
-            <td class="right"><strong>${totalReturn.toLocaleString()}đ</strong></td>
-            <td class="right"><strong>${totalReturn.toLocaleString()}đ</strong></td>
+            <td colspan="3" class="right"><strong>Tổng số lượng trả</strong></td>
+            <td class="right"><strong>${totalReturnQty.toLocaleString()}</strong></td>
+            <td></td>
           </tr>
         </tbody>
       </table>
-      <div class="total">Tổng giá trị hàng trả: ${totalReturn.toLocaleString()}đ</div>
+      <div class="total">Tổng số lượng hàng trả về kho: ${totalReturnQty.toLocaleString()} sản phẩm</div>
       ${signatureBlock}
     `;
     return { body, title };
@@ -427,6 +419,7 @@ export const OrderManager: React.FC<OrderManagerProps> = ({
           <div className="p-3 border rounded">
             <div className="text-xs text-slate-500">Doanh thu ròng</div>
             <div className="font-black text-lg">{(summary.net || 0).toLocaleString()}đ</div>
+            <div className="text-[11px] text-slate-500">Trả về kho: {summary.returnedUnits.toLocaleString()} sản phẩm</div>
           </div>
         </div>
 
@@ -636,7 +629,9 @@ export const OrderManager: React.FC<OrderManagerProps> = ({
                               {orderReturns.map(ret => (
                                 <div key={ret.id} className="flex items-center justify-between text-xs text-slate-500">
                                   <span>Trả: {ret.id} • {new Date(ret.date).toLocaleString()}</span>
-                                  <span className="font-bold text-slate-700">-{Math.abs(ret.total || ret.subtotal || 0).toLocaleString()}đ</span>
+                                  <span className="font-bold text-slate-700">
+                                    {(ret.items || []).reduce((sum, item) => sum + (item.quantity || 0), 0).toLocaleString()} sản phẩm
+                                  </span>
                                 </div>
                               ))}
                             </div>
@@ -657,7 +652,9 @@ export const OrderManager: React.FC<OrderManagerProps> = ({
                 {orphanReturns.map(order => (
                   <div key={order.id} className="flex items-center justify-between text-sm text-slate-600">
                     <span>{order.id} • {order.customerName} • {new Date(order.date).toLocaleString()}</span>
-                    <span className="font-bold">-{Math.abs(order.total || order.subtotal || 0).toLocaleString()}đ</span>
+                    <span className="font-bold">
+                      {(order.items || []).reduce((sum, item) => sum + (item.quantity || 0), 0).toLocaleString()} sản phẩm
+                    </span>
                   </div>
                 ))}
               </div>
@@ -1013,7 +1010,7 @@ export const OrderManager: React.FC<OrderManagerProps> = ({
                         if (qty > maxAllowed) { alert(`Số lượng trả cho "${it.name}" vượt quá số đã xuất còn lại (${maxAllowed}).`); return; }
                         const discount = returnDiscounts[it.itemId]?.discount || 0;
                         const discountPercent = returnDiscounts[it.itemId]?.discountPercent || 0;
-                        const lineTotal = -Math.max(0, calcLineTotal(it.price || 0, qty, discount, discountPercent));
+                        const lineTotal = 0;
                         built.push({ itemId: it.itemId, barcode: it.barcode, name: it.name, price: it.price, quantity: qty, discount, discountPercent, lineTotal });
                       }
                     }
@@ -1029,7 +1026,7 @@ export const OrderManager: React.FC<OrderManagerProps> = ({
                       alert('Đã hoàn tất đơn hàng.');
                       return;
                     }
-                    const subtotal = built.reduce((a:any,b:any) => a + (b.lineTotal || 0), 0);
+                    const subtotal = 0;
                     const order = {
                       id: `RT-${Date.now()}`,
                       date: new Date().toISOString(),

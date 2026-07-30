@@ -2825,10 +2825,10 @@ export const EventManager: React.FC<EventManagerProps> = ({
   const saleOrderRevenueTotal = linkedSaleOrders
     .filter(order => (order.type || 'SALE') !== 'RETURN')
     .reduce((sum, order) => sum + calculateSaleOrderRevenue(order), 0);
-  const saleOrderReturnTotal = linkedSaleOrders
+  const saleOrderReturnedUnits = linkedSaleOrders
     .filter(order => (order.type || '') === 'RETURN')
-    .reduce((sum, order) => sum + Math.abs(order.total || order.subtotal || 0), 0);
-  const saleOrdersRevenue = Math.max(0, saleOrderRevenueTotal - saleOrderReturnTotal);
+    .reduce((sum, order) => sum + (order.items || []).reduce((itemSum: number, item: any) => itemSum + (item.quantity || 0), 0), 0);
+  const saleOrdersRevenue = saleOrderRevenueTotal;
   const saleGoodsValue = saleOrdersRevenue;
   const quotationRevenue = linkedQuotation?.totalAmount || 0;
   const revenue = quotationRevenue + saleOrdersRevenue;
@@ -5160,7 +5160,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
                         <option value="">-- Chọn đơn bán để gán --</option>
                         {selectableSaleOrders.map(order => (
                           <option key={order.id} value={order.id}>
-                            {order.id} • {order.customerName || 'Khách lẻ'} • {order.total?.toLocaleString()}đ
+                            {order.id} • {order.customerName || 'Khách lẻ'} • {(order.type || 'SALE') === 'RETURN' ? `Trả về kho ${(order.items || []).reduce((sum: number, item: any) => sum + (item.quantity || 0), 0).toLocaleString()} SP` : `${calculateSaleOrderRevenue(order).toLocaleString()}đ`}
                             {order.eventId && order.eventId !== selectedEvent.id ? ' (Đang gán sự kiện khác)' : ''}
                           </option>
                         ))}
@@ -5175,7 +5175,13 @@ export const EventManager: React.FC<EventManagerProps> = ({
                               <p className="text-[11px] text-slate-500">{order.date} • {order.items?.length || 0} dòng</p>
                             </div>
                             <div className="flex items-center gap-3">
-                              <span className="font-black text-green-600 text-sm">{(order.total || 0).toLocaleString()}đ</span>
+                              {(order.type || 'SALE') === 'RETURN' ? (
+                                <span className="font-black text-slate-500 text-sm">
+                                  Trả về kho {(order.items || []).reduce((sum: number, item: any) => sum + (item.quantity || 0), 0).toLocaleString()} SP
+                                </span>
+                              ) : (
+                                <span className="font-black text-green-600 text-sm">{calculateSaleOrderRevenue(order).toLocaleString()}đ</span>
+                              )}
                               <button onClick={() => onLinkSaleOrder?.(selectedEvent.id, order.id, false)} className="text-gray-300 hover:text-red-500">
                                 <Trash2 size={16}/>
                               </button>
@@ -5501,6 +5507,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
                           {quotationRevenue > 0 && <span className="mr-3">{linkedQuotation?.source === 'CONTRACT' ? 'Hợp đồng' : 'Báo giá'}: {quotationRevenue.toLocaleString()}đ</span>}
                           {saleOrdersRevenue > 0 && <span>Đơn bán: {saleOrdersRevenue.toLocaleString()}đ</span>}
                           {quotationRevenue === 0 && saleOrdersRevenue === 0 && <span>Chưa có doanh thu</span>}
+                          {saleOrderReturnedUnits > 0 && <span className="block mt-1">Hàng trả về kho: {saleOrderReturnedUnits.toLocaleString()} sản phẩm, không trừ doanh thu</span>}
                         </p>
                       </div>
                       <div className="space-y-2">

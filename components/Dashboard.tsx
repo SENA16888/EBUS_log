@@ -46,9 +46,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState }) => {
     const totalSalesRevenue = saleOrdersOnly
       .filter(o => o.status === 'FINALIZED')
       .reduce((acc, o) => acc + getOrderRevenue(o), 0);
-    const totalReturns = returnOrders.reduce((acc, r) => acc + Math.abs(r.total || r.subtotal || 0), 0);
-    const net = Math.max(0, totalSalesRevenue - totalReturns);
-    return { totalOrders, totalSalesRevenue, totalReturns, net };
+    const returnedUnits = returnOrders.reduce((acc, r) => acc + (r.items || []).reduce((sum: number, item: any) => sum + (item.quantity || 0), 0), 0);
+    const net = totalSalesRevenue;
+    return { totalOrders, totalSalesRevenue, returnedUnits, net };
   })();
 
   const monthlySales = (() => {
@@ -126,7 +126,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState }) => {
       title: 'Doanh thu ròng',
       value: saleSummary.net,
       format: formatCurrency,
-      sub: `${saleSummary.totalOrders} đơn bán • ${formatCurrency(saleSummary.totalReturns)} hoàn trả`,
+      sub: `${saleSummary.totalOrders} đơn bán • ${formatNumber(saleSummary.returnedUnits)} sản phẩm trả về kho`,
       icon: <TrendingUp size={18} />,
       accent: 'from-slate-700/10 to-slate-500/10 text-slate-800',
     },

@@ -370,10 +370,7 @@ const calculateRevenue = (quotation?: Quotation | null, saleOrders: SaleOrder[] 
   const saleRevenue = saleOrders
     .filter(order => (order.type || 'SALE') !== 'RETURN')
     .reduce((sum, order) => sum + calculateSaleOrderRevenue(order), 0);
-  const returns = saleOrders
-    .filter(order => order.type === 'RETURN')
-    .reduce((sum, order) => sum + Math.abs(Number(order.total ?? order.subtotal) || 0), 0);
-  return quotationRevenue + Math.max(0, saleRevenue - returns);
+  return quotationRevenue + saleRevenue;
 };
 
 const brandHeader = () => `

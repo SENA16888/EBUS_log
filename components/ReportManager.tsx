@@ -164,8 +164,9 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
     const returns = saleOrders.filter(order => (order.type || '') === 'RETURN');
     const finalizedSales = sales.filter(order => order.status === 'FINALIZED');
     const saleRevenue = finalizedSales.reduce((sum, order) => sum + getOrderRevenue(order), 0);
-    const returnValue = returns.reduce((sum, order) => sum + Math.abs(order.total || order.subtotal || 0), 0);
-    const netSaleRevenue = saleRevenue - returnValue;
+    const returnedUnits = returns.reduce((sum, order) =>
+      sum + (order.items || []).reduce((itemSum, item) => itemSum + (item.quantity || 0), 0), 0);
+    const netSaleRevenue = saleRevenue;
 
     const acceptedQuotations = appState.quotations.filter(q => q.status === 'ACCEPTED' && isDateInRange(q.date, period.startMonth, period.endMonth));
     const quotedRevenue = acceptedQuotations.reduce((sum, q) => sum + (q.totalAmount || 0), 0);
@@ -319,7 +320,7 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
 
     const financialRows: MoneyRow[] = [
       { label: 'Doanh thu đơn bán đã chốt', value: saleRevenue, note: `${finalizedSales.length}/${sales.length} đơn đã chốt` },
-      { label: 'Hoàn trả hàng bán', value: -returnValue, note: `${returns.length} phiếu hoàn` },
+      { label: 'Hàng bán trả về kho', value: 0, note: `${returns.length} phiếu trả • ${returnedUnits} sản phẩm` },
       { label: 'Báo giá đã chấp nhận', value: quotedRevenue, note: `${acceptedQuotations.length} báo giá` },
       { label: 'Chi phí sự kiện', value: -expenseTotal, note: `${expenseRows.length} khoản chi` },
       { label: 'Chi phí nhân sự', value: -staffCost, note: `${staffEntries.length} lượt phân công` },
@@ -334,7 +335,7 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
       finalizedSales,
       returns,
       saleRevenue,
-      returnValue,
+      returnedUnits,
       netSaleRevenue,
       acceptedQuotations,
       quotedRevenue,
