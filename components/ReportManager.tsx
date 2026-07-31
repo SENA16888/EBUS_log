@@ -38,6 +38,15 @@ type MoneyRow = {
   note?: string;
 };
 
+type ServiceRevenueRow = {
+  eventId: string;
+  eventName: string;
+  eventDate: string;
+  quotationId: string;
+  source: string;
+  amount: number;
+};
+
 const EXPENSE_LABELS: Record<EventExpense['category'], string> = {
   TRANSPORT_GOODS: 'Vận chuyển hàng',
   TRANSPORT_STAFF: 'Di chuyển nhân sự',
@@ -126,6 +135,11 @@ const getOrderRevenue = (order: SaleOrder) => {
   return Math.max(0, subtotal - (order.orderDiscount || 0));
 };
 
+const getQuotationRevenue = (quotation?: AppState['quotations'][number] | null) => {
+  if (!quotation) return 0;
+  return Math.max(0, Number(quotation.totalAmount) || Number(quotation.contract?.contractAmount) || 0);
+};
+
 const csvCell = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
 
 const downloadCsv = (filename: string, rows: unknown[][]) => {
@@ -155,6 +169,7 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
     const period = normalizeMonthRange(startMonth, endMonth);
     const periodLabel = formatRangeLabel(period.startMonth, period.endMonth);
     const inventoryMap = new Map(appState.inventory.map(item => [item.id, item]));
+    const quotationMap = new Map(appState.quotations.map(quotation => [quotation.id, quotation]));
     const monthlyEvents = appState.events
       .filter(event => isEventInRange(event, period.startMonth, period.endMonth))
       .sort((a, b) => (a.startDate || '').localeCompare(b.startDate || ''));
@@ -168,8 +183,30 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
       sum + (order.items || []).reduce((itemSum, item) => itemSum + (item.quantity || 0), 0), 0);
     const netSaleRevenue = saleRevenue;
 
-    const acceptedQuotations = appState.quotations.filter(q => q.status === 'ACCEPTED' && isDateInRange(q.date, period.startMonth, period.endMonth));
-    const quotedRevenue = acceptedQuotations.reduce((sum, q) => sum + (q.totalAmount || 0), 0);
+    const countedServiceQuotationIds = new Set<string>();
+    const serviceRevenueRows = monthlyEvents.flatMap((event): ServiceRevenueRow[] => {
+      if (!event.quotationId || countedServiceQuotationIds.has(event.quotationId)) return [];
+      const quotation = quotationMap.get(event.quotationId);
+      if (!quotation) return [];
+      countedServiceQuotationIds.add(event.quotationId);
+      return [{
+        eventId: event.id,
+        eventName: event.name,
+        eventDate: event.startDate || event.endDate || quotation.date,
+        quotationId: quotation.id,
+        source: quotation.source === 'CONTRACT' ? 'Hợp đồng' : 'Báo giá',
+        amount: getQuotationRevenue(quotation)
+      }];
+    });
+    const serviceRevenue = serviceRevenueRows.reduce((sum, row) => sum + row.amount, 0);
+    const serviceRevenueByEvent = new Map(serviceRevenueRows.map(row => [row.eventId, row.amount]));
+    const acceptedQuotations = appState.quotations.filter(q =>
+      q.status === 'ACCEPTED'
+      && isDateInRange(q.date, period.startMonth, period.endMonth)
+      && !countedServiceQuotationIds.has(q.id)
+    );
+    const acceptedQuotationRevenue = acceptedQuotations.reduce((sum, q) => sum + getQuotationRevenue(q), 0);
+    const quotedRevenue = serviceRevenue + acceptedQuotationRevenue;
     const recognizedRevenue = netSaleRevenue + quotedRevenue;
 
     const expenseRows = monthlyEvents.flatMap(event =>
@@ -321,7 +358,8 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
     const financialRows: MoneyRow[] = [
       { label: 'Doanh thu đơn bán đã chốt', value: saleRevenue, note: `${finalizedSales.length}/${sales.length} đơn đã chốt` },
       { label: 'Hàng bán trả về kho', value: 0, note: `${returns.length} phiếu trả • ${returnedUnits} sản phẩm` },
-      { label: 'Báo giá đã chấp nhận', value: quotedRevenue, note: `${acceptedQuotations.length} báo giá` },
+      { label: 'Doanh thu dịch vụ theo sự kiện', value: serviceRevenue, note: `${serviceRevenueRows.length} sự kiện đã gắn báo giá/hợp đồng` },
+      { label: 'Báo giá đã chấp nhận chưa gắn sự kiện', value: acceptedQuotationRevenue, note: `${acceptedQuotations.length} báo giá` },
       { label: 'Chi phí sự kiện', value: -expenseTotal, note: `${expenseRows.length} khoản chi` },
       { label: 'Chi phí nhân sự', value: -staffCost, note: `${staffEntries.length} lượt phân công` },
       { label: 'Tạm ứng đã xác nhận', value: -confirmedAdvance, note: `${advances.length} đề nghị tạm ứng` }
@@ -337,7 +375,11 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
       saleRevenue,
       returnedUnits,
       netSaleRevenue,
+      serviceRevenueRows,
+      serviceRevenue,
+      serviceRevenueByEvent,
       acceptedQuotations,
+      acceptedQuotationRevenue,
       quotedRevenue,
       recognizedRevenue,
       expenseRows,
@@ -380,7 +422,7 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
       ['Tổng quan'],
       ['Chỉ số', 'Giá trị', 'Ghi chú'],
       ['Số sự kiện', report.monthlyEvents.length, ''],
-      ['Doanh thu ghi nhận', report.recognizedRevenue, 'Đơn bán đã chốt + báo giá đã chấp nhận'],
+      ['Doanh thu ghi nhận', report.recognizedRevenue, 'Đơn bán đã chốt + dịch vụ từ sự kiện đã gắn báo giá/hợp đồng + báo giá đã chấp nhận chưa gắn sự kiện'],
       ['Chi phí sự kiện', report.expenseTotal, ''],
       ['Chi phí nhân sự', report.staffCost, ''],
       ['Lãi/lỗ vận hành tạm tính', netAfterOperatingCost, 'Chưa bao gồm giá vốn nếu chưa nhập trong hệ thống'],
@@ -392,8 +434,12 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
       ['Hạng mục', 'Giá trị', 'Ghi chú'],
       ...report.financialRows.map(row => [row.label, row.value, row.note || '']),
       [],
+      ['Doanh thu dịch vụ theo sự kiện'],
+      ['Sự kiện', 'Ngày', 'Báo giá/Hợp đồng', 'Nguồn', 'Số tiền'],
+      ...report.serviceRevenueRows.map(row => [row.eventName, row.eventDate, row.quotationId, row.source, row.amount]),
+      [],
       ['Sự kiện trong giai đoạn'],
-      ['Tên sự kiện', 'Khách hàng', 'Địa điểm', 'Ngày bắt đầu', 'Ngày kết thúc', 'Trạng thái', 'Chi phí', 'Nhân sự'],
+      ['Tên sự kiện', 'Khách hàng', 'Địa điểm', 'Ngày bắt đầu', 'Ngày kết thúc', 'Trạng thái', 'Doanh thu dịch vụ', 'Chi phí', 'Nhân sự'],
       ...report.monthlyEvents.map(event => [
         event.name,
         event.client,
@@ -401,6 +447,7 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
         event.startDate,
         event.endDate,
         STATUS_LABELS[event.status],
+        report.serviceRevenueByEvent.get(event.id) || 0,
         (event.expenses || []).reduce((sum, expense) => sum + (expense.amount || 0), 0),
         event.staff?.length || 0
       ]),
@@ -460,6 +507,7 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
         <td>${escapeHtml(event.client)}</td>
         <td>${escapeHtml(event.startDate)} - ${escapeHtml(event.endDate)}</td>
         <td>${escapeHtml(STATUS_LABELS[event.status])}</td>
+        <td style="text-align:right;">${escapeHtml(formatCurrency(report.serviceRevenueByEvent.get(event.id) || 0))}</td>
         <td style="text-align:right;">${escapeHtml(formatCurrency((event.expenses || []).reduce((sum, expense) => sum + (expense.amount || 0), 0)))}</td>
       </tr>
     `).join('');
@@ -510,7 +558,7 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
           <h2>Tài chính</h2>
           <table><thead><tr><th>Hạng mục</th><th>Giá trị</th><th>Ghi chú</th></tr></thead><tbody>${moneyRows}</tbody></table>
           <h2>Sự kiện</h2>
-          <table><thead><tr><th>Tên</th><th>Khách hàng</th><th>Thời gian</th><th>Trạng thái</th><th>Chi phí</th></tr></thead><tbody>${eventRows || '<tr><td colspan="5">Không có dữ liệu.</td></tr>'}</tbody></table>
+          <table><thead><tr><th>Tên</th><th>Khách hàng</th><th>Thời gian</th><th>Trạng thái</th><th>Doanh thu dịch vụ</th><th>Chi phí</th></tr></thead><tbody>${eventRows || '<tr><td colspan="6">Không có dữ liệu.</td></tr>'}</tbody></table>
           <h2>Nhân sự</h2>
           <table><thead><tr><th>Nhân sự</th><th>Vai trò</th><th>Số lượt</th><th>Tổng lương</th></tr></thead><tbody>${staffRows || '<tr><td colspan="4">Không có dữ liệu.</td></tr>'}</tbody></table>
           <h2>Hư hỏng/mất mát</h2>
@@ -621,7 +669,7 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
         <StatCard
           title="Doanh thu ghi nhận"
           value={formatCurrency(report.recognizedRevenue)}
-          sub={`${formatCurrency(report.netSaleRevenue)} bán hàng, ${formatCurrency(report.quotedRevenue)} báo giá`}
+          sub={`${formatCurrency(report.netSaleRevenue)} bán hàng, ${formatCurrency(report.serviceRevenue)} dịch vụ, ${formatCurrency(report.acceptedQuotationRevenue)} báo giá lẻ`}
           icon={<TrendingUp size={18} />}
           tone="bg-emerald-50 text-emerald-700"
         />
@@ -798,12 +846,13 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
                   <th className="py-2 pr-3">Sự kiện</th>
                   <th className="py-2 px-3">Thời gian</th>
                   <th className="py-2 px-3">Trạng thái</th>
+                  <th className="py-2 px-3 text-right">Doanh thu dịch vụ</th>
                   <th className="py-2 pl-3 text-right">Chi phí</th>
                 </tr>
               </thead>
               <tbody>
                 {report.monthlyEvents.length === 0 && (
-                  <tr><td colSpan={4} className="py-6 text-center text-slate-400">Không có sự kiện trong giai đoạn.</td></tr>
+                  <tr><td colSpan={5} className="py-6 text-center text-slate-400">Không có sự kiện trong giai đoạn.</td></tr>
                 )}
                 {report.monthlyEvents.map(event => (
                   <tr key={event.id} className="border-b border-slate-50">
@@ -815,6 +864,7 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
                     <td className="py-2 px-3">
                       <span className="px-2 py-1 rounded-full bg-slate-100 text-xs font-bold text-slate-700">{STATUS_LABELS[event.status]}</span>
                     </td>
+                    <td className="py-2 px-3 text-right font-bold text-emerald-700">{formatCurrency(report.serviceRevenueByEvent.get(event.id) || 0)}</td>
                     <td className="py-2 pl-3 text-right font-bold">{formatCurrency((event.expenses || []).reduce((sum, expense) => sum + (expense.amount || 0), 0))}</td>
                   </tr>
                 ))}
