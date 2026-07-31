@@ -174,6 +174,30 @@ const getVenueLabel = (venue: VenueFilter) => {
   return 'Tất cả EH + EBUS';
 };
 
+const allocatePenaltyBySmallerSource = (ehAmount: number, ebusAmount: number, penaltyAmount: number) => {
+  let remaining = Math.max(0, Number(penaltyAmount) || 0);
+  const penalties: Record<'EH' | 'EBUS', number> = { EH: 0, EBUS: 0 };
+  const sources = [
+    { venue: 'EH' as const, amount: Math.max(0, Number(ehAmount) || 0) },
+    { venue: 'EBUS' as const, amount: Math.max(0, Number(ebusAmount) || 0) }
+  ]
+    .filter(source => source.amount > 0)
+    .sort((a, b) => a.amount - b.amount);
+
+  sources.forEach(source => {
+    if (remaining <= 0) return;
+    const deduction = Math.min(source.amount, remaining);
+    penalties[source.venue] += deduction;
+    remaining -= deduction;
+  });
+
+  return {
+    ehPenalty: penalties.EH,
+    ebusPenalty: penalties.EBUS,
+    unappliedPenalty: remaining
+  };
+};
+
 const getOrderRevenue = (order: SaleOrder) => {
   const subtotal = (order.items || []).reduce((acc, item) => {
     const quantity = item.soldQuantity ?? item.quantity ?? 0;
@@ -220,8 +244,10 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
     const inventoryMap = new Map(appState.inventory.map(item => [item.id, item]));
     const quotationMap = new Map(appState.quotations.map(quotation => [quotation.id, quotation]));
     const allLinkedQuotationIds = new Set(appState.events.map(event => event.quotationId).filter((id): id is string => Boolean(id)));
-    const monthlyEvents = appState.events
+    const allMonthlyEvents = appState.events
       .filter(event => isEventInRange(event, period.startMonth, period.endMonth))
+      .sort((a, b) => (a.startDate || '').localeCompare(b.startDate || ''));
+    const monthlyEvents = allMonthlyEvents
       .filter(event => venueFilter === 'ALL' || getEventVenue(event) === venueFilter)
       .sort((a, b) => (a.startDate || '').localeCompare(b.startDate || ''));
     const monthlyEventIds = new Set(monthlyEvents.map(event => event.id));
@@ -287,7 +313,7 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
         .reduce((sum, expense) => sum + (expense.amount || 0), 0)
     })).filter(item => item.value > 0);
 
-    const staffEntries = monthlyEvents.flatMap(event =>
+    const buildStaffEntries = (sourceEvents: Event[]) => sourceEvents.flatMap(event =>
       (event.staff || []).map(staff => {
         const date = staff.shiftDate || event.startDate || event.endDate || '';
         if (staff.shiftDate && !isDateInRange(staff.shiftDate, period.startMonth, period.endMonth)) return null;
@@ -301,29 +327,101 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
           role: employee?.role || '',
           eventName: event.name,
           date,
+          month: date.slice(0, 7),
+          venue: getEventVenue(event),
           task: staff.task,
           salary: Number.isFinite(salary) ? salary : 0
         };
       }).filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
     );
-    const staffCost = staffEntries.reduce((sum, entry) => sum + entry.salary, 0);
-    const staffRows = Array.from(staffEntries.reduce((map, entry) => {
+
+    const staffEntries = buildStaffEntries(monthlyEvents);
+    const allPayrollStaffEntries = buildStaffEntries(allMonthlyEvents);
+    const payrollBaseByEmployeeMonth = allPayrollStaffEntries.reduce((map, entry) => {
+      if (!entry.month) return map;
+      const key = `${entry.employeeId}::${entry.month}`;
+      const current = map.get(key) || { employeeId: entry.employeeId, month: entry.month, eh: 0, ebus: 0 };
+      if (entry.venue === 'EBUS') current.ebus += entry.salary;
+      else current.eh += entry.salary;
+      map.set(key, current);
+      return map;
+    }, new Map<string, { employeeId: string; month: string; eh: number; ebus: number }>());
+    const payrollAdjustmentMap = new Map((appState.payrollAdjustments || [])
+      .map(adjustment => [`${adjustment.employeeId}::${adjustment.month}`, adjustment]));
+    const payrollAllocationByEmployeeMonth = Array.from(payrollBaseByEmployeeMonth.values()).reduce((map, base) => {
+      const key = `${base.employeeId}::${base.month}`;
+      const adjustment = payrollAdjustmentMap.get(key);
+      const penaltyAmount = Number(adjustment?.penaltyAmount) || 0;
+      const penaltyAllocation = allocatePenaltyBySmallerSource(base.eh, base.ebus, penaltyAmount);
+      map.set(key, {
+        bonusAmount: Number(adjustment?.bonusAmount) || 0,
+        penaltyAmount,
+        ...penaltyAllocation
+      });
+      return map;
+    }, new Map<string, { bonusAmount: number; penaltyAmount: number; ehPenalty: number; ebusPenalty: number; unappliedPenalty: number }>());
+
+    const staffRowMap = staffEntries.reduce((map, entry) => {
       const current = map.get(entry.employeeId) || {
         employeeId: entry.employeeId,
         employeeName: entry.employeeName,
         role: entry.role,
         shifts: 0,
         salary: 0,
+        grossSalary: 0,
+        bonusAmount: 0,
+        penaltyAmount: 0,
+        unappliedPenalty: 0,
         events: new Set<string>()
       };
       current.shifts += 1;
       current.salary += entry.salary;
+      current.grossSalary += entry.salary;
       current.events.add(entry.eventName);
       map.set(entry.employeeId, current);
       return map;
-    }, new Map<string, { employeeId: string; employeeName: string; role: string; shifts: number; salary: number; events: Set<string> }>()).values())
+    }, new Map<string, { employeeId: string; employeeName: string; role: string; shifts: number; salary: number; grossSalary: number; bonusAmount: number; penaltyAmount: number; unappliedPenalty: number; events: Set<string> }>());
+    const visiblePayrollSlices = staffEntries.reduce((map, entry) => {
+      const key = `${entry.employeeId}::${entry.month}::${entry.venue}`;
+      const current = map.get(key) || { employeeId: entry.employeeId, month: entry.month, venue: entry.venue, salary: 0 };
+      current.salary += entry.salary;
+      map.set(key, current);
+      return map;
+    }, new Map<string, { employeeId: string; month: string; venue: 'EH' | 'EBUS'; salary: number }>());
+    visiblePayrollSlices.forEach(slice => {
+      const row = staffRowMap.get(slice.employeeId);
+      const allocation = payrollAllocationByEmployeeMonth.get(`${slice.employeeId}::${slice.month}`);
+      if (!row || !allocation) return;
+      const sourcePenalty = slice.venue === 'EBUS' ? allocation.ebusPenalty : allocation.ehPenalty;
+      const appliedPenalty = Math.min(slice.salary, sourcePenalty);
+      row.salary -= appliedPenalty;
+      row.penaltyAmount += appliedPenalty;
+      if (venueFilter === 'ALL') {
+        row.unappliedPenalty += allocation.unappliedPenalty;
+      }
+    });
+    const visibleEmployeeMonths = Array.from(staffEntries.reduce((map, entry) => {
+      if (entry.month) map.set(`${entry.employeeId}::${entry.month}`, { employeeId: entry.employeeId, month: entry.month });
+      return map;
+    }, new Map<string, { employeeId: string; month: string }>()).values());
+    if (venueFilter === 'ALL') {
+      visibleEmployeeMonths.forEach(({ employeeId, month }) => {
+        const row = staffRowMap.get(employeeId);
+        const allocation = payrollAllocationByEmployeeMonth.get(`${employeeId}::${month}`);
+        if (!row || !allocation?.bonusAmount) return;
+        row.salary += allocation.bonusAmount;
+        row.bonusAmount += allocation.bonusAmount;
+      });
+    }
+    const staffRows = Array.from(staffRowMap.values())
       .map(row => ({ ...row, events: Array.from(row.events) }))
       .sort((a, b) => b.salary - a.salary);
+    const staffCost = staffRows.reduce((sum, row) => sum + row.salary, 0);
+    const staffAdjustmentSummary = staffRows.reduce((sum, row) => ({
+      bonus: sum.bonus + row.bonusAmount,
+      penalty: sum.penalty + row.penaltyAmount,
+      unappliedPenalty: sum.unappliedPenalty + row.unappliedPenalty
+    }), { bonus: 0, penalty: 0, unappliedPenalty: 0 });
 
     const advances = monthlyEvents.flatMap(event =>
       (event.advanceRequests || []).map(advance => ({
@@ -417,6 +515,12 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
       lost: acc.lost + (item.lostQuantity || 0),
       consumables: acc.consumables + (item.lifecycle === 'CONSUMABLE' ? (item.availableQuantity || 0) : 0)
     }), { broken: 0, lost: 0, consumables: 0 });
+    const staffCostNote = [
+      `${staffEntries.length} lượt phân công`,
+      staffAdjustmentSummary.bonus > 0 ? `thưởng ${formatCurrency(staffAdjustmentSummary.bonus)}` : '',
+      staffAdjustmentSummary.penalty > 0 ? `đã trừ phạt ${formatCurrency(staffAdjustmentSummary.penalty)}` : '',
+      staffAdjustmentSummary.unappliedPenalty > 0 ? `chưa trừ hết ${formatCurrency(staffAdjustmentSummary.unappliedPenalty)}` : ''
+    ].filter(Boolean).join(', ');
 
     const financialRows: MoneyRow[] = [
       { label: 'Doanh thu đơn bán đã chốt', value: saleRevenue, note: `${finalizedSales.length}/${sales.length} đơn đã chốt` },
@@ -424,7 +528,7 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
       { label: 'Doanh thu dịch vụ theo sự kiện', value: serviceRevenue, note: `${serviceRevenueRows.length} sự kiện đã gắn báo giá/hợp đồng` },
       { label: 'Báo giá đã chấp nhận chưa gắn sự kiện', value: acceptedQuotationRevenue, note: `${acceptedQuotations.length} báo giá` },
       { label: 'Chi phí sự kiện', value: -expenseTotal, note: `${expenseRows.length} khoản chi` },
-      { label: 'Chi phí nhân sự', value: -staffCost, note: `${staffEntries.length} lượt phân công` },
+      { label: 'Chi phí nhân sự', value: -staffCost, note: staffCostNote },
       { label: 'Tạm ứng đã xác nhận', value: -confirmedAdvance, note: `${advances.length} đề nghị tạm ứng` }
     ];
 
@@ -454,6 +558,7 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
       staffEntries,
       staffRows,
       staffCost,
+      staffAdjustmentSummary,
       confirmedAdvance,
       advances,
       consumableRows,
@@ -530,8 +635,8 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
       ]),
       [],
       ['Nhân sự'],
-      ['Nhân sự', 'Vai trò', 'Số lượt', 'Tổng lương', 'Sự kiện'],
-      ...report.staffRows.map(row => [row.employeeName, row.role, row.shifts, row.salary, row.events.join('; ')]),
+      ['Nhân sự', 'Vai trò', 'Số lượt', 'Lương gốc', 'Thưởng', 'Phạt đã trừ', 'Lương thực tính', 'Sự kiện'],
+      ...report.staffRows.map(row => [row.employeeName, row.role, row.shifts, row.grossSalary, row.bonusAmount, row.penaltyAmount, row.salary, row.events.join('; ')]),
       [],
       ['Hàng hư hỏng/mất'],
       ['Mã hàng', 'Tên hàng', 'Danh mục', 'Hư hỏng', 'Mất', 'Nguồn ghi nhận'],
@@ -583,6 +688,9 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
         <td>${escapeHtml(row.employeeName)}</td>
         <td>${escapeHtml(row.role)}</td>
         <td style="text-align:right;">${escapeHtml(row.shifts)}</td>
+        <td style="text-align:right;">${escapeHtml(formatCurrency(row.grossSalary))}</td>
+        <td style="text-align:right;">${escapeHtml(formatCurrency(row.bonusAmount))}</td>
+        <td style="text-align:right;">${escapeHtml(formatCurrency(row.penaltyAmount))}</td>
         <td style="text-align:right;">${escapeHtml(formatCurrency(row.salary))}</td>
       </tr>
     `).join('');
@@ -627,7 +735,7 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
           <h2>Sự kiện</h2>
           <table><thead><tr><th>Tên</th><th>Khách hàng</th><th>Thời gian</th><th>Trạng thái</th><th>Doanh thu dịch vụ</th><th>Chi phí</th></tr></thead><tbody>${eventRows || '<tr><td colspan="6">Không có dữ liệu.</td></tr>'}</tbody></table>
           <h2>Nhân sự</h2>
-          <table><thead><tr><th>Nhân sự</th><th>Vai trò</th><th>Số lượt</th><th>Tổng lương</th></tr></thead><tbody>${staffRows || '<tr><td colspan="4">Không có dữ liệu.</td></tr>'}</tbody></table>
+          <table><thead><tr><th>Nhân sự</th><th>Vai trò</th><th>Số lượt</th><th>Lương gốc</th><th>Thưởng</th><th>Phạt đã trừ</th><th>Lương thực tính</th></tr></thead><tbody>${staffRows || '<tr><td colspan="7">Không có dữ liệu.</td></tr>'}</tbody></table>
           <h2>Hư hỏng/mất mát</h2>
           <table><thead><tr><th>Hàng hóa</th><th>Hư hỏng</th><th>Mất</th><th>Nguồn</th></tr></thead><tbody>${damageRows || '<tr><td colspan="4">Không có dữ liệu.</td></tr>'}</tbody></table>
           <script>window.onload = () => window.print();</script>
@@ -966,7 +1074,7 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
           <div className="flex items-center justify-between mb-3">
             <div>
               <p className="text-xs font-black uppercase text-slate-400">Nhân sự</p>
-              <h3 className="text-base font-bold text-slate-900">Lương theo phân công</h3>
+              <h3 className="text-base font-bold text-slate-900">Lương thực tính theo phân công</h3>
             </div>
             <span className="text-xs font-bold text-slate-500">{formatCurrency(report.staffCost)}</span>
           </div>
@@ -976,13 +1084,16 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
                 <tr className="text-left text-xs uppercase text-slate-400 border-b">
                   <th className="py-2 pr-3">Nhân sự</th>
                   <th className="py-2 px-3 text-right">Lượt</th>
-                  <th className="py-2 px-3 text-right">Lương</th>
+                  <th className="py-2 px-3 text-right">Lương gốc</th>
+                  <th className="py-2 px-3 text-right">Thưởng</th>
+                  <th className="py-2 px-3 text-right">Phạt</th>
+                  <th className="py-2 px-3 text-right">Thực tính</th>
                   <th className="py-2 pl-3">Sự kiện</th>
                 </tr>
               </thead>
               <tbody>
                 {report.staffRows.length === 0 && (
-                  <tr><td colSpan={4} className="py-6 text-center text-slate-400">Chưa có phân công nhân sự.</td></tr>
+                  <tr><td colSpan={7} className="py-6 text-center text-slate-400">Chưa có phân công nhân sự.</td></tr>
                 )}
                 {report.staffRows.map(row => (
                   <tr key={row.employeeId} className="border-b border-slate-50">
@@ -991,7 +1102,13 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
                       <div className="text-xs text-slate-500">{row.role || 'Chưa có vai trò'}</div>
                     </td>
                     <td className="py-2 px-3 text-right">{formatNumber(row.shifts)}</td>
-                    <td className="py-2 px-3 text-right font-bold">{formatCurrency(row.salary)}</td>
+                    <td className="py-2 px-3 text-right font-semibold text-slate-700">{formatCurrency(row.grossSalary)}</td>
+                    <td className="py-2 px-3 text-right font-semibold text-emerald-700">{formatCurrency(row.bonusAmount)}</td>
+                    <td className="py-2 px-3 text-right font-semibold text-rose-700">
+                      <div>{formatCurrency(row.penaltyAmount)}</div>
+                      {row.unappliedPenalty > 0 && <div className="text-[11px] text-rose-500">Chưa trừ hết {formatCurrency(row.unappliedPenalty)}</div>}
+                    </td>
+                    <td className="py-2 px-3 text-right font-bold text-blue-700">{formatCurrency(row.salary)}</td>
                     <td className="py-2 pl-3 text-xs text-slate-500">{row.events.join('; ')}</td>
                   </tr>
                 ))}
