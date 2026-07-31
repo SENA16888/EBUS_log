@@ -9,7 +9,7 @@ interface EmployeeManagerProps {
   onAddEmployee: (emp: Employee) => void;
   onUpdateEmployee: (emp: Employee) => void;
   onDeleteEmployee: (id: string) => void;
-  onUpsertPayrollAdjustment?: (payload: { employeeId: string; month: string; bonusAmount: number; note?: string }) => void;
+  onUpsertPayrollAdjustment?: (payload: { employeeId: string; month: string; bonusAmount: number; penaltyAmount?: number; note?: string; penaltyNote?: string }) => void;
   canEdit?: boolean;
   canDelete?: boolean;
   canAdjustPayroll?: boolean;
@@ -69,7 +69,7 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
   const [payrollMonth, setPayrollMonth] = useState(() => new Date().toISOString().slice(0, 7));
   const [payrollVenue, setPayrollVenue] = useState<PayrollVenueFilter>('ALL');
   const [expandedPayrollRows, setExpandedPayrollRows] = useState<Record<string, boolean>>({});
-  const [bonusDrafts, setBonusDrafts] = useState<Record<string, { amount: string; note: string }>>({});
+  const [bonusDrafts, setBonusDrafts] = useState<Record<string, { amount: string; note: string; penaltyAmount: string; penaltyNote: string }>>({});
 
   const [formData, setFormData] = useState({
     name: '',
@@ -136,6 +136,29 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
     return staff.session ? [staff.session] : [];
   };
   const getEventVenue = (event: Event): EventVenueType => event.organizationVenue || 'EH';
+  const allocatePenaltyBySmallerSource = (ehAmount: number, ebusAmount: number, penaltyAmount: number) => {
+    let remaining = Math.max(0, Number(penaltyAmount) || 0);
+    const penalties: Record<EventVenueType, number> = { EH: 0, EBUS: 0 };
+    const sources = [
+      { venue: 'EH' as EventVenueType, amount: Math.max(0, Number(ehAmount) || 0) },
+      { venue: 'EBUS' as EventVenueType, amount: Math.max(0, Number(ebusAmount) || 0) }
+    ]
+      .filter(source => source.amount > 0)
+      .sort((a, b) => a.amount - b.amount);
+
+    sources.forEach(source => {
+      if (remaining <= 0) return;
+      const deduction = Math.min(source.amount, remaining);
+      penalties[source.venue] += deduction;
+      remaining -= deduction;
+    });
+
+    return {
+      ehPenalty: penalties.EH,
+      ebusPenalty: penalties.EBUS,
+      unappliedPenalty: remaining
+    };
+  };
 
   const todayStr = new Date().toISOString().slice(0, 10);
   const employeeEventStats = useMemo(() => {
@@ -176,12 +199,14 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
   }, [payrollAdjustments]);
 
   useEffect(() => {
-    const nextDrafts: Record<string, { amount: string; note: string }> = {};
+    const nextDrafts: Record<string, { amount: string; note: string; penaltyAmount: string; penaltyNote: string }> = {};
     visibleEmployees.forEach(emp => {
       const adj = payrollAdjustmentMap.get(`${emp.id}-${payrollMonth}`);
       nextDrafts[emp.id] = {
-        amount: adj ? String(adj.bonusAmount) : '',
-        note: adj?.note || ''
+        amount: adj?.bonusAmount ? String(adj.bonusAmount) : '',
+        note: adj?.note || '',
+        penaltyAmount: adj?.penaltyAmount ? String(adj.penaltyAmount) : '',
+        penaltyNote: adj?.penaltyNote || ''
       };
     });
     setBonusDrafts(nextDrafts);
@@ -226,20 +251,34 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
       const ehEntries = allEntries.filter(entry => entry.venue === 'EH');
       const ebusEntries = allEntries.filter(entry => entry.venue === 'EBUS');
       const entries = payrollVenue === 'ALL' ? allEntries : allEntries.filter(entry => entry.venue === payrollVenue);
-      const baseTotal = entries.reduce((sum, entry) => sum + (Number.isFinite(entry.salary) ? entry.salary : 0), 0);
       const ehBaseTotal = ehEntries.reduce((sum, entry) => sum + (Number.isFinite(entry.salary) ? entry.salary : 0), 0);
       const ebusBaseTotal = ebusEntries.reduce((sum, entry) => sum + (Number.isFinite(entry.salary) ? entry.salary : 0), 0);
       const adj = payrollAdjustmentMap.get(`${emp.id}-${payrollMonth}`);
       const bonusAmount = Number(adj?.bonusAmount) || 0;
+      const penaltyAmount = Number(adj?.penaltyAmount) || 0;
       const bonusNote = adj?.note || '';
+      const penaltyNote = adj?.penaltyNote || '';
+      const penaltyAllocation = allocatePenaltyBySmallerSource(ehBaseTotal, ebusBaseTotal, penaltyAmount);
+      const ehTotal = Math.max(0, ehBaseTotal - penaltyAllocation.ehPenalty);
+      const ebusTotal = Math.max(0, ebusBaseTotal - penaltyAllocation.ebusPenalty);
+      const baseTotal = payrollVenue === 'ALL'
+        ? ehTotal + ebusTotal
+        : (payrollVenue === 'EH' ? ehTotal : ebusTotal);
       return {
         employee: emp,
         entries,
         ehBaseTotal,
         ebusBaseTotal,
+        ehTotal,
+        ebusTotal,
         baseTotal,
         bonusAmount,
+        penaltyAmount,
         bonusNote,
+        penaltyNote,
+        ehPenalty: penaltyAllocation.ehPenalty,
+        ebusPenalty: penaltyAllocation.ebusPenalty,
+        unappliedPenalty: penaltyAllocation.unappliedPenalty,
         total: baseTotal + (payrollVenue === 'ALL' ? bonusAmount : 0)
       };
     }).sort((a, b) => b.total - a.total);
@@ -247,32 +286,35 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
 
   const payrollSummary = useMemo(() => {
     return payrollRows.reduce((acc, row) => ({
-      eh: acc.eh + row.ehBaseTotal,
-      ebus: acc.ebus + row.ebusBaseTotal,
+      eh: acc.eh + row.ehTotal,
+      ebus: acc.ebus + row.ebusTotal,
       bonus: acc.bonus + row.bonusAmount,
+      penalty: acc.penalty + row.penaltyAmount,
       total: acc.total + row.total
-    }), { eh: 0, ebus: 0, bonus: 0, total: 0 });
+    }), { eh: 0, ebus: 0, bonus: 0, penalty: 0, total: 0 });
   }, [payrollRows]);
 
   const togglePayrollRow = (id: string) => {
     setExpandedPayrollRows(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
-  const handleBonusDraftChange = (empId: string, field: 'amount' | 'note', value: string) => {
+  const handleBonusDraftChange = (empId: string, field: 'amount' | 'note' | 'penaltyAmount' | 'penaltyNote', value: string) => {
     setBonusDrafts(prev => ({
       ...prev,
-      [empId]: { ...(prev[empId] || { amount: '', note: '' }), [field]: value }
+      [empId]: { ...(prev[empId] || { amount: '', note: '', penaltyAmount: '', penaltyNote: '' }), [field]: value }
     }));
   };
 
   const handleSaveBonus = (empId: string) => {
     if (!onUpsertPayrollAdjustment) return;
-    const draft = bonusDrafts[empId] || { amount: '', note: '' };
+    const draft = bonusDrafts[empId] || { amount: '', note: '', penaltyAmount: '', penaltyNote: '' };
     onUpsertPayrollAdjustment({
       employeeId: empId,
       month: payrollMonth,
       bonusAmount: Number(draft.amount) || 0,
-      note: draft.note
+      penaltyAmount: Number(draft.penaltyAmount) || 0,
+      note: draft.note,
+      penaltyNote: draft.penaltyNote
     });
   };
 
@@ -292,10 +334,11 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
         : '<em>Chưa có nguồn lương trong tháng.</em>';
       const moneyCells = payrollVenue === 'ALL'
         ? `
-          <td style="text-align:right;">${row.ehBaseTotal.toLocaleString()} đ</td>
-          <td style="text-align:right;">${row.ebusBaseTotal.toLocaleString()} đ</td>
+          <td style="text-align:right;">${row.ehTotal.toLocaleString()} đ${row.ehPenalty > 0 ? `<div class="note">Đã trừ phạt ${row.ehPenalty.toLocaleString()} đ</div>` : ''}</td>
+          <td style="text-align:right;">${row.ebusTotal.toLocaleString()} đ${row.ebusPenalty > 0 ? `<div class="note">Đã trừ phạt ${row.ebusPenalty.toLocaleString()} đ</div>` : ''}</td>
           <td style="text-align:right;">${row.baseTotal.toLocaleString()} đ</td>
           <td style="text-align:right;">${row.bonusAmount.toLocaleString()} đ${row.bonusNote ? `<div class="note">${row.bonusNote}</div>` : ''}</td>
+          <td style="text-align:right;">${row.penaltyAmount.toLocaleString()} đ${row.penaltyNote ? `<div class="note">${row.penaltyNote}</div>` : ''}${row.unappliedPenalty > 0 ? `<div class="note">Chưa trừ hết ${row.unappliedPenalty.toLocaleString()} đ do lương không đủ</div>` : ''}</td>
           <td style="text-align:right;" class="total">${row.total.toLocaleString()} đ</td>
         `
         : `
@@ -310,7 +353,7 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
           ${moneyCells}
         </tr>
         <tr>
-          <td colspan="${payrollVenue === 'ALL' ? 6 : 2}">${row.entries.length ? `<ul style="margin:6px 0 0 14px; padding:0;">${detailHtml}</ul>` : detailHtml}</td>
+          <td colspan="${payrollVenue === 'ALL' ? 7 : 2}">${row.entries.length ? `<ul style="margin:6px 0 0 14px; padding:0;">${detailHtml}</ul>` : detailHtml}</td>
         </tr>
       `;
     }).join('');
@@ -322,6 +365,7 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
         <th>Lương EBUS</th>
         <th>Tổng lương</th>
         <th>Thưởng</th>
+        <th>Phạt</th>
         <th>Tổng cộng</th>
       `
       : `
@@ -350,7 +394,7 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
               <tr>${headerHtml}</tr>
             </thead>
             <tbody>
-              ${rowsHtml || `<tr><td colspan="${payrollVenue === 'ALL' ? 6 : 2}">Chưa có dữ liệu lương cho tháng này.</td></tr>`}
+              ${rowsHtml || `<tr><td colspan="${payrollVenue === 'ALL' ? 7 : 2}">Chưa có dữ liệu lương cho tháng này.</td></tr>`}
             </tbody>
           </table>
         </body>
@@ -408,7 +452,7 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
             <p className="text-[11px] font-semibold text-slate-500 uppercase">Bảng lương</p>
             <h3 className="text-lg font-bold text-gray-800">{selfServiceOnly ? 'Lương cá nhân theo tháng' : 'Tổng hợp lương theo tháng'}</h3>
             <p className="text-sm text-gray-500">
-              {selfServiceOnly ? 'Xem nguồn tính lương tại EH, EBUS, thưởng và tổng cộng của chính bạn theo từng tháng.' : 'Xem nguồn tính lương từng nhân sự theo EH/EBUS, thêm thưởng kèm lý do và in ra PDF riêng.'}
+              {selfServiceOnly ? 'Xem nguồn tính lương tại EH, EBUS, thưởng, phạt và tổng cộng của chính bạn theo từng tháng.' : 'Xem nguồn tính lương từng nhân sự theo EH/EBUS, thêm thưởng/phạt kèm lý do và in ra PDF riêng.'}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -438,7 +482,7 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
           </div>
         </div>
 
-        <div className="mt-4 grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="mt-4 grid grid-cols-2 lg:grid-cols-5 gap-3">
           <div className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2">
             <p className="text-[11px] font-bold uppercase text-blue-500">Lương EH</p>
             <p className="text-base font-black text-slate-800">{payrollSummary.eh.toLocaleString()} đ</p>
@@ -450,6 +494,10 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
           <div className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2">
             <p className="text-[11px] font-bold uppercase text-amber-500">Thưởng chung</p>
             <p className="text-base font-black text-slate-800">{payrollSummary.bonus.toLocaleString()} đ</p>
+          </div>
+          <div className="rounded-lg border border-rose-100 bg-rose-50 px-3 py-2">
+            <p className="text-[11px] font-bold uppercase text-rose-500">Phạt chung</p>
+            <p className="text-base font-black text-slate-800">{payrollSummary.penalty.toLocaleString()} đ</p>
           </div>
           <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
             <p className="text-[11px] font-bold uppercase text-slate-500">{payrollVenue === 'ALL' ? 'Tổng cộng' : `Tổng ${payrollVenueLabels[payrollVenue]}`}</p>
@@ -467,7 +515,7 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
                     <th className="text-right px-4 py-3">Lương EH</th>
                     <th className="text-right px-4 py-3">Lương EBUS</th>
                     <th className="text-right px-4 py-3">Tổng lương</th>
-                    <th className="text-left px-4 py-3">Thưởng (+ lý do)</th>
+                    <th className="text-left px-4 py-3">Thưởng / Phạt</th>
                     <th className="text-right px-4 py-3">Tổng cộng</th>
                   </>
                 ) : (
@@ -478,7 +526,7 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
             </thead>
             <tbody className="divide-y divide-slate-100">
               {payrollRows.map(row => {
-                const draft = bonusDrafts[row.employee.id] || { amount: '', note: '' };
+                const draft = bonusDrafts[row.employee.id] || { amount: '', note: '', penaltyAmount: '', penaltyNote: '' };
                 return (
                   <React.Fragment key={row.employee.id}>
                     <tr className="hover:bg-slate-50">
@@ -488,44 +536,72 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
                       </td>
                       {payrollVenue === 'ALL' ? (
                         <>
-                          <td className="px-4 py-3 text-right font-semibold text-blue-700">{row.ehBaseTotal.toLocaleString()} đ</td>
-                          <td className="px-4 py-3 text-right font-semibold text-emerald-700">{row.ebusBaseTotal.toLocaleString()} đ</td>
+                          <td className="px-4 py-3 text-right">
+                            <p className="font-semibold text-blue-700">{row.ehTotal.toLocaleString()} đ</p>
+                            {row.ehPenalty > 0 && <p className="text-[11px] font-semibold text-rose-600">Đã trừ phạt {row.ehPenalty.toLocaleString()} đ</p>}
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <p className="font-semibold text-emerald-700">{row.ebusTotal.toLocaleString()} đ</p>
+                            {row.ebusPenalty > 0 && <p className="text-[11px] font-semibold text-rose-600">Đã trừ phạt {row.ebusPenalty.toLocaleString()} đ</p>}
+                          </td>
                           <td className="px-4 py-3 text-right font-semibold text-slate-800">{row.baseTotal.toLocaleString()} đ</td>
                           <td className="px-4 py-3">
                             <div className="flex flex-col gap-2">
                               {canAdjustPayroll ? (
-                                <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-                                  <input
-                                    type="number"
-                                    min={0}
-                                    value={draft.amount}
-                                    onChange={(e) => handleBonusDraftChange(row.employee.id, 'amount', e.target.value)}
-                                    className="w-full sm:w-32 border border-slate-200 rounded-lg px-3 py-2 text-sm"
-                                    placeholder="0"
-                                  />
-                                  <input
-                                    type="text"
-                                    value={draft.note}
-                                    onChange={(e) => handleBonusDraftChange(row.employee.id, 'note', e.target.value)}
-                                    className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm"
-                                    placeholder="Lý do thưởng"
-                                  />
+                                <div className="space-y-2">
+                                  <div className="grid grid-cols-1 xl:grid-cols-[7rem_1fr] gap-2">
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      value={draft.amount}
+                                      onChange={(e) => handleBonusDraftChange(row.employee.id, 'amount', e.target.value)}
+                                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                                      placeholder="Thưởng"
+                                    />
+                                    <input
+                                      type="text"
+                                      value={draft.note}
+                                      onChange={(e) => handleBonusDraftChange(row.employee.id, 'note', e.target.value)}
+                                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                                      placeholder="Lý do thưởng"
+                                    />
+                                  </div>
+                                  <div className="grid grid-cols-1 xl:grid-cols-[7rem_1fr_auto] gap-2">
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      value={draft.penaltyAmount}
+                                      onChange={(e) => handleBonusDraftChange(row.employee.id, 'penaltyAmount', e.target.value)}
+                                      className="w-full border border-rose-200 rounded-lg px-3 py-2 text-sm"
+                                      placeholder="Phạt"
+                                    />
+                                    <input
+                                      type="text"
+                                      value={draft.penaltyNote}
+                                      onChange={(e) => handleBonusDraftChange(row.employee.id, 'penaltyNote', e.target.value)}
+                                      className="w-full border border-rose-200 rounded-lg px-3 py-2 text-sm"
+                                      placeholder="Lý do phạt"
+                                    />
                                   <button
                                     onClick={() => handleSaveBonus(row.employee.id)}
                                     className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-semibold hover:bg-blue-700"
                                   >
                                     Lưu
                                   </button>
+                                  </div>
                                 </div>
                               ) : (
                                 <div className="rounded-lg bg-slate-50 border border-slate-100 px-3 py-2">
-                                  <p className="text-sm font-semibold text-slate-700">{row.bonusAmount.toLocaleString()} đ</p>
+                                  <p className="text-sm font-semibold text-emerald-700">Thưởng: {row.bonusAmount.toLocaleString()} đ</p>
                                   <p className="text-xs text-slate-500">{row.bonusNote || 'Không có ghi chú thưởng'}</p>
+                                  <p className="mt-1 text-sm font-semibold text-rose-700">Phạt: {row.penaltyAmount.toLocaleString()} đ</p>
+                                  <p className="text-xs text-slate-500">{row.penaltyNote || 'Không có ghi chú phạt'}</p>
                                 </div>
                               )}
-                              {canAdjustPayroll && (row.bonusAmount > 0 || row.bonusNote) && (
+                              {canAdjustPayroll && (row.bonusAmount > 0 || row.bonusNote || row.penaltyAmount > 0 || row.penaltyNote) && (
                                 <p className="text-[11px] text-slate-500">
-                                  Đã lưu: {row.bonusAmount.toLocaleString()} đ {row.bonusNote ? `• ${row.bonusNote}` : ''}
+                                  Đã lưu: thưởng {row.bonusAmount.toLocaleString()} đ, phạt {row.penaltyAmount.toLocaleString()} đ{row.bonusNote ? ` • Thưởng: ${row.bonusNote}` : ''}{row.penaltyNote ? ` • Phạt: ${row.penaltyNote}` : ''}
+                                  {row.unappliedPenalty > 0 ? ` • Chưa trừ hết ${row.unappliedPenalty.toLocaleString()} đ do lương không đủ` : ''}
                                 </p>
                               )}
                             </div>

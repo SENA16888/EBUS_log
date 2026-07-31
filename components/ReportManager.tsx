@@ -137,6 +137,35 @@ const isEventInRange = (event: Event, startMonth: string, endMonth: string) => {
   return rangeStart <= periodEnd && rangeEnd >= periodStart;
 };
 
+const getLocalDateKey = (date = new Date()) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const getEventDateKeys = (event: Event) => {
+  const scheduleDates = (event.schedule || [])
+    .map(item => item.date)
+    .filter((date): date is string => Boolean(date))
+    .sort();
+  if (scheduleDates.length > 0) return scheduleDates;
+  return [event.startDate, event.endDate]
+    .filter((date): date is string => Boolean(date))
+    .sort();
+};
+
+const getEffectiveEventStatus = (event: Event, todayKey = getLocalDateKey()): EventStatus => {
+  if (event.status === EventStatus.CANCELLED) return EventStatus.CANCELLED;
+  const dates = getEventDateKeys(event);
+  const firstDate = dates[0];
+  const lastDate = dates[dates.length - 1];
+  if (!firstDate && !lastDate) return event.status;
+  if (lastDate && lastDate < todayKey) return EventStatus.COMPLETED;
+  if (firstDate && firstDate <= todayKey && (!lastDate || lastDate >= todayKey)) return EventStatus.ONGOING;
+  return EventStatus.UPCOMING;
+};
+
 const getEventVenue = (event: Pick<Event, 'organizationVenue'>) => event.organizationVenue || 'EH';
 
 const getVenueLabel = (venue: VenueFilter) => {
@@ -197,6 +226,8 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
       .sort((a, b) => (a.startDate || '').localeCompare(b.startDate || ''));
     const monthlyEventIds = new Set(monthlyEvents.map(event => event.id));
     const monthlyEventSaleOrderIds = new Set(monthlyEvents.flatMap(event => event.saleOrderIds || []));
+    const todayKey = getLocalDateKey();
+    const eventStatusById = new Map(monthlyEvents.map(event => [event.id, getEffectiveEventStatus(event, todayKey)]));
 
     const periodSaleOrders = (appState.saleOrders || []).filter(order => isDateInRange(order.date, period.startMonth, period.endMonth));
     const saleOrders = periodSaleOrders.filter(order =>
@@ -377,7 +408,7 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
 
     const eventStatusRows = Object.values(EventStatus).map(status => ({
       name: STATUS_LABELS[status],
-      value: monthlyEvents.filter(event => event.status === status).length,
+      value: monthlyEvents.filter(event => eventStatusById.get(event.id) === status).length,
       color: STATUS_COLORS[status]
     }));
 
@@ -402,6 +433,7 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
       periodLabel,
       venueFilter,
       venueLabel,
+      eventStatusById,
       monthlyEvents,
       sales,
       finalizedSales,
@@ -481,7 +513,7 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
         event.location,
         event.startDate,
         event.endDate,
-        STATUS_LABELS[event.status],
+        STATUS_LABELS[report.eventStatusById.get(event.id) || event.status],
         report.serviceRevenueByEvent.get(event.id) || 0,
         (event.expenses || []).reduce((sum, expense) => sum + (expense.amount || 0), 0),
         event.staff?.length || 0
@@ -541,7 +573,7 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
         <td>${escapeHtml(event.name)}</td>
         <td>${escapeHtml(event.client)}</td>
         <td>${escapeHtml(event.startDate)} - ${escapeHtml(event.endDate)}</td>
-        <td>${escapeHtml(STATUS_LABELS[event.status])}</td>
+        <td>${escapeHtml(STATUS_LABELS[report.eventStatusById.get(event.id) || event.status])}</td>
         <td style="text-align:right;">${escapeHtml(formatCurrency(report.serviceRevenueByEvent.get(event.id) || 0))}</td>
         <td style="text-align:right;">${escapeHtml(formatCurrency((event.expenses || []).reduce((sum, expense) => sum + (expense.amount || 0), 0)))}</td>
       </tr>
@@ -719,7 +751,7 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
         <StatCard
           title="Số sự kiện"
           value={formatNumber(report.monthlyEvents.length)}
-          sub={`${formatNumber(report.monthlyEvents.filter(event => event.status === EventStatus.COMPLETED).length)} hoàn thành`}
+          sub={`${formatNumber(report.monthlyEvents.filter(event => report.eventStatusById.get(event.id) === EventStatus.COMPLETED).length)} hoàn thành`}
           icon={<CalendarDays size={18} />}
           tone="bg-blue-50 text-blue-700"
         />
@@ -919,7 +951,7 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
                     </td>
                     <td className="py-2 px-3 text-slate-600">{event.startDate} - {event.endDate}</td>
                     <td className="py-2 px-3">
-                      <span className="px-2 py-1 rounded-full bg-slate-100 text-xs font-bold text-slate-700">{STATUS_LABELS[event.status]}</span>
+                      <span className="px-2 py-1 rounded-full bg-slate-100 text-xs font-bold text-slate-700">{STATUS_LABELS[report.eventStatusById.get(event.id) || event.status]}</span>
                     </td>
                     <td className="py-2 px-3 text-right font-bold text-emerald-700">{formatCurrency(report.serviceRevenueByEvent.get(event.id) || 0)}</td>
                     <td className="py-2 pl-3 text-right font-bold">{formatCurrency((event.expenses || []).reduce((sum, expense) => sum + (expense.amount || 0), 0))}</td>

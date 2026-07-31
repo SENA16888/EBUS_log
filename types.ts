@@ -826,7 +826,9 @@ export interface PayrollAdjustment {
   employeeId: string;
   month: string; // YYYY-MM
   bonusAmount: number;
+  penaltyAmount?: number;
   note?: string;
+  penaltyNote?: string;
 }
 
 export interface EducationEquipmentLink {

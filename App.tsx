@@ -1930,10 +1930,12 @@ const App: React.FC = () => {
     setAppState(prev => ({ ...prev, employees: prev.employees.filter(e => e.id !== id) }));
     addLog(`Đã xóa nhân sự: ${empName}`, 'SUCCESS');
   };
-  const handleUpsertPayrollAdjustment = (payload: { employeeId: string; month: string; bonusAmount: number; note?: string }) => {
+  const handleUpsertPayrollAdjustment = (payload: { employeeId: string; month: string; bonusAmount: number; penaltyAmount?: number; note?: string; penaltyNote?: string }) => {
     const safeMonth = payload.month || new Date().toISOString().slice(0, 7);
     const cleanAmount = Math.max(0, Number(payload.bonusAmount) || 0);
+    const cleanPenaltyAmount = Math.max(0, Number(payload.penaltyAmount) || 0);
     const cleanNote = payload.note?.trim() || '';
+    const cleanPenaltyNote = payload.penaltyNote?.trim() || '';
     setAppState(prev => {
       const list = prev.payrollAdjustments || [];
       const idx = list.findIndex(adj => adj.employeeId === payload.employeeId && adj.month === safeMonth);
@@ -1943,10 +1945,12 @@ const App: React.FC = () => {
         employeeId: payload.employeeId,
         month: safeMonth,
         bonusAmount: cleanAmount,
-        note: cleanNote
+        penaltyAmount: cleanPenaltyAmount,
+        note: cleanNote,
+        penaltyNote: cleanPenaltyNote
       };
       const next = [...list];
-      if (cleanAmount === 0 && !cleanNote) {
+      if (cleanAmount === 0 && cleanPenaltyAmount === 0 && !cleanNote && !cleanPenaltyNote) {
         if (idx >= 0) next.splice(idx, 1);
         return { ...prev, payrollAdjustments: next };
       }
@@ -1958,8 +1962,8 @@ const App: React.FC = () => {
       return { ...prev, payrollAdjustments: next };
     });
     const empName = appState.employees.find(e => e.id === payload.employeeId)?.name || 'Nhân sự';
-    const actionLabel = cleanAmount === 0 && !cleanNote ? 'Xóa' : 'Cập nhật';
-    addLog(`${actionLabel} thưởng tháng ${safeMonth} cho ${empName}: ${cleanAmount.toLocaleString()}đ${cleanNote ? ` • ${cleanNote}` : ''}`, 'INFO');
+    const actionLabel = cleanAmount === 0 && cleanPenaltyAmount === 0 && !cleanNote && !cleanPenaltyNote ? 'Xóa' : 'Cập nhật';
+    addLog(`${actionLabel} điều chỉnh lương tháng ${safeMonth} cho ${empName}: thưởng ${cleanAmount.toLocaleString()}đ, phạt ${cleanPenaltyAmount.toLocaleString()}đ${cleanNote ? ` • Thưởng: ${cleanNote}` : ''}${cleanPenaltyNote ? ` • Phạt: ${cleanPenaltyNote}` : ''}`, 'INFO');
   };
   
   // --- Handlers cho Báo giá ---
