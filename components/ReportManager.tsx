@@ -2,6 +2,8 @@ import React, { useMemo, useState } from 'react';
 import {
   AlertTriangle,
   Boxes,
+  Building2,
+  BusFront,
   CalendarDays,
   Download,
   FileText,
@@ -46,6 +48,14 @@ type ServiceRevenueRow = {
   source: string;
   amount: number;
 };
+
+type VenueFilter = 'ALL' | 'EH' | 'EBUS';
+
+const VENUE_FILTERS: { value: VenueFilter; label: string; icon: React.ReactNode }[] = [
+  { value: 'ALL', label: 'Tất cả', icon: <CalendarDays size={15} /> },
+  { value: 'EH', label: 'EH', icon: <Building2 size={15} /> },
+  { value: 'EBUS', label: 'EBUS', icon: <BusFront size={15} /> }
+];
 
 const EXPENSE_LABELS: Record<EventExpense['category'], string> = {
   TRANSPORT_GOODS: 'Vận chuyển hàng',
@@ -127,6 +137,14 @@ const isEventInRange = (event: Event, startMonth: string, endMonth: string) => {
   return rangeStart <= periodEnd && rangeEnd >= periodStart;
 };
 
+const getEventVenue = (event: Pick<Event, 'organizationVenue'>) => event.organizationVenue || 'EH';
+
+const getVenueLabel = (venue: VenueFilter) => {
+  if (venue === 'EH') return 'Einstein House (EH)';
+  if (venue === 'EBUS') return 'EBUS';
+  return 'Tất cả EH + EBUS';
+};
+
 const getOrderRevenue = (order: SaleOrder) => {
   const subtotal = (order.items || []).reduce((acc, item) => {
     const quantity = item.soldQuantity ?? item.quantity ?? 0;
@@ -164,17 +182,28 @@ const escapeHtml = (value: unknown) =>
 export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
   const [startMonth, setStartMonth] = useState(currentMonth);
   const [endMonth, setEndMonth] = useState(currentMonth);
+  const [venueFilter, setVenueFilter] = useState<VenueFilter>('ALL');
 
   const report = useMemo(() => {
     const period = normalizeMonthRange(startMonth, endMonth);
     const periodLabel = formatRangeLabel(period.startMonth, period.endMonth);
+    const venueLabel = getVenueLabel(venueFilter);
     const inventoryMap = new Map(appState.inventory.map(item => [item.id, item]));
     const quotationMap = new Map(appState.quotations.map(quotation => [quotation.id, quotation]));
+    const allLinkedQuotationIds = new Set(appState.events.map(event => event.quotationId).filter((id): id is string => Boolean(id)));
     const monthlyEvents = appState.events
       .filter(event => isEventInRange(event, period.startMonth, period.endMonth))
+      .filter(event => venueFilter === 'ALL' || getEventVenue(event) === venueFilter)
       .sort((a, b) => (a.startDate || '').localeCompare(b.startDate || ''));
+    const monthlyEventIds = new Set(monthlyEvents.map(event => event.id));
+    const monthlyEventSaleOrderIds = new Set(monthlyEvents.flatMap(event => event.saleOrderIds || []));
 
-    const saleOrders = (appState.saleOrders || []).filter(order => isDateInRange(order.date, period.startMonth, period.endMonth));
+    const periodSaleOrders = (appState.saleOrders || []).filter(order => isDateInRange(order.date, period.startMonth, period.endMonth));
+    const saleOrders = periodSaleOrders.filter(order =>
+      venueFilter === 'ALL'
+      || (order.eventId ? monthlyEventIds.has(order.eventId) : false)
+      || monthlyEventSaleOrderIds.has(order.id)
+    );
     const sales = saleOrders.filter(order => (order.type || 'SALE') !== 'RETURN');
     const returns = saleOrders.filter(order => (order.type || '') === 'RETURN');
     const finalizedSales = sales.filter(order => order.status === 'FINALIZED');
@@ -201,7 +230,9 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
     const serviceRevenue = serviceRevenueRows.reduce((sum, row) => sum + row.amount, 0);
     const serviceRevenueByEvent = new Map(serviceRevenueRows.map(row => [row.eventId, row.amount]));
     const acceptedQuotations = appState.quotations.filter(q =>
-      q.status === 'ACCEPTED'
+      venueFilter === 'ALL'
+      && !allLinkedQuotationIds.has(q.id)
+      && q.status === 'ACCEPTED'
       && isDateInRange(q.date, period.startMonth, period.endMonth)
       && !countedServiceQuotationIds.has(q.id)
     );
@@ -327,6 +358,7 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
     });
     (appState.transactions || [])
       .filter(tx => isDateInRange(tx.date, period.startMonth, period.endMonth))
+      .filter(tx => venueFilter === 'ALL' || (tx.eventId ? monthlyEventIds.has(tx.eventId) : false))
       .forEach(tx => {
         if (tx.type === 'REPORT_BROKEN') addDamage(tx.itemId, tx.quantity || 0, 0, tx.note || 'Giao dịch kho');
         if (tx.type === 'REPORT_LOST') addDamage(tx.itemId, 0, tx.quantity || 0, tx.note || 'Giao dịch kho');
@@ -335,7 +367,7 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
       .map(row => ({ ...row, sources: Array.from(row.sources) }))
       .sort((a, b) => (b.damaged + b.lost) - (a.damaged + a.lost));
 
-    const receipts = (appState.inventoryReceipts || [])
+    const receipts = (venueFilter === 'ALL' ? (appState.inventoryReceipts || []) : [])
       .filter(receipt => isDateInRange(receipt.createdAt, period.startMonth, period.endMonth))
       .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
     const receiptUnits = receipts.reduce((sum, receipt) =>
@@ -368,6 +400,8 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
     return {
       period,
       periodLabel,
+      venueFilter,
+      venueLabel,
       monthlyEvents,
       sales,
       finalizedSales,
@@ -401,7 +435,7 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
       monthlyInventorySnapshot,
       financialRows
     };
-  }, [appState, startMonth, endMonth]);
+  }, [appState, startMonth, endMonth, venueFilter]);
 
   const totalDamaged = report.damageRows.reduce((sum, row) => sum + row.damaged, 0);
   const totalLost = report.damageRows.reduce((sum, row) => sum + row.lost, 0);
@@ -418,6 +452,7 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
   const exportReportCsv = () => {
     const rows: unknown[][] = [
       ['Báo cáo giai đoạn', report.periodLabel],
+      ['Phạm vi', report.venueLabel],
       [],
       ['Tổng quan'],
       ['Chỉ số', 'Giá trị', 'Ghi chú'],
@@ -485,7 +520,7 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
         receipt.note || ''
       ])
     ];
-    downloadCsv(`bao-cao-${report.period.startMonth}-${report.period.endMonth}.csv`, rows);
+    downloadCsv(`bao-cao-${report.venueFilter.toLowerCase()}-${report.period.startMonth}-${report.period.endMonth}.csv`, rows);
   };
 
   const printReport = () => {
@@ -548,7 +583,7 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
         </head>
         <body>
           <h1>Báo cáo tổng hợp ${escapeHtml(report.periodLabel)}</h1>
-          <div class="meta">In lúc ${escapeHtml(new Date().toLocaleString('vi-VN'))}</div>
+          <div class="meta">Phạm vi: ${escapeHtml(report.venueLabel)} • In lúc ${escapeHtml(new Date().toLocaleString('vi-VN'))}</div>
           <div class="grid">
             <div class="box"><div class="label">Sự kiện</div><div class="value">${escapeHtml(report.monthlyEvents.length)}</div></div>
             <div class="box"><div class="label">Doanh thu ghi nhận</div><div class="value">${escapeHtml(formatCurrency(report.recognizedRevenue))}</div></div>
@@ -629,6 +664,23 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
                 />
               </label>
             </div>
+            <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1">
+              {VENUE_FILTERS.map(option => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => setVenueFilter(option.value)}
+                  className={`inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-bold transition ${
+                    venueFilter === option.value
+                      ? 'bg-white text-blue-700 shadow-sm'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  {option.icon}
+                  {option.label}
+                </button>
+              ))}
+            </div>
             <button
               onClick={() => {
                 const monthValue = currentMonth();
@@ -653,8 +705,13 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
             </button>
           </div>
         </div>
-        <div className="mt-3 inline-flex items-center gap-2 rounded-lg bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-700">
-          <CalendarDays size={14} /> {report.periodLabel}
+        <div className="mt-3 flex flex-wrap gap-2">
+          <div className="inline-flex items-center gap-2 rounded-lg bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-700">
+            <CalendarDays size={14} /> {report.periodLabel}
+          </div>
+          <div className="inline-flex items-center gap-2 rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-700">
+            {venueFilter === 'EBUS' ? <BusFront size={14} /> : venueFilter === 'EH' ? <Building2 size={14} /> : <CalendarDays size={14} />} {report.venueLabel}
+          </div>
         </div>
       </div>
 
