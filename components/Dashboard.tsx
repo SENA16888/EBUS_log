@@ -111,7 +111,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState }) => {
     const totalExpense = completedEbusEvents.reduce((sum, item) => sum + getEventExpenseTotal(item.event), 0);
     const totalStaffAssignments = completedEbusEvents.reduce((sum, item) => sum + (item.event.staff?.length || 0), 0);
     const totalEquipmentUnits = completedEbusEvents.reduce((sum, item) =>
-      sum + (item.event.items || []).reduce((itemSum, allocation) => itemSum + (Number(allocation.quantity) || 0), 0), 0);
+      sum + (item.event.items || []).reduce((itemSum, allocation) => {
+        const preparedQuantity = item.event.checklist?.preparation?.[allocation.itemId]?.quantity;
+        const legacyQuantity = item.event.checklist?.outbound?.[allocation.itemId];
+        return itemSum + Math.max(0, Number(preparedQuantity ?? legacyQuantity ?? allocation.quantity) || 0);
+      }, 0), 0);
     const schools = new Set(completedEbusEvents.map(item => item.event.client).filter(Boolean));
     const locations = new Set(completedEbusEvents.map(item => item.event.location).filter(Boolean));
 

@@ -16,7 +16,7 @@ import { EinsteinHouseOS } from './components/EinsteinHouseOS';
 import { EducationContentManager } from './components/EducationContentManager';
 import { InteractiveDeviceManager } from './components/InteractiveDeviceManager';
 import { ReportManager } from './components/ReportManager';
-import { AppState, InventoryItem, Event, EventStatus, Transaction, TransactionType, ComboPackage, Employee, Quotation, EventStaffAllocation, EventStaffRegistration, EventExpense, EventAdvanceRequest, LogEntry, ChecklistDirection, ChecklistStatus, ChecklistSignature, EventChecklist, LearningAttempt, LearningProfile, AccessPermission, UserAccount, LearningTrack, InventoryReceipt, InventoryReceiptItem, ActiveSession, PayrollAdjustment, InventoryAuditSession, InventoryAuditItem, InventoryAuditBaseline, EducationActivity, EducationLessonLink, InteractiveDeviceProfile, HouseOperationInstance } from './types';
+import { AppState, InventoryItem, Event, EventStatus, Transaction, TransactionType, ComboPackage, Employee, Quotation, EventStaffAllocation, EventStaffRegistration, EventExpense, EventAdvanceRequest, LogEntry, ChecklistDirection, ChecklistStatus, ChecklistSignature, EventChecklist, EventPreparationEntry, EventInventoryIncidentType, LearningAttempt, LearningProfile, AccessPermission, UserAccount, LearningTrack, InventoryReceipt, InventoryReceiptItem, ActiveSession, PayrollAdjustment, InventoryAuditSession, InventoryAuditItem, InventoryAuditBaseline, InventoryAuditScope, EducationActivity, EducationLessonLink, InteractiveDeviceProfile, HouseOperationInstance } from './types';
 import { MOCK_INVENTORY, MOCK_EVENTS, MOCK_TRANSACTIONS, MOCK_PACKAGES, MOCK_EMPLOYEES, MOCK_LEARNING_TRACKS, MOCK_CAREER_RANKS, DEFAULT_USER_ACCOUNTS, MOCK_INVENTORY_RECEIPTS, MOCK_EDUCATION_ACTIVITIES, MOCK_INTERACTIVE_DEVICES } from './constants';
 import { MessageSquare } from 'lucide-react';
 import { ensureCollectionModelInitialized, initializeAuth, loadCollectionState, subscribeToCollectionState, subscribeToSessions, setSessionOnline, setSessionOffline, syncCollectionStateDiff, saveLearningUserState, subscribeToLearningUserState, deleteLearningUserState, subscribeToLearningUsers } from './services/firebaseService';
@@ -193,7 +193,10 @@ const normalizeInventoryLifecycle = (item: InventoryItem): InventoryItem => {
     ? (typeof item.maxUsage === 'number' && item.maxUsage > 0 ? item.maxUsage : 10)
     : undefined;
   const consumableUnit = lifecycle === 'CONSUMABLE' ? (item.consumableUnit || 'cái') : undefined;
-  return { ...item, lifecycle, maxUsage, consumableUnit };
+  const busQuantity = typeof item.busQuantity === 'number'
+    ? Math.min(Math.max(0, item.busQuantity), Math.max(0, item.availableQuantity || 0))
+    : undefined;
+  return { ...item, lifecycle, maxUsage, consumableUnit, busQuantity };
 };
 
 const hasLegacyHouseOperationAgenda = (operation?: HouseOperationInstance | null): boolean => {
@@ -1217,6 +1220,222 @@ const App: React.FC = () => {
     addLog(`Checklist: ${actionLabel} ${quantity} x ${payload.barcode}`, 'INFO');
   };
 
+  const handleSaveEventPreparation = (
+    eventId: string,
+    entries: Record<string, EventPreparationEntry>,
+    finalize: boolean
+  ) => {
+    let eventName = '';
+    let confirmedItems = 0;
+    const timestamp = new Date().toISOString();
+
+    setAppState(prev => {
+      const event = prev.events.find(item => item.id === eventId);
+      if (!event) return prev;
+      eventName = event.name;
+      const checklist = normalizeChecklist(event.checklist);
+      const preparation = Object.entries(entries).reduce<Record<string, EventPreparationEntry>>((acc, [itemId, entry]) => {
+        const orderQty = event.items.find(item => item.itemId === itemId)?.quantity || 0;
+        const quantity = Math.min(Math.max(0, Math.round(Number(entry.quantity) || 0)), Math.max(0, orderQty));
+        const loadQuantity = entry.status === 'LOAD_TO_BUS'
+          ? Math.min(quantity, Math.max(0, Math.round(Number(entry.loadQuantity) || 0)))
+          : 0;
+        acc[itemId] = {
+          ...entry,
+          quantity,
+          loadQuantity: loadQuantity || undefined,
+          note: entry.note?.trim() || undefined,
+          confirmedAt: finalize ? timestamp : entry.confirmedAt
+        };
+        return acc;
+      }, {});
+
+      const outbound = { ...checklist.outbound };
+      Object.entries(preparation).forEach(([itemId, entry]) => {
+        outbound[itemId] = entry.quantity;
+      });
+
+      if (!finalize) {
+        return {
+          ...prev,
+          events: prev.events.map(item => item.id === eventId
+            ? { ...item, checklist: { ...checklist, preparation, outbound } }
+            : item)
+        };
+      }
+
+      const usageRecorded = { ...(checklist.usageRecorded || {}) };
+      const loadedToBusRecorded = { ...(checklist.loadedToBusRecorded || {}) };
+      const updatedInventory = prev.inventory.map(item => {
+        const entry = preparation[item.id];
+        if (!entry) return item;
+        confirmedItems += 1;
+
+        const targetUsage = entry.status === 'MISSING' && entry.quantity === 0 ? 0 : entry.quantity;
+        const previousUsage = usageRecorded[item.id] || 0;
+        const usageDelta = targetUsage - previousUsage;
+        usageRecorded[item.id] = targetUsage;
+
+        const targetLoaded = entry.status === 'LOAD_TO_BUS' ? (entry.loadQuantity || 0) : 0;
+        const previousLoaded = loadedToBusRecorded[item.id] || 0;
+        const loadDelta = targetLoaded - previousLoaded;
+        loadedToBusRecorded[item.id] = targetLoaded;
+
+        const currentBusQuantity = typeof item.busQuantity === 'number'
+          ? item.busQuantity
+          : item.availableQuantity;
+        return {
+          ...item,
+          busQuantity: Math.min(item.availableQuantity, Math.max(0, currentBusQuantity + loadDelta)),
+          usageCount: item.lifecycle === 'CONSUMABLE'
+            ? item.usageCount || 0
+            : Math.max(0, (item.usageCount || 0) + usageDelta)
+        };
+      });
+
+      const logEntries = Object.entries(preparation).map(([itemId, entry]) => {
+        const inventoryItem = prev.inventory.find(item => item.id === itemId);
+        return {
+          id: `prepare-${Date.now()}-${itemId}-${Math.random().toString(36).slice(2, 6)}`,
+          itemId,
+          itemName: inventoryItem?.name,
+          barcode: inventoryItem?.barcode,
+          direction: 'OUT' as ChecklistDirection,
+          status: entry.status === 'MISSING' ? 'MISSING' as ChecklistStatus : 'OK' as ChecklistStatus,
+          quantity: entry.quantity,
+          note: entry.note,
+          timestamp
+        };
+      });
+
+      const updatedChecklist: EventChecklist = {
+        ...checklist,
+        preparation,
+        outbound,
+        usageRecorded,
+        loadedToBusRecorded,
+        finalizedAt: timestamp,
+        logs: [...logEntries, ...checklist.logs].slice(0, 100)
+      };
+
+      return {
+        ...prev,
+        inventory: updatedInventory,
+        events: prev.events.map(item => item.id === eventId ? { ...item, checklist: updatedChecklist } : item)
+      };
+    });
+
+    addLog(
+      finalize
+        ? `Đã chốt checklist xe EBUS cho "${eventName}": ${confirmedItems} mã hàng.`
+        : `Đã lưu nháp checklist xe EBUS cho "${eventName}".`,
+      finalize ? 'SUCCESS' : 'INFO'
+    );
+  };
+
+  const handleReportEventInventoryIncident = (payload: {
+    eventId: string;
+    itemId: string;
+    type: EventInventoryIncidentType;
+    quantity: number;
+    note?: string;
+  }) => {
+    let itemName = '';
+    let eventName = '';
+    let appliedQuantity = 0;
+    let invalidConsumable = false;
+    const timestamp = new Date().toISOString();
+
+    setAppState(prev => {
+      const event = prev.events.find(item => item.id === payload.eventId);
+      const inventoryItem = prev.inventory.find(item => item.id === payload.itemId);
+      if (!event || !inventoryItem) return prev;
+      if (payload.type === 'CONSUMED' && inventoryItem.lifecycle !== 'CONSUMABLE') {
+        invalidConsumable = true;
+        return prev;
+      }
+
+      eventName = event.name;
+      itemName = inventoryItem.name;
+      const busQuantity = typeof inventoryItem.busQuantity === 'number'
+        ? inventoryItem.busQuantity
+        : inventoryItem.availableQuantity;
+      appliedQuantity = Math.min(busQuantity, Math.max(1, Math.round(Number(payload.quantity) || 1)));
+      if (appliedQuantity <= 0) return prev;
+
+      const checklist = normalizeChecklist(event.checklist);
+      const incident = {
+        id: `incident-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        itemId: inventoryItem.id,
+        type: payload.type,
+        quantity: appliedQuantity,
+        note: payload.note?.trim() || undefined,
+        createdAt: timestamp
+      };
+
+      const updatedChecklist: EventChecklist = {
+        ...checklist,
+        incidents: [incident, ...(checklist.incidents || [])],
+        damaged: payload.type === 'DAMAGED'
+          ? { ...checklist.damaged, [inventoryItem.id]: (checklist.damaged[inventoryItem.id] || 0) + appliedQuantity }
+          : checklist.damaged,
+        lost: payload.type === 'LOST'
+          ? { ...checklist.lost, [inventoryItem.id]: (checklist.lost[inventoryItem.id] || 0) + appliedQuantity }
+          : checklist.lost
+      };
+
+      const inventory = prev.inventory.map(item => {
+        if (item.id !== inventoryItem.id) return item;
+        const nextBusQuantity = Math.max(0, busQuantity - appliedQuantity);
+        if (payload.type === 'CONSUMED') {
+          return {
+            ...item,
+            busQuantity: nextBusQuantity,
+            availableQuantity: Math.max(0, item.availableQuantity - appliedQuantity),
+            totalQuantity: Math.max(0, item.totalQuantity - appliedQuantity)
+          };
+        }
+        if (payload.type === 'DAMAGED') {
+          return {
+            ...item,
+            busQuantity: nextBusQuantity,
+            availableQuantity: Math.max(0, item.availableQuantity - appliedQuantity),
+            brokenQuantity: item.brokenQuantity + appliedQuantity
+          };
+        }
+        if (payload.type === 'LOST') {
+          return {
+            ...item,
+            busQuantity: nextBusQuantity,
+            availableQuantity: Math.max(0, item.availableQuantity - appliedQuantity),
+            lostQuantity: item.lostQuantity + appliedQuantity
+          };
+        }
+        return { ...item, busQuantity: nextBusQuantity };
+      });
+
+      return {
+        ...prev,
+        inventory,
+        events: prev.events.map(item => item.id === event.id ? { ...item, checklist: updatedChecklist } : item)
+      };
+    });
+
+    if (invalidConsumable) {
+      alert('Chỉ hàng được phân loại Tiêu hao mới có thể ghi nhận đã dùng hết.');
+      return;
+    }
+    if (appliedQuantity > 0) {
+      const typeLabel: Record<EventInventoryIncidentType, string> = {
+        CONSUMED: 'tiêu hao',
+        DAMAGED: 'hỏng',
+        LOST: 'mất',
+        RETURN_TO_STORAGE: 'trả về kho tổng'
+      };
+      addLog(`Sự kiện "${eventName}": ${typeLabel[payload.type]} ${appliedQuantity} x ${itemName}.`, 'WARNING');
+    }
+  };
+
   const handleUpdateChecklistNote = (eventId: string, itemId: string, note: string) => {
     setAppState(prev => ({
       ...prev,
@@ -1571,6 +1790,7 @@ const App: React.FC = () => {
             brokenQuantity: 0,
             lostQuantity: 0,
             usageCount: 0,
+            busQuantity: 0,
             imageUrl: item.imageUrl || 'https://picsum.photos/200/200',
             rentalPrice: Number.isFinite(item.rentalPrice) ? Number(item.rentalPrice) : 0,
             purchaseLink: item.purchaseLink || '',
@@ -1623,6 +1843,7 @@ const App: React.FC = () => {
             brokenQuantity: 0,
             lostQuantity: 0,
             usageCount: 0,
+            busQuantity: 0,
             imageUrl: item.imageUrl || 'https://picsum.photos/200/200',
             rentalPrice: Number.isFinite(item.rentalPrice) ? Number(item.rentalPrice) : 0,
             purchaseLink: item.purchaseLink || '',
@@ -1683,10 +1904,12 @@ const App: React.FC = () => {
   const handleSaveInventoryAudit = (payload: {
     title: string;
     baseline: InventoryAuditBaseline;
+    scope: InventoryAuditScope;
     note?: string;
     items: InventoryAuditItem[];
     unknownBarcodes?: string[];
     summary: InventoryAuditSession['summary'];
+    reconcile?: boolean;
   }) => {
     const countedItems = (payload.items || []).filter(item => item.countedQuantity !== null);
     if (countedItems.length === 0) {
@@ -1694,24 +1917,97 @@ const App: React.FC = () => {
       return;
     }
 
+    const reconciledAt = payload.reconcile ? new Date().toISOString() : undefined;
     const audit: InventoryAuditSession = {
       id: `AUD-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       code: `KK-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.random().toString(36).slice(2, 5).toUpperCase()}`,
       createdAt: new Date().toISOString(),
       title: payload.title.trim() || `Kiểm kho ${new Date().toLocaleDateString('vi-VN')}`,
       baseline: payload.baseline,
+      scope: payload.scope,
       note: payload.note?.trim(),
       createdBy: resolveActor(),
       items: payload.items,
       unknownBarcodes: payload.unknownBarcodes || [],
-      summary: payload.summary
+      summary: payload.summary,
+      reconciledAt,
+      reconciledBy: payload.reconcile ? resolveActor() : undefined
     };
 
-    setAppState(prev => ({
-      ...prev,
-      inventoryAudits: [audit, ...(prev.inventoryAudits || [])].slice(0, 120)
-    }));
-    addLog(`Lưu phiên kiểm kho ${audit.code}: ${audit.summary.countedItems}/${audit.summary.totalItems} mã, ${audit.summary.varianceItems} mã lệch.`, audit.summary.varianceItems > 0 ? 'WARNING' : 'SUCCESS');
+    setAppState(prev => {
+      const inventory = payload.reconcile
+        ? prev.inventory.map(item => {
+            const row = countedItems.find(entry => entry.itemId === item.id);
+            if (!row || row.countedQuantity === null) return item;
+            const countedQuantity = Math.max(0, Math.round(row.countedQuantity));
+            const currentSystemQuantity = Math.max(0, row.systemQuantity || 0);
+            const variance = countedQuantity - currentSystemQuantity;
+            let totalQuantity = item.totalQuantity || 0;
+            let availableQuantity = item.availableQuantity || 0;
+            let brokenQuantity = item.brokenQuantity || 0;
+            let lostQuantity = item.lostQuantity || 0;
+            let busQuantity = typeof item.busQuantity === 'number' ? item.busQuantity : availableQuantity;
+
+            if (payload.scope === 'EBUS') {
+              if (variance < 0) {
+                const shortage = Math.min(Math.abs(variance), busQuantity);
+                if (row.varianceReason === 'CONSUMED') {
+                  availableQuantity = Math.max(0, availableQuantity - shortage);
+                  totalQuantity = Math.max(0, totalQuantity - shortage);
+                } else if (row.varianceReason === 'BROKEN') {
+                  availableQuantity = Math.max(0, availableQuantity - shortage);
+                  brokenQuantity += shortage;
+                } else if (row.varianceReason === 'LOST') {
+                  availableQuantity = Math.max(0, availableQuantity - shortage);
+                  lostQuantity += shortage;
+                }
+              } else if (variance > 0 && countedQuantity > availableQuantity) {
+                const newlyFound = countedQuantity - availableQuantity;
+                availableQuantity += newlyFound;
+                totalQuantity += newlyFound;
+              }
+              busQuantity = Math.min(availableQuantity, countedQuantity);
+            } else {
+              if (variance < 0) {
+                const shortage = Math.abs(variance);
+                if (row.varianceReason === 'BROKEN') {
+                  availableQuantity = Math.max(0, availableQuantity - shortage);
+                  brokenQuantity += shortage;
+                } else if (row.varianceReason === 'LOST') {
+                  availableQuantity = Math.max(0, availableQuantity - shortage);
+                  lostQuantity += shortage;
+                } else {
+                  availableQuantity = Math.max(0, availableQuantity - shortage);
+                  totalQuantity = Math.max(0, totalQuantity - shortage);
+                }
+              } else if (variance > 0) {
+                availableQuantity += variance;
+                totalQuantity += variance;
+              }
+              busQuantity = Math.min(busQuantity, availableQuantity);
+            }
+
+            return {
+              ...item,
+              totalQuantity,
+              availableQuantity,
+              brokenQuantity,
+              lostQuantity,
+              busQuantity
+            };
+          })
+        : prev.inventory;
+
+      return {
+        ...prev,
+        inventory,
+        inventoryAudits: [audit, ...(prev.inventoryAudits || [])].slice(0, 120)
+      };
+    });
+    addLog(
+      `${payload.reconcile ? 'Chốt' : 'Lưu'} phiên kiểm kho ${audit.code}: ${audit.summary.countedItems}/${audit.summary.totalItems} mã, ${audit.summary.varianceItems} mã lệch${payload.reconcile ? ', đã cập nhật tồn thực tế' : ''}.`,
+      audit.summary.varianceItems > 0 ? 'WARNING' : 'SUCCESS'
+    );
   };
 
   const handleDeleteItem = (id: string) => {
@@ -1789,15 +2085,24 @@ const App: React.FC = () => {
       eventName = event.name;
       const checklist = normalizeChecklist(event.checklist);
       const outbound = { ...checklist.outbound };
+      const preparation = { ...(checklist.preparation || {}) };
       const timestamp = new Date().toISOString();
       const logs = [...checklist.logs];
 
       doneItems.forEach(allocation => {
         const targetQty = Math.max(0, Math.round(allocation.quantity || 0));
-        if (targetQty <= 0 || outbound[allocation.itemId] === targetQty) return;
+        if (targetQty <= 0) return;
+        const isAlreadySynced = outbound[allocation.itemId] === targetQty
+          && preparation[allocation.itemId]?.quantity === targetQty;
+        if (isAlreadySynced) return;
 
         const inventoryItem = prev.inventory.find(item => item.id === allocation.itemId);
         outbound[allocation.itemId] = targetQty;
+        preparation[allocation.itemId] = {
+          status: 'ON_BUS',
+          quantity: targetQty,
+          note: 'Đồng bộ từ Order Thiết Bị'
+        };
         syncedCount += 1;
         logs.unshift({
           id: `sync-done-${Date.now()}-${allocation.itemId}-${Math.random().toString(36).slice(2, 6)}`,
@@ -1821,6 +2126,7 @@ const App: React.FC = () => {
           checklist: {
             ...checklist,
             outbound,
+            preparation,
             logs: logs.slice(0, 50)
           }
         })
@@ -1828,7 +2134,7 @@ const App: React.FC = () => {
     });
 
     if (syncedCount > 0) {
-      addLog(`Đồng bộ ${syncedCount} thiết bị đã tick xong sang Checklist Barcode cho sự kiện "${eventName}".`, 'INFO');
+      addLog(`Đồng bộ ${syncedCount} thiết bị đã tick xong sang Checklist xe EBUS cho sự kiện "${eventName}".`, 'INFO');
     }
   };
 
@@ -1855,6 +2161,7 @@ const App: React.FC = () => {
         if (item.id !== id) return item;
         itemName = item.name;
         let { availableQuantity, maintenanceQuantity, brokenQuantity, lostQuantity, totalQuantity } = item;
+        const currentBusQuantity = typeof item.busQuantity === 'number' ? item.busQuantity : availableQuantity;
 
         const maxForAction = action === 'FIXED'
           ? brokenQuantity
@@ -1883,7 +2190,15 @@ const App: React.FC = () => {
           brokenQuantity = Math.max(0, brokenQuantity - disposeFromBroken);
           totalQuantity = Math.max(0, totalQuantity - appliedQtyLocal);
         }
-        return { ...item, availableQuantity, maintenanceQuantity, brokenQuantity, lostQuantity, totalQuantity };
+        return {
+          ...item,
+          availableQuantity,
+          maintenanceQuantity,
+          brokenQuantity,
+          lostQuantity,
+          totalQuantity,
+          busQuantity: Math.min(currentBusQuantity, availableQuantity)
+        };
       });
       return { ...prev, inventory };
     });
@@ -2590,6 +2905,8 @@ const App: React.FC = () => {
           onChecklistScan={guard('EVENTS_EDIT', handleChecklistScan)}
           onUpdateChecklistNote={guard('EVENTS_EDIT', handleUpdateChecklistNote)}
           onSaveChecklistSignature={guard('EVENTS_EDIT', handleSaveChecklistSignature)}
+          onSaveEventPreparation={guard('EVENTS_EDIT', handleSaveEventPreparation)}
+          onReportEventInventoryIncident={guard('EVENTS_EDIT', handleReportEventInventoryIncident)}
         />
       )}
       

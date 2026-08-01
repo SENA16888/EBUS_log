@@ -46,6 +46,9 @@ export interface InventoryItem {
   brokenQuantity: number;
   lostQuantity: number;
   usageCount: number;
+  // Số lượng khả dụng đang được lưu thường xuyên trên xe EBUS.
+  // Nếu chưa có dữ liệu, hệ thống coi toàn bộ availableQuantity là mốc ban đầu.
+  busQuantity?: number;
   location: string;
   rentalPrice: number;
   // Bổ sung quản lý nhập hàng/sản xuất
@@ -97,6 +100,8 @@ export interface InventoryReceipt {
 }
 
 export type InventoryAuditBaseline = 'AVAILABLE' | 'TOTAL';
+export type InventoryAuditScope = 'EBUS' | 'ALL';
+export type InventoryVarianceReason = 'CONSUMED' | 'BROKEN' | 'LOST' | 'TRANSFER_TO_STORAGE' | 'ADJUSTMENT';
 
 export interface InventoryAuditItem {
   itemId: string;
@@ -109,6 +114,7 @@ export interface InventoryAuditItem {
   variance: number | null;
   barcodeAttached?: boolean;
   note?: string;
+  varianceReason?: InventoryVarianceReason;
   snapshot: {
     totalQuantity: number;
     availableQuantity: number;
@@ -125,6 +131,7 @@ export interface InventoryAuditSession {
   createdAt: string;
   title: string;
   baseline: InventoryAuditBaseline;
+  scope?: InventoryAuditScope;
   note?: string;
   createdBy?: {
     id?: string;
@@ -134,6 +141,13 @@ export interface InventoryAuditSession {
   };
   items: InventoryAuditItem[];
   unknownBarcodes?: string[];
+  reconciledAt?: string;
+  reconciledBy?: {
+    id?: string;
+    name?: string;
+    role?: string;
+    phone?: string;
+  };
   summary: {
     totalItems: number;
     countedItems: number;
@@ -149,6 +163,25 @@ export interface InventoryAuditSession {
 
 export type ChecklistDirection = 'OUT' | 'IN';
 export type ChecklistStatus = 'OK' | 'DAMAGED' | 'LOST' | 'MISSING';
+export type EventPreparationStatus = 'ON_BUS' | 'LOAD_TO_BUS' | 'MISSING';
+export type EventInventoryIncidentType = 'CONSUMED' | 'DAMAGED' | 'LOST' | 'RETURN_TO_STORAGE';
+
+export interface EventPreparationEntry {
+  status: EventPreparationStatus;
+  quantity: number;
+  loadQuantity?: number;
+  note?: string;
+  confirmedAt?: string;
+}
+
+export interface EventInventoryIncident {
+  id: string;
+  itemId: string;
+  type: EventInventoryIncidentType;
+  quantity: number;
+  note?: string;
+  createdAt: string;
+}
 
 export interface ChecklistSignature {
   name: string;
@@ -207,6 +240,11 @@ export interface EventChecklist {
   lost: Record<string, number>;
   notes: Record<string, string>;
   logs: ChecklistLogEntry[];
+  preparation?: Record<string, EventPreparationEntry>;
+  usageRecorded?: Record<string, number>;
+  loadedToBusRecorded?: Record<string, number>;
+  incidents?: EventInventoryIncident[];
+  finalizedAt?: string;
   signature?: ChecklistSignature; // legacy single signature
   signatures?: {
     outbound?: ChecklistSignaturePair;

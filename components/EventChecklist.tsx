@@ -1,8 +1,29 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ChecklistDirection, ChecklistStatus, ChecklistSignature, Event, EventChecklist as EventChecklistType, InventoryItem } from '../types';
-import { createEmptyChecklist, normalizeChecklist } from '../services/checklistService';
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+  AlertTriangle,
+  Check,
+  CheckCircle2,
+  ClipboardCheck,
+  History,
+  PackagePlus,
+  ScanBarcode,
+  Search,
+  XCircle
+} from 'lucide-react';
+import {
+  ChecklistDirection,
+  ChecklistSignature,
+  ChecklistStatus,
+  Event,
+  EventInventoryIncidentType,
+  EventPreparationEntry,
+  EventPreparationStatus,
+  InventoryItem
+} from '../types';
+import { normalizeChecklist } from '../services/checklistService';
 import { normalizeBarcode } from '../services/barcodeService';
-import { Barcode, CheckSquare, ClipboardList, CornerDownLeft, Eraser, PenLine, ScanBarcode } from 'lucide-react';
+
+type PreparationDraft = Omit<EventPreparationEntry, 'status'> & { status?: EventPreparationStatus };
 
 interface EventChecklistProps {
   event: Event;
@@ -10,871 +31,457 @@ interface EventChecklistProps {
   onScan?: (payload: { eventId: string; barcode: string; direction: ChecklistDirection; status?: ChecklistStatus; quantity?: number; note?: string }) => void;
   onUpdateNote?: (eventId: string, itemId: string, note: string) => void;
   onSaveSignature?: (eventId: string, payload: { direction: ChecklistDirection; manager?: ChecklistSignature; operator?: ChecklistSignature; note?: string; itemsSnapshot?: { itemId: string; name?: string; orderQty: number; scannedOut: number; scannedIn: number; damaged: number; lost: number; missing: number; }[]; createSlip?: boolean }) => void;
+  onSavePreparation?: (eventId: string, entries: Record<string, EventPreparationEntry>, finalize: boolean) => void;
+  onReportIncident?: (payload: { eventId: string; itemId: string; type: EventInventoryIncidentType; quantity: number; note?: string }) => void;
   canEdit?: boolean;
 }
 
-const SignaturePad: React.FC<{ value?: string; onChange: (dataUrl: string | null) => void }> = ({ value, onChange }) => {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const [isDrawing, setIsDrawing] = useState(false);
-  const [hasDrawn, setHasDrawn] = useState(false);
+const STATUS_OPTIONS: Array<{
+  value: EventPreparationStatus;
+  label: string;
+  icon: React.ComponentType<{ size?: number }>;
+  activeClass: string;
+}> = [
+  { value: 'ON_BUS', label: 'Có trên xe', icon: CheckCircle2, activeClass: 'bg-emerald-600 text-white border-emerald-600' },
+  { value: 'LOAD_TO_BUS', label: 'Bổ sung', icon: PackagePlus, activeClass: 'bg-blue-600 text-white border-blue-600' },
+  { value: 'MISSING', label: 'Thiếu', icon: XCircle, activeClass: 'bg-rose-600 text-white border-rose-600' }
+];
 
-  useEffect(() => {
-    if (canvasRef.current) {
-      const canvas = canvasRef.current;
-      canvas.width = canvas.offsetWidth;
-      canvas.height = canvas.offsetHeight;
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.fillStyle = '#fff';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        if (value) {
-          const img = new Image();
-          img.onload = () => {
-            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-          };
-          img.src = value;
-        }
-      }
-    }
-  }, [value]);
-
-  const getPos = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return { x: 0, y: 0 };
-    const rect = canvas.getBoundingClientRect();
-    return {
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top
-    };
-  };
-
-  const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    const ctx = canvasRef.current?.getContext('2d');
-    if (!ctx) return;
-    setIsDrawing(true);
-    setHasDrawn(true);
-    ctx.strokeStyle = '#0f172a';
-    ctx.lineWidth = 2;
-    ctx.lineCap = 'round';
-    const { x, y } = getPos(e);
-    ctx.beginPath();
-    ctx.moveTo(x, y);
-  };
-
-  const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (!isDrawing) return;
-    const ctx = canvasRef.current?.getContext('2d');
-    if (!ctx) return;
-    const { x, y } = getPos(e);
-    ctx.lineTo(x, y);
-    ctx.stroke();
-  };
-
-  const handlePointerUp = () => {
-    setIsDrawing(false);
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const dataUrl = canvas.toDataURL('image/png');
-    onChange(dataUrl);
-  };
-
-  const handleClear = () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    setHasDrawn(false);
-    onChange(null);
-  };
-
-  return (
-    <div className="space-y-2">
-      <canvas
-        ref={canvasRef}
-        className="w-full h-40 border-2 border-dashed border-slate-200 rounded-xl bg-white"
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-        onPointerLeave={handlePointerUp}
-      />
-      <div className="flex justify-between items-center text-xs text-slate-500">
-        <span>{hasDrawn ? 'Đã ghi nhận chữ ký' : 'Ký trực tiếp trên khung'}</span>
-        <button type="button" onClick={handleClear} className="flex items-center gap-1 text-blue-600 hover:text-blue-800 font-semibold">
-          <Eraser size={14} /> Xóa
-        </button>
-      </div>
-    </div>
-  );
+const INCIDENT_LABELS: Record<EventInventoryIncidentType, string> = {
+  CONSUMED: 'Đã tiêu hao',
+  DAMAGED: 'Bị hỏng',
+  LOST: 'Bị mất',
+  RETURN_TO_STORAGE: 'Trả kho tổng'
 };
 
-export const EventChecklist: React.FC<EventChecklistProps> = ({ event, inventory, onScan, onUpdateNote, onSaveSignature, canEdit = true }) => {
+const formatDateTime = (value?: string) => value ? new Date(value).toLocaleString('vi-VN') : '';
+
+export const EventChecklist: React.FC<EventChecklistProps> = ({
+  event,
+  inventory,
+  onSavePreparation,
+  onReportIncident,
+  canEdit = true
+}) => {
+  const checklist = useMemo(() => normalizeChecklist(event.checklist), [event.checklist]);
+  const inventoryMap = useMemo(() => new Map(inventory.map(item => [item.id, item])), [inventory]);
+  const [drafts, setDrafts] = useState<Record<string, PreparationDraft>>({});
+  const [searchTerm, setSearchTerm] = useState('');
   const [scanValue, setScanValue] = useState('');
-  const [direction, setDirection] = useState<ChecklistDirection>('OUT');
-  const [scanMode, setScanMode] = useState<'CONTINUOUS' | 'MANUAL'>('CONTINUOUS');
-  const [status, setStatus] = useState<ChecklistStatus>('OK');
-  const [quantity, setQuantity] = useState(1);
-  const [note, setNote] = useState('');
-  const [managerName, setManagerName] = useState('');
-  const [managerTitle, setManagerTitle] = useState('');
-  const [managerSignatureData, setManagerSignatureData] = useState<string | null>(null);
-  const [operatorName, setOperatorName] = useState('');
-  const [operatorTitle, setOperatorTitle] = useState('');
-  const [operatorSignatureData, setOperatorSignatureData] = useState<string | null>(null);
-  const [signNote, setSignNote] = useState('');
-
-  const inputRef = useRef<HTMLInputElement | null>(null);
-  const quantityInputRef = useRef<HTMLInputElement | null>(null);
-
-  const checklist: EventChecklistType = useMemo(
-    () => normalizeChecklist(event.checklist || createEmptyChecklist()),
-    [event.checklist]
-  );
+  const [highlightedItemId, setHighlightedItemId] = useState('');
+  const [incidentItemId, setIncidentItemId] = useState('');
+  const [incidentType, setIncidentType] = useState<EventInventoryIncidentType>('DAMAGED');
+  const [incidentQuantity, setIncidentQuantity] = useState(1);
+  const [incidentNote, setIncidentNote] = useState('');
 
   useEffect(() => {
-    inputRef.current?.focus();
-  }, [direction]);
+    const nextDrafts: Record<string, PreparationDraft> = {};
+    event.items.forEach(allocation => {
+      const saved = checklist.preparation?.[allocation.itemId];
+      if (saved) {
+        nextDrafts[allocation.itemId] = { ...saved };
+        return;
+      }
+      const legacyQuantity = checklist.outbound?.[allocation.itemId] || 0;
+      nextDrafts[allocation.itemId] = legacyQuantity > 0
+        ? { status: 'ON_BUS', quantity: Math.min(legacyQuantity, allocation.quantity), note: 'Dữ liệu checklist cũ' }
+        : { quantity: allocation.quantity };
+    });
+    setDrafts(nextDrafts);
+  }, [event.id, event.items, checklist.preparation, checklist.outbound]);
 
-  useEffect(() => {
-    const key = direction === 'OUT' ? 'outbound' : 'inbound';
-    const pair = event.checklist?.signatures?.[key];
-    if (pair) {
-      setManagerName(pair.manager?.name || '');
-      setManagerTitle(pair.manager?.title || '');
-      setManagerSignatureData(pair.manager?.dataUrl || null);
-      setOperatorName(pair.operator?.name || '');
-      setOperatorTitle(pair.operator?.title || '');
-      setOperatorSignatureData(pair.operator?.dataUrl || null);
-      setSignNote(pair.note || '');
-    } else {
-      setManagerName('');
-      setManagerTitle('');
-      setManagerSignatureData(null);
-      setOperatorName('');
-      setOperatorTitle('');
-      setOperatorSignatureData(null);
-      setSignNote('');
-    }
-  }, [direction, event.checklist?.signatures]);
-
-  const itemIds = useMemo(() => {
-    const ids = new Set<string>();
-    event.items.forEach(it => ids.add(it.itemId));
-    Object.keys(checklist.outbound || {}).forEach(id => ids.add(id));
-    Object.keys(checklist.inbound || {}).forEach(id => ids.add(id));
-    Object.keys(checklist.damaged || {}).forEach(id => ids.add(id));
-    Object.keys(checklist.lost || {}).forEach(id => ids.add(id));
-    return Array.from(ids);
-  }, [event.items, checklist]);
-
-  const rows = useMemo(() => itemIds.map(itemId => {
-    const inv = inventory.find(i => i.id === itemId);
-    const alloc = event.items.find(ai => ai.itemId === itemId);
-    const orderQty = alloc?.quantity || 0;
-    const scannedOut = checklist.outbound[itemId] || 0;
-    const scannedIn = checklist.inbound[itemId] || 0;
-    const damaged = checklist.damaged[itemId] || 0;
-    const lost = checklist.lost[itemId] || 0;
-    const missing = Math.max(0, orderQty - scannedIn - lost);
+  const rows = useMemo(() => event.items.map(allocation => {
+    const item = inventoryMap.get(allocation.itemId);
+    const draft = drafts[allocation.itemId] || { quantity: allocation.quantity };
+    const busQuantity = item
+      ? (typeof item.busQuantity === 'number' ? item.busQuantity : item.availableQuantity)
+      : 0;
     return {
-      itemId,
-      barcode: inv?.barcode,
-      name: inv?.name || 'Không tìm thấy trong kho',
-      orderQty,
-      scannedOut,
-      scannedIn,
-      damaged,
-      lost,
-      missing,
-      note: checklist.notes[itemId] || ''
+      allocation,
+      item,
+      draft,
+      busQuantity,
+      missingQuantity: Math.max(0, allocation.quantity - (draft.status ? draft.quantity : 0))
     };
-  }), [itemIds, checklist, inventory, event.items]);
+  }), [drafts, event.items, inventoryMap]);
 
-  const totals = useMemo(() => {
-    return rows.reduce((acc, row) => {
-      acc.expected += row.orderQty;
-      acc.out += row.scannedOut;
-      acc.in += row.scannedIn;
-      acc.missing += row.missing;
-      acc.damaged += row.damaged;
-      acc.lost += row.lost;
-      return acc;
-    }, { expected: 0, out: 0, in: 0, missing: 0, damaged: 0, lost: 0 });
-  }, [rows]);
-
-  const scannedRows = useMemo(() => rows.filter(row => row.scannedOut > 0 || row.scannedIn > 0 || row.damaged > 0 || row.lost > 0), [rows]);
-  const unscannedRows = useMemo(() => rows.filter(row => row.scannedOut === 0 && row.scannedIn === 0 && row.damaged === 0 && row.lost === 0), [rows]);
-
-  const matchedItem = useMemo(() => {
-    if (!scanValue.trim()) return null;
-    const normalized = normalizeBarcode(scanValue.trim());
-    return (
-      inventory.find(inv => inv.barcode && normalizeBarcode(inv.barcode) === normalized) ||
-      inventory.find(inv => normalizeBarcode(inv.id) === normalized) ||
-      null
+  const filteredRows = useMemo(() => {
+    const needle = searchTerm.trim().toLowerCase();
+    if (!needle) return rows;
+    return rows.filter(row =>
+      (row.item?.name || row.allocation.itemId).toLowerCase().includes(needle)
+      || (row.item?.barcode || '').toLowerCase().includes(needle)
+      || (row.item?.category || '').toLowerCase().includes(needle)
     );
-  }, [scanValue, inventory]);
+  }, [rows, searchTerm]);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!canEdit) return;
-    if (!scanValue.trim()) return;
-    const finalQty = Math.max(1, quantity || 1);
-    onScan?.({
-      eventId: event.id,
-      barcode: scanValue,
-      direction,
-      status: direction === 'OUT' ? 'OK' : status,
-      quantity: finalQty,
-      note: note.trim() || undefined
-    });
-    setScanValue('');
-    setQuantity(1);
-    if (direction === 'OUT') setNote('');
-    inputRef.current?.focus();
-  };
+  const summary = useMemo(() => rows.reduce((acc, row) => {
+    acc.required += row.allocation.quantity;
+    if (row.draft.status) acc.confirmedItems += 1;
+    acc.ready += row.draft.status ? row.draft.quantity : 0;
+    acc.missing += row.missingQuantity;
+    acc.load += row.draft.status === 'LOAD_TO_BUS' ? (row.draft.loadQuantity || 0) : 0;
+    return acc;
+  }, { required: 0, ready: 0, missing: 0, load: 0, confirmedItems: 0 }), [rows]);
 
-  const handleScanKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' && scanMode === 'MANUAL') {
-      e.preventDefault();
-      quantityInputRef.current?.focus();
-    }
-  };
+  const incidentItem = inventoryMap.get(incidentItemId);
 
-  const handleQuickStatus = (itemId: string, barcode: string | undefined, status: ChecklistStatus) => {
-    if (!canEdit) return;
-    onScan?.({
-      eventId: event.id,
-      barcode: barcode || itemId,
-      direction: 'IN',
-      status,
-      quantity: 1,
-      note: checklist.notes[itemId]
-    });
-  };
-
-  const handleNoteBlur = (itemId: string, value: string) => {
-    if (!canEdit) return;
-    onUpdateNote?.(event.id, itemId, value);
-  };
-
-  const handleSaveSignature = (role: 'OPERATOR' | 'MANAGER', createSlip?: boolean) => {
-    if (!canEdit) return;
-    if (!onSaveSignature) return;
-    const snapshot = rows.map(row => ({
-      itemId: row.itemId,
-      name: row.name,
-      orderQty: row.orderQty,
-      scannedOut: row.scannedOut,
-      scannedIn: row.scannedIn,
-      damaged: row.damaged,
-      lost: row.lost,
-      missing: row.missing
+  const updateDraft = (itemId: string, patch: Partial<PreparationDraft>) => {
+    setDrafts(prev => ({
+      ...prev,
+      [itemId]: { ...(prev[itemId] || { quantity: 0 }), ...patch }
     }));
-    const payload: any = { direction, note: signNote.trim() || undefined, itemsSnapshot: snapshot, createSlip: createSlip ?? false };
-    if (role === 'OPERATOR') {
-      if (!operatorName.trim() || !operatorSignatureData) {
-        alert('Vui lòng nhập tên và chữ ký của Người lập phiếu/kiểm hàng.');
-        return;
-      }
-      payload.operator = {
-        name: operatorName.trim(),
-        title: operatorTitle.trim() || undefined,
-        note: signNote.trim() || undefined,
-        signedAt: new Date().toISOString(),
-        dataUrl: operatorSignatureData,
-        direction
-      };
-    } else {
-      if (!managerName.trim() || !managerSignatureData) {
-        alert('Vui lòng nhập tên và chữ ký của Quản lý kho.');
-        return;
-      }
-      payload.manager = {
-        name: managerName.trim(),
-        title: managerTitle.trim() || undefined,
-        note: signNote.trim() || undefined,
-        signedAt: new Date().toISOString(),
-        dataUrl: managerSignatureData,
-        direction
-      };
-    }
-    onSaveSignature(event.id, payload);
   };
 
-  const handleCreateSlip = () => {
-    if (!canEdit) return;
-    if (!onSaveSignature) return;
-    if (!managerName.trim() || !managerSignatureData || !operatorName.trim() || !operatorSignatureData) {
-      alert('Cần đủ chữ ký của Quản lý kho và Người lập phiếu trước khi xuất phiếu.');
+  const selectStatus = (itemId: string, status: EventPreparationStatus, orderQuantity: number) => {
+    const current = drafts[itemId];
+    const quantity = status === 'MISSING'
+      ? Math.min(current?.status ? current.quantity || 0 : 0, orderQuantity)
+      : Math.max(1, Math.min(current?.quantity || orderQuantity, orderQuantity));
+    updateDraft(itemId, {
+      status,
+      quantity,
+      loadQuantity: status === 'LOAD_TO_BUS'
+        ? Math.max(1, Math.min(current?.loadQuantity || 1, quantity))
+        : undefined
+    });
+  };
+
+  const confirmAllOnBus = () => {
+    const next = { ...drafts };
+    event.items.forEach(allocation => {
+      next[allocation.itemId] = {
+        ...next[allocation.itemId],
+        status: 'ON_BUS',
+        quantity: allocation.quantity,
+        loadQuantity: undefined
+      };
+    });
+    setDrafts(next);
+  };
+
+  const buildEntries = () => (Object.entries(drafts) as Array<[string, PreparationDraft]>).reduce<Record<string, EventPreparationEntry>>((acc, [itemId, draft]) => {
+    if (!draft.status) return acc;
+    acc[itemId] = {
+      status: draft.status,
+      quantity: Math.max(0, Math.round(draft.quantity || 0)),
+      loadQuantity: draft.status === 'LOAD_TO_BUS' ? Math.max(0, Math.round(draft.loadQuantity || 0)) : undefined,
+      note: draft.note?.trim() || undefined,
+      confirmedAt: draft.confirmedAt
+    };
+    return acc;
+  }, {});
+
+  const savePreparation = (finalize: boolean) => {
+    if (!canEdit || !onSavePreparation) return;
+    if (finalize && summary.confirmedItems !== rows.length) {
+      alert(`Còn ${rows.length - summary.confirmedItems} mã hàng chưa xác nhận.`);
       return;
     }
-    const snapshot = rows.map(row => ({
-      itemId: row.itemId,
-      name: row.name,
-      orderQty: row.orderQty,
-      scannedOut: row.scannedOut,
-      scannedIn: row.scannedIn,
-      damaged: row.damaged,
-      lost: row.lost,
-      missing: row.missing
-    }));
-    onSaveSignature(event.id, {
-      direction,
-      manager: {
-        name: managerName.trim(),
-        title: managerTitle.trim() || undefined,
-        note: signNote.trim() || undefined,
-        signedAt: new Date().toISOString(),
-        dataUrl: managerSignatureData,
-        direction
-      },
-      operator: {
-        name: operatorName.trim(),
-        title: operatorTitle.trim() || undefined,
-        note: signNote.trim() || undefined,
-        signedAt: new Date().toISOString(),
-        dataUrl: operatorSignatureData,
-        direction
-      },
-      note: signNote.trim() || undefined,
-      itemsSnapshot: snapshot,
-      createSlip: true
-    });
-    // Clear signatures after issuing slip
-    setManagerSignatureData(null);
-    setOperatorSignatureData(null);
-    setManagerName('');
-    setManagerTitle('');
-    setOperatorName('');
-    setOperatorTitle('');
+    onSavePreparation(event.id, buildEntries(), finalize);
   };
-  const slips = checklist.slips || [];
 
-  const handleViewSlip = (slipId: string) => {
-    const slip = slips.find(s => s.id === slipId);
-    if (!slip) return;
-    const win = window.open('', '_blank');
-    if (!win) return;
-    const rowsHtml = slip.items.map(item => `
-      <tr>
-        <td style="padding:6px;border:1px solid #e2e8f0">${item.name || item.itemId}</td>
-        <td style="padding:6px;border:1px solid #e2e8f0;text-align:center">${item.orderQty}</td>
-        <td style="padding:6px;border:1px solid #e2e8f0;text-align:center">${item.scannedOut}</td>
-        <td style="padding:6px;border:1px solid #e2e8f0;text-align:center">${item.scannedIn}</td>
-        <td style="padding:6px;border:1px solid #e2e8f0;text-align:center">${item.damaged}</td>
-        <td style="padding:6px;border:1px solid #e2e8f0;text-align:center">${item.lost}</td>
-        <td style="padding:6px;border:1px solid #e2e8f0;text-align:center">${item.missing}</td>
-      </tr>
-    `).join('');
-    const slipLabel = `${slip.direction === 'OUT' ? 'Phiếu xuất kho' : 'Phiếu trả kho'}${slip.slipNo ? ` #${slip.slipNo}` : ''}`;
-    win.document.write(`
-      <html>
-        <head>
-          <title>${slipLabel} - ${event.name}</title>
-          <style>
-            body { font-family: Arial, sans-serif; padding: 16px; color: #0f172a; }
-            h1 { margin: 0 0 4px 0; }
-            .muted { color: #475569; font-size: 12px; }
-            table { border-collapse: collapse; width: 100%; margin-top: 12px; font-size: 13px; }
-            .sig { display: flex; gap: 32px; margin-top: 20px; }
-            .sig-box { flex:1; text-align: center; }
-            .sig-img { width: 160px; height: 80px; object-fit: contain; border: 1px solid #e2e8f0; }
-          </style>
-        </head>
-        <body>
-          <h1>${slipLabel}</h1>
-          <div class="muted">${event.name} • ${event.client}</div>
-          <div class="muted">Thời gian: ${new Date(slip.createdAt).toLocaleString('vi-VN')}</div>
-          <div class="muted">Ghi chú: ${slip.note || '---'}</div>
-          <table>
-            <thead>
-              <tr>
-                <th style="padding:6px;border:1px solid #e2e8f0;text-align:left">Thiết bị</th>
-                <th style="padding:6px;border:1px solid #e2e8f0">Order</th>
-                <th style="padding:6px;border:1px solid #e2e8f0">Đã quét đi</th>
-                <th style="padding:6px;border:1px solid #e2e8f0">Đã về</th>
-                <th style="padding:6px;border:1px solid #e2e8f0">Hỏng</th>
-                <th style="padding:6px;border:1px solid #e2e8f0">Mất</th>
-                <th style="padding:6px;border:1px solid #e2e8f0">Thiếu</th>
-              </tr>
-            </thead>
-            <tbody>${rowsHtml}</tbody>
-          </table>
-          <div class="sig">
-            <div class="sig-box">
-              <div class="muted">Quản lý kho</div>
-              ${slip.manager?.dataUrl ? `<img class="sig-img" src="${slip.manager.dataUrl}" />` : '<div class="sig-img"></div>'}
-              <div>${slip.manager?.name || ''}</div>
-              <div class="muted">${slip.manager?.title || ''}</div>
-            </div>
-            <div class="sig-box">
-              <div class="muted">Người lập phiếu / Kiểm hàng</div>
-              ${slip.operator?.dataUrl ? `<img class="sig-img" src="${slip.operator.dataUrl}" />` : '<div class="sig-img"></div>'}
-              <div>${slip.operator?.name || ''}</div>
-              <div class="muted">${slip.operator?.title || ''}</div>
-            </div>
-          </div>
-          <script>window.print();</script>
-        </body>
-      </html>
-    `);
-    win.document.close();
+  const handleScan = (eventSubmit: React.FormEvent) => {
+    eventSubmit.preventDefault();
+    const code = normalizeBarcode(scanValue);
+    if (!code) return;
+    const found = rows.find(row =>
+      normalizeBarcode(row.item?.barcode || '') === code
+      || normalizeBarcode(row.allocation.itemId) === code
+    );
+    if (!found) {
+      alert('Mã này không có trong Order thiết bị của sự kiện.');
+      return;
+    }
+    setHighlightedItemId(found.allocation.itemId);
+    setSearchTerm(found.item?.name || found.allocation.itemId);
+    selectStatus(found.allocation.itemId, 'ON_BUS', found.allocation.quantity);
+    setScanValue('');
+  };
+
+  const reportIncident = () => {
+    if (!canEdit || !onReportIncident || !incidentItemId) return;
+    if (incidentType === 'CONSUMED' && incidentItem?.lifecycle !== 'CONSUMABLE') {
+      alert('Chỉ hàng Tiêu hao mới có thể ghi nhận đã dùng hết.');
+      return;
+    }
+    const busQuantity = incidentItem
+      ? (typeof incidentItem.busQuantity === 'number' ? incidentItem.busQuantity : incidentItem.availableQuantity)
+      : 0;
+    if (busQuantity <= 0) {
+      alert('Mã hàng này không còn số lượng khả dụng trên xe.');
+      return;
+    }
+    onReportIncident({
+      eventId: event.id,
+      itemId: incidentItemId,
+      type: incidentType,
+      quantity: Math.min(busQuantity, Math.max(1, Math.round(incidentQuantity || 1))),
+      note: incidentNote.trim() || undefined
+    });
+    setIncidentQuantity(1);
+    setIncidentNote('');
   };
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-        <div className="xl:col-span-2 bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Checklist barcode</p>
-              <h3 className="text-lg font-black text-slate-800">Xuất / Thu hồi hàng hóa</h3>
-            </div>
-            <div className="flex items-center gap-2 bg-blue-50 text-blue-700 px-3 py-2 rounded-xl text-xs font-semibold">
-              <ScanBarcode size={16}/> Máy quét sẵn sàng
-            </div>
+      <section className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+        <div className="p-4 border-b border-slate-100 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-widest text-blue-600">Chuẩn bị chuyến</p>
+            <h3 className="text-lg font-black text-slate-900">Checklist xe EBUS</h3>
+            <p className="text-sm text-slate-500 mt-1">{event.name}</p>
           </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={confirmAllOnBus}
+              disabled={!canEdit || rows.length === 0}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 text-xs font-bold hover:bg-emerald-100 disabled:opacity-50"
+            >
+              <Check size={16} /> Xác nhận đủ theo Order
+            </button>
+            <button
+              type="button"
+              onClick={() => savePreparation(false)}
+              disabled={!canEdit || !onSavePreparation}
+              className="px-4 py-2.5 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-bold hover:bg-slate-50 disabled:opacity-50"
+            >
+              Lưu nháp
+            </button>
+            <button
+              type="button"
+              onClick={() => savePreparation(true)}
+              disabled={!canEdit || !onSavePreparation || rows.length === 0}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 disabled:opacity-50"
+            >
+              <ClipboardCheck size={16} /> Chốt checklist
+            </button>
+          </div>
+        </div>
 
-          {!canEdit && (
-            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900 text-sm font-semibold">
-              Bạn đang xem Checklist ở chế độ chỉ đọc. Không thể ghi nhận hoặc cập nhật thông tin.
+        <div className="grid grid-cols-2 md:grid-cols-5 border-b border-slate-100">
+          {[
+            ['Cần mang', summary.required, 'text-slate-900'],
+            ['Đã xác nhận', `${summary.confirmedItems}/${rows.length}`, 'text-blue-600'],
+            ['Sẵn sàng', summary.ready, 'text-emerald-600'],
+            ['Cần bổ sung', summary.load, 'text-cyan-700'],
+            ['Còn thiếu', summary.missing, 'text-rose-600']
+          ].map(([label, value, tone]) => (
+            <div key={String(label)} className="px-4 py-3 border-r border-slate-100 last:border-r-0">
+              <p className="text-[10px] font-black uppercase text-slate-400">{label}</p>
+              <p className={`text-xl font-black ${tone}`}>{value}</p>
             </div>
-          )}
+          ))}
+        </div>
 
-          <form onSubmit={handleSubmit} className="mt-4 space-y-3">
-            <div className="flex flex-wrap gap-2">
-              <button type="button" onClick={() => canEdit && setDirection('OUT')} disabled={!canEdit} className={`px-3 py-2 rounded-xl text-xs font-black uppercase tracking-widest flex items-center gap-2 ${direction === 'OUT' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'} ${!canEdit ? 'opacity-50 cursor-not-allowed' : ''}`}>
-                <CheckSquare size={14}/> Quét hàng đi
-              </button>
-              <button type="button" onClick={() => canEdit && setDirection('IN')} disabled={!canEdit} className={`px-3 py-2 rounded-xl text-xs font-black uppercase tracking-widest flex items-center gap-2 ${direction === 'IN' ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-600'} ${!canEdit ? 'opacity-50 cursor-not-allowed' : ''}`}>
-                <CornerDownLeft size={14}/> Check hàng về
-              </button>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              <button type="button" onClick={() => canEdit && setScanMode('CONTINUOUS')} disabled={!canEdit} className={`px-3 py-2 rounded-xl text-xs font-black uppercase tracking-widest ${scanMode === 'CONTINUOUS' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600'} ${!canEdit ? 'opacity-50 cursor-not-allowed' : ''}`}>
-                Liên tục
-              </button>
-              <button type="button" onClick={() => canEdit && setScanMode('MANUAL')} disabled={!canEdit} className={`px-3 py-2 rounded-xl text-xs font-black uppercase tracking-widest ${scanMode === 'MANUAL' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600'} ${!canEdit ? 'opacity-50 cursor-not-allowed' : ''}`}>
-                Nhập SL
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
-              <div className="md:col-span-3">
-                <label className="text-[10px] font-black text-slate-400 uppercase">Mã barcode / ID</label>
-                <input
-                  ref={inputRef}
-                  value={scanValue}
-                  onChange={e => setScanValue(normalizeBarcode(e.target.value))}
-                  onKeyDown={handleScanKeyDown}
-                  className={`w-full border-2 border-slate-200 rounded-xl p-3 text-xl font-mono tracking-widest ${canEdit ? 'bg-white' : 'bg-slate-100 text-slate-500'}`}
-                  placeholder="Quét mã hoặc nhập tay..."
-                  autoFocus
-                  disabled={!canEdit}
-                />
-                {matchedItem && (
-                  <div className="mt-1 p-2 rounded-lg border border-slate-200 bg-slate-50 flex items-center gap-2 text-xs">
-                    <div className="font-bold text-slate-800">{matchedItem.name}</div>
-                    <div className="text-slate-500">({matchedItem.id})</div>
-                    <div className="text-[11px] text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">Kho: {matchedItem.availableQuantity}</div>
-                  </div>
-                )}
-              </div>
-              <div>
-                <label className="text-[10px] font-black text-slate-400 uppercase">Số lượng</label>
-                <input
-                  ref={quantityInputRef}
-                  type="number"
-                  min={1}
-                  value={quantity}
-                  onChange={e => setQuantity(Number(e.target.value))}
-                  className={`w-full border-2 border-slate-200 rounded-xl p-3 text-center text-lg font-black ${canEdit ? 'bg-white' : 'bg-slate-100 text-slate-500'}`}
-                  disabled={!canEdit}
-                />
-                {scanMode === 'MANUAL' && (
-                  <p className="mt-2 text-[11px] text-slate-500">Ở chế độ Nhập SL, quét mã xong rồi nhập số lượng trước khi nhấn Ghi nhận.</p>
-                )}
-              </div>
-              <div>
-                <label className="text-[10px] font-black text-slate-400 uppercase">Tình trạng</label>
-                <select
-                  value={status}
-                  onChange={e => setStatus(e.target.value as ChecklistStatus)}
-                  className={`w-full border-2 border-slate-200 rounded-xl p-3 text-sm font-semibold ${canEdit && direction !== 'OUT' ? 'bg-white' : 'bg-slate-100 text-slate-500'}`}
-                  disabled={!canEdit || direction === 'OUT'}
-                >
-                  <option value="OK">OK</option>
-                  <option value="DAMAGED">Hỏng</option>
-                  <option value="LOST">Mất / Thiếu</option>
-                </select>
-              </div>
-            </div>
-
-            <div>
-              <label className="text-[10px] font-black text-slate-400 uppercase">Ghi chú</label>
+        <div className="p-4 border-b border-slate-100 grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="relative">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              value={searchTerm}
+              onChange={eventChange => setSearchTerm(eventChange.target.value)}
+              className="w-full pl-9 pr-3 py-2.5 border border-slate-200 rounded-lg text-sm"
+              placeholder="Tìm thiết bị trong Order"
+            />
+          </div>
+          <form onSubmit={handleScan} className="flex gap-2">
+            <div className="relative flex-1">
+              <ScanBarcode size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
-                value={note}
-                onChange={e => setNote(e.target.value)}
-                className={`w-full border-2 border-slate-200 rounded-xl p-3 text-sm ${canEdit ? 'bg-white' : 'bg-slate-100 text-slate-500'}`}
-                placeholder="VD: Quét cho xe 29A-12345, tình trạng xước nhẹ..."
-                disabled={!canEdit}
+                value={scanValue}
+                onChange={eventChange => setScanValue(eventChange.target.value)}
+                className="w-full pl-9 pr-3 py-2.5 border border-slate-200 rounded-lg font-mono text-sm"
+                placeholder="Quét barcode để tìm nhanh"
               />
             </div>
-
-            <button type="submit" disabled={!canEdit} className={`w-full py-3 rounded-xl font-black uppercase tracking-widest text-sm flex items-center justify-center gap-2 ${canEdit ? 'bg-slate-800 text-white hover:bg-black' : 'bg-slate-200 text-slate-500 cursor-not-allowed'}`}>
-              <Barcode size={16}/> Ghi nhận
-            </button>
+            <button type="submit" className="px-4 rounded-lg bg-slate-900 text-white text-xs font-bold">Tìm</button>
           </form>
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm space-y-3">
-          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Tổng quan</p>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="p-3 rounded-xl bg-blue-50 border border-blue-100">
-              <p className="text-[11px] font-semibold text-blue-600">Cần xuất</p>
-              <p className="text-2xl font-black text-slate-800">{totals.expected}</p>
-            </div>
-            <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-100">
-              <p className="text-[11px] font-semibold text-emerald-600">Đã quét về</p>
-              <p className="text-2xl font-black text-slate-800">{totals.in}</p>
-            </div>
-            <div className="p-3 rounded-xl bg-orange-50 border border-orange-100">
-              <p className="text-[11px] font-semibold text-orange-600">Thiếu / Mất</p>
-              <p className="text-2xl font-black text-orange-700">{totals.missing + totals.lost}</p>
-            </div>
-            <div className="p-3 rounded-xl bg-amber-50 border border-amber-100">
-              <p className="text-[11px] font-semibold text-amber-600">Hỏng</p>
-              <p className="text-2xl font-black text-amber-700">{totals.damaged}</p>
-            </div>
-          </div>
-          <div className="bg-slate-50 border border-dashed border-slate-200 rounded-xl p-3 text-xs text-slate-600">
-            Quét mã để đối chiếu với danh sách đặt hàng. Hệ thống tự tính thiếu / hỏng / mất dựa trên kết quả quét.
-          </div>
-        </div>
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-2">
-        <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-          <div className="px-5 py-4 border-b border-slate-200 bg-emerald-50 flex items-center justify-between gap-3">
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700">Đã quét</p>
-              <p className="text-sm font-semibold text-slate-800">{scannedRows.length} thiết bị</p>
-            </div>
-            <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-100 px-3 py-1 rounded-full">Đã quét</span>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="min-w-[900px] w-full text-sm">
-              <thead className="bg-slate-50 border-b border-slate-200">
-                <tr>
-                  <th className="px-3 py-3 text-[10px] font-black text-slate-500 uppercase text-left">Barcode</th>
-                  <th className="px-3 py-3 text-[10px] font-black text-slate-500 uppercase text-left">Thiết bị</th>
-                  <th className="px-3 py-3 text-[10px] font-black text-slate-500 uppercase text-center">Order</th>
-                  <th className="px-3 py-3 text-[10px] font-black text-slate-500 uppercase text-center">Đã quét đi</th>
-                  <th className="px-3 py-3 text-[10px] font-black text-slate-500 uppercase text-center">Đã về</th>
-                  <th className="px-3 py-3 text-[10px] font-black text-slate-500 uppercase text-center">Hỏng</th>
-                  <th className="px-3 py-3 text-[10px] font-black text-slate-500 uppercase text-center">Mất</th>
-                  <th className="px-3 py-3 text-[10px] font-black text-slate-500 uppercase text-center">Thiếu</th>
-                  <th className="px-3 py-3 text-[10px] font-black text-slate-500 uppercase text-left">Ghi chú</th>
-                  <th className="px-3 py-3 text-[10px] font-black text-slate-500 uppercase text-left w-40">Thao tác</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {scannedRows.map(row => (
-                  <tr key={row.itemId} className={row.missing > 0 || row.lost > 0 ? 'bg-orange-50/60' : 'bg-emerald-50/10'}>
-                    <td className="px-3 py-2 font-mono text-xs text-slate-600">{row.barcode || row.itemId}</td>
-                    <td className="px-3 py-2">
-                      <div className="font-bold text-slate-800">{row.name}</div>
-                      <div className="text-[11px] text-slate-400">{row.itemId}</div>
-                    </td>
-                    <td className="px-3 py-2 text-center font-black text-slate-700">{row.orderQty}</td>
-                    <td className="px-3 py-2 text-center font-black text-blue-600">{row.scannedOut}</td>
-                    <td className="px-3 py-2 text-center font-black text-emerald-600">{row.scannedIn}</td>
-                    <td className="px-3 py-2 text-center font-black text-amber-600">{row.damaged}</td>
-                    <td className="px-3 py-2 text-center font-black text-red-600">{row.lost}</td>
-                    <td className="px-3 py-2 text-center">
-                      <span className={`px-2 py-1 rounded-lg text-[11px] font-black ${row.missing > 0 ? 'bg-orange-200 text-orange-800' : 'bg-emerald-100 text-emerald-700'}`}>
-                        {row.missing > 0 ? `Thiếu ${row.missing}` : 'Đủ'}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2">
-                      <input
-                        defaultValue={row.note}
-                        onBlur={e => handleNoteBlur(row.itemId, e.target.value)}
-                        className={`w-full border border-slate-200 rounded-lg p-2 text-xs ${canEdit ? 'bg-white' : 'bg-slate-100 text-slate-500'}`}
-                        placeholder="Ghi chú riêng cho mã này"
-                        disabled={!canEdit}
-                      />
-                    </td>
-                    <td className="px-3 py-2">
-                      <div className="flex gap-1 flex-wrap">
-                        <button
-                          type="button"
-                          onClick={() => handleQuickStatus(row.itemId, row.barcode, 'OK')}
-                          disabled={!canEdit}
-                          className={`px-2 py-1 rounded-lg text-[11px] font-bold ${canEdit ? 'bg-slate-100 text-slate-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}
-                        >
-                          +1 OK
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleQuickStatus(row.itemId, row.barcode, 'DAMAGED')}
-                          disabled={!canEdit}
-                          className={`px-2 py-1 rounded-lg text-[11px] font-bold ${canEdit ? 'bg-amber-100 text-amber-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}
-                        >
-                          +1 Hỏng
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleQuickStatus(row.itemId, row.barcode, 'LOST')}
-                          disabled={!canEdit}
-                          className={`px-2 py-1 rounded-lg text-[11px] font-bold ${canEdit ? 'bg-red-100 text-red-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}
-                        >
-                          +1 Mất
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-                {scannedRows.length === 0 && (
-                  <tr>
-                    <td colSpan={10} className="text-center py-8 text-slate-400 text-sm">Chưa có thiết bị nào được quét.</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-          <div className="px-5 py-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between gap-3">
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Chưa quét</p>
-              <p className="text-sm font-semibold text-slate-800">{unscannedRows.length} thiết bị</p>
-            </div>
-            <span className="text-[11px] font-semibold text-slate-700 bg-slate-100 px-3 py-1 rounded-full">Chưa quét</span>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="min-w-[900px] w-full text-sm">
-              <thead className="bg-slate-50 border-b border-slate-200">
-                <tr>
-                  <th className="px-3 py-3 text-[10px] font-black text-slate-500 uppercase text-left">Barcode</th>
-                  <th className="px-3 py-3 text-[10px] font-black text-slate-500 uppercase text-left">Thiết bị</th>
-                  <th className="px-3 py-3 text-[10px] font-black text-slate-500 uppercase text-center">Order</th>
-                  <th className="px-3 py-3 text-[10px] font-black text-slate-500 uppercase text-center">Đã quét đi</th>
-                  <th className="px-3 py-3 text-[10px] font-black text-slate-500 uppercase text-center">Đã về</th>
-                  <th className="px-3 py-3 text-[10px] font-black text-slate-500 uppercase text-center">Hỏng</th>
-                  <th className="px-3 py-3 text-[10px] font-black text-slate-500 uppercase text-center">Mất</th>
-                  <th className="px-3 py-3 text-[10px] font-black text-slate-500 uppercase text-center">Thiếu</th>
-                  <th className="px-3 py-3 text-[10px] font-black text-slate-500 uppercase text-left">Ghi chú</th>
-                  <th className="px-3 py-3 text-[10px] font-black text-slate-500 uppercase text-left w-40">Thao tác</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {unscannedRows.map(row => (
-                  <tr key={row.itemId} className="bg-slate-50/80">
-                    <td className="px-3 py-2 font-mono text-xs text-slate-600">{row.barcode || row.itemId}</td>
-                    <td className="px-3 py-2">
-                      <div className="font-bold text-slate-800">{row.name}</div>
-                      <div className="text-[11px] text-slate-400">{row.itemId}</div>
-                    </td>
-                    <td className="px-3 py-2 text-center font-black text-slate-700">{row.orderQty}</td>
-                    <td className="px-3 py-2 text-center font-black text-blue-600">{row.scannedOut}</td>
-                    <td className="px-3 py-2 text-center font-black text-emerald-600">{row.scannedIn}</td>
-                    <td className="px-3 py-2 text-center font-black text-amber-600">{row.damaged}</td>
-                    <td className="px-3 py-2 text-center font-black text-red-600">{row.lost}</td>
-                    <td className="px-3 py-2 text-center">
-                      <span className="px-2 py-1 rounded-lg text-[11px] font-black bg-slate-100 text-slate-600">Chưa quét</span>
-                    </td>
-                    <td className="px-3 py-2">
-                      <input
-                        defaultValue={row.note}
-                        onBlur={e => handleNoteBlur(row.itemId, e.target.value)}
-                        className={`w-full border border-slate-200 rounded-lg p-2 text-xs ${canEdit ? 'bg-white' : 'bg-slate-100 text-slate-500'}`}
-                        placeholder="Ghi chú riêng cho mã này"
-                        disabled={!canEdit}
-                      />
-                    </td>
-                    <td className="px-3 py-2">
-                      <div className="flex gap-1 flex-wrap">
-                        <button
-                          type="button"
-                          onClick={() => handleQuickStatus(row.itemId, row.barcode, 'OK')}
-                          disabled={!canEdit}
-                          className={`px-2 py-1 rounded-lg text-[11px] font-bold ${canEdit ? 'bg-slate-100 text-slate-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}
-                        >
-                          +1 OK
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleQuickStatus(row.itemId, row.barcode, 'DAMAGED')}
-                          disabled={!canEdit}
-                          className={`px-2 py-1 rounded-lg text-[11px] font-bold ${canEdit ? 'bg-amber-100 text-amber-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}
-                        >
-                          +1 Hỏng
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleQuickStatus(row.itemId, row.barcode, 'LOST')}
-                          disabled={!canEdit}
-                          className={`px-2 py-1 rounded-lg text-[11px] font-bold ${canEdit ? 'bg-red-100 text-red-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}
-                        >
-                          +1 Mất
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-                {unscannedRows.length === 0 && (
-                  <tr>
-                    <td colSpan={10} className="text-center py-8 text-slate-400 text-sm">Đã quét hết thiết bị.</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm lg:col-span-2">
-          <div className="flex items-center justify-between mb-3">
-            <div>
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Nhật ký quét</p>
-              <h4 className="font-bold text-slate-800">Lịch sử gần nhất</h4>
-            </div>
-            <ClipboardList size={18} className="text-slate-400" />
-          </div>
-          <div className="space-y-2 max-h-72 overflow-y-auto pr-2">
-            {checklist.logs.length === 0 && (
-              <div className="text-slate-400 text-sm italic">Chưa có lượt quét nào.</div>
-            )}
-            {checklist.logs.slice(0, 20).map(log => (
-              <div key={log.id} className="p-3 rounded-xl border border-slate-100 bg-slate-50 flex justify-between items-center text-sm">
-                <div>
-                  <div className="font-bold text-slate-800">{log.itemName || log.itemId || 'Không tìm thấy'}</div>
-                  <div className="text-[11px] text-slate-400">{log.barcode}</div>
-                  {log.note && <div className="text-[12px] text-slate-600 mt-1">{log.note}</div>}
-                </div>
-                <div className="text-right">
-                  <div className="text-[11px] font-black uppercase tracking-widest text-slate-500">{log.direction === 'OUT' ? 'Hàng đi' : 'Hàng về'}</div>
-                  <div className="text-sm font-black">{log.quantity} × {log.status}</div>
-                  <div className="text-[11px] text-slate-400">{new Date(log.timestamp).toLocaleString('vi-VN')}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-        <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
-          <div className="flex items-center justify-between mb-3">
-            <div>
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Chữ ký online</p>
-              <h4 className="font-bold text-slate-800">Xác nhận {direction === 'OUT' ? 'phiếu xuất kho' : 'phiếu trả kho'}</h4>
-            </div>
-            <PenLine size={18} className="text-slate-400" />
-          </div>
-          <div className="space-y-3">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div className="p-3 border border-slate-200 rounded-xl">
-                <p className="text-[11px] font-black text-slate-600 uppercase mb-2">Quản lý kho</p>
-                {(() => {
-                  const pair = event.checklist?.signatures?.[direction === 'OUT' ? 'outbound' : 'inbound'];
-                  return pair?.manager ? <span className="inline-flex items-center px-2 py-1 rounded-full bg-emerald-100 text-emerald-700 text-[11px] font-bold mb-2">Đã ký</span> : null;
-                })()}
-                <input
-                  value={managerName}
-                  onChange={e => setManagerName(e.target.value)}
-                  className="w-full border border-slate-200 rounded-lg p-2 text-sm mb-2"
-                  placeholder="Tên quản lý kho"
-                />
-                <input
-                  value={managerTitle}
-                  onChange={e => setManagerTitle(e.target.value)}
-                  className="w-full border border-slate-200 rounded-lg p-2 text-sm mb-2"
-                  placeholder="Chức vụ / bộ phận"
-                />
-                <SignaturePad value={managerSignatureData || undefined} onChange={setManagerSignatureData} />
-                <button
-                  type="button"
-                  onClick={() => handleSaveSignature('MANAGER', false)}
-                  className="mt-2 w-full bg-slate-700 text-white py-2 rounded-lg text-sm font-bold hover:bg-slate-800"
-                >
-                  Lưu chữ ký Quản lý (chưa xuất phiếu)
-                </button>
-              </div>
-              <div className="p-3 border border-slate-200 rounded-xl">
-                <p className="text-[11px] font-black text-slate-600 uppercase mb-2">Người lập phiếu / Kiểm hàng</p>
-                {(() => {
-                  const pair = event.checklist?.signatures?.[direction === 'OUT' ? 'outbound' : 'inbound'];
-                  return pair?.operator ? <span className="inline-flex items-center px-2 py-1 rounded-full bg-emerald-100 text-emerald-700 text-[11px] font-bold mb-2">Đã ký</span> : null;
-                })()}
-                <input
-                  value={operatorName}
-                  onChange={e => setOperatorName(e.target.value)}
-                  className="w-full border border-slate-200 rounded-lg p-2 text-sm mb-2"
-                  placeholder="Tên người lập phiếu/kiểm hàng"
-                />
-                <input
-                  value={operatorTitle}
-                  onChange={e => setOperatorTitle(e.target.value)}
-                  className="w-full border border-slate-200 rounded-lg p-2 text-sm mb-2"
-                  placeholder="Chức vụ / bộ phận"
-                />
-                <SignaturePad value={operatorSignatureData || undefined} onChange={setOperatorSignatureData} />
-                <button
-                  type="button"
-                  onClick={() => handleSaveSignature('OPERATOR', false)}
-                  className="mt-2 w-full bg-slate-700 text-white py-2 rounded-lg text-sm font-bold hover:bg-slate-800"
-                >
-                  Lưu chữ ký Người lập phiếu (chưa xuất phiếu)
-                </button>
-              </div>
-            </div>
-            <textarea
-              value={signNote}
-              onChange={e => setSignNote(e.target.value)}
-              className="w-full border border-slate-200 rounded-lg p-2 text-sm"
-              placeholder="Ghi chú thêm trên phiếu"
-              rows={2}
-            />
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={handleCreateSlip}
-                className="w-full bg-blue-600 text-white py-2 rounded-xl font-bold hover:bg-blue-700 flex items-center justify-center gap-2"
-              >
-                <PenLine size={16}/> Xuất phiếu {direction === 'OUT' ? 'xuất kho' : 'trả kho'} (cần đủ 2 chữ ký)
-              </button>
-            </div>
-            {slips.length > 0 && (
-              <div className="border border-slate-200 rounded-xl p-3 bg-slate-50">
-                <p className="text-[11px] font-black text-slate-600 uppercase mb-2">Lịch sử phiếu</p>
-                <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-                  {slips.map(slip => (
-                    <div key={slip.id} className="p-2 rounded-lg bg-white border border-slate-200 flex items-center justify-between">
-                      <div>
-                        <div className="font-semibold text-slate-800">{slip.direction === 'OUT' ? 'Phiếu xuất kho' : 'Phiếu trả kho'} {slip.slipNo ? `#${slip.slipNo}` : ''}</div>
-                        <div className="text-[11px] text-slate-500">{new Date(slip.createdAt).toLocaleString('vi-VN')}</div>
-                        <div className="text-[12px] text-slate-600">QL kho: {slip.manager?.name || '---'} • Lập phiếu: {slip.operator?.name || '---'}</div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => handleViewSlip(slip.id)}
-                        className="text-blue-600 text-xs font-bold hover:underline"
-                      >
-                        Xem / In
-                      </button>
+        <div className="overflow-x-auto">
+          <table className="min-w-[980px] w-full text-sm">
+            <thead className="bg-slate-50 text-[10px] uppercase text-slate-500">
+              <tr>
+                <th className="px-4 py-3 text-left">Thiết bị</th>
+                <th className="px-3 py-3 text-center">Order</th>
+                <th className="px-3 py-3 text-center">Trên xe</th>
+                <th className="px-3 py-3 text-left">Xác nhận</th>
+                <th className="px-3 py-3 text-center">SL mang</th>
+                <th className="px-3 py-3 text-center">SL bổ sung</th>
+                <th className="px-4 py-3 text-left">Ghi chú</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {filteredRows.map(row => (
+                <tr key={row.allocation.itemId} className={highlightedItemId === row.allocation.itemId ? 'bg-blue-50' : 'hover:bg-slate-50'}>
+                  <td className="px-4 py-3 min-w-[220px]">
+                    <p className="font-bold text-slate-900">{row.item?.name || row.allocation.itemId}</p>
+                    <p className="text-[11px] text-slate-500">{row.item?.category || 'Chưa có danh mục'} · {row.item?.lifecycle === 'CONSUMABLE' ? 'Tiêu hao' : 'Khấu hao'}</p>
+                  </td>
+                  <td className="px-3 py-3 text-center font-black">{row.allocation.quantity}</td>
+                  <td className="px-3 py-3 text-center font-bold text-blue-700">{row.busQuantity}</td>
+                  <td className="px-3 py-3">
+                    <div className="flex gap-1.5">
+                      {STATUS_OPTIONS.map(option => {
+                        const Icon = option.icon;
+                        const active = row.draft.status === option.value;
+                        return (
+                          <button
+                            key={option.value}
+                            type="button"
+                            title={option.label}
+                            onClick={() => selectStatus(row.allocation.itemId, option.value, row.allocation.quantity)}
+                            disabled={!canEdit}
+                            className={`h-9 px-2.5 rounded-lg border inline-flex items-center gap-1.5 text-[11px] font-bold whitespace-nowrap ${active ? option.activeClass : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'} disabled:opacity-50`}
+                          >
+                            <Icon size={14} /> {option.label}
+                          </button>
+                        );
+                      })}
                     </div>
-                  ))}
-                </div>
-              </div>
-            )}
+                  </td>
+                  <td className="px-3 py-3 text-center">
+                    <input
+                      type="number"
+                      min={0}
+                      max={row.allocation.quantity}
+                      value={row.draft.quantity}
+                      onChange={eventChange => updateDraft(row.allocation.itemId, { quantity: Number(eventChange.target.value) })}
+                      disabled={!canEdit || !row.draft.status}
+                      className="w-16 border border-slate-200 rounded-lg px-2 py-2 text-center font-black disabled:bg-slate-100"
+                    />
+                  </td>
+                  <td className="px-3 py-3 text-center">
+                    <input
+                      type="number"
+                      min={0}
+                      max={row.draft.quantity}
+                      value={row.draft.status === 'LOAD_TO_BUS' ? row.draft.loadQuantity || 0 : 0}
+                      onChange={eventChange => updateDraft(row.allocation.itemId, { loadQuantity: Number(eventChange.target.value) })}
+                      disabled={!canEdit || row.draft.status !== 'LOAD_TO_BUS'}
+                      className="w-16 border border-slate-200 rounded-lg px-2 py-2 text-center font-black disabled:bg-slate-100 disabled:text-slate-400"
+                    />
+                  </td>
+                  <td className="px-4 py-3 min-w-[180px]">
+                    <input
+                      value={row.draft.note || ''}
+                      onChange={eventChange => updateDraft(row.allocation.itemId, { note: eventChange.target.value })}
+                      disabled={!canEdit}
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs disabled:bg-slate-100"
+                      placeholder="Ghi chú"
+                    />
+                  </td>
+                </tr>
+              ))}
+              {filteredRows.length === 0 && (
+                <tr><td colSpan={7} className="py-10 text-center text-slate-400">Không có thiết bị phù hợp.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="px-4 py-3 bg-slate-50 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+          <span>{checklist.finalizedAt ? `Chốt gần nhất: ${formatDateTime(checklist.finalizedAt)}` : 'Checklist chưa được chốt'}</span>
+          {(Object.values(checklist.inbound || {}) as number[]).reduce((sum, value) => sum + value, 0) > 0 && (
+            <span>Dữ liệu trả kho cũ: {(Object.values(checklist.inbound) as number[]).reduce((sum, value) => sum + value, 0)}</span>
+          )}
+        </div>
+      </section>
+
+      <section className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+        <div className="p-4 border-b border-slate-100 flex items-center gap-3">
+          <AlertTriangle size={18} className="text-amber-600" />
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-widest text-amber-600">Sau sự kiện · tùy chọn</p>
+            <h3 className="font-black text-slate-900">Báo sự cố nhanh</h3>
           </div>
         </div>
-      </div>
+        <div className="p-4 grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+          <div className="md:col-span-4">
+            <label className="block text-[10px] font-black uppercase text-slate-400 mb-1">Thiết bị</label>
+            <select
+              value={incidentItemId}
+              onChange={eventChange => setIncidentItemId(eventChange.target.value)}
+              disabled={!canEdit}
+              className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm bg-white"
+            >
+              <option value="">Chọn thiết bị trong Order</option>
+              {rows.map(row => (
+                <option key={row.allocation.itemId} value={row.allocation.itemId}>
+                  {row.item?.name || row.allocation.itemId} · trên xe {row.busQuantity}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="md:col-span-3">
+            <label className="block text-[10px] font-black uppercase text-slate-400 mb-1">Xử lý</label>
+            <select
+              value={incidentType}
+              onChange={eventChange => setIncidentType(eventChange.target.value as EventInventoryIncidentType)}
+              disabled={!canEdit}
+              className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm bg-white"
+            >
+              {Object.entries(INCIDENT_LABELS).map(([value, label]) => (
+                <option key={value} value={value} disabled={value === 'CONSUMED' && incidentItem?.lifecycle !== 'CONSUMABLE'}>{label}</option>
+              ))}
+            </select>
+          </div>
+          <div className="md:col-span-1">
+            <label className="block text-[10px] font-black uppercase text-slate-400 mb-1">Số lượng</label>
+            <input
+              type="number"
+              min={1}
+              value={incidentQuantity}
+              onChange={eventChange => setIncidentQuantity(Number(eventChange.target.value))}
+              disabled={!canEdit}
+              className="w-full border border-slate-200 rounded-lg px-2 py-2.5 text-center font-black"
+            />
+          </div>
+          <div className="md:col-span-3">
+            <label className="block text-[10px] font-black uppercase text-slate-400 mb-1">Ghi chú</label>
+            <input
+              value={incidentNote}
+              onChange={eventChange => setIncidentNote(eventChange.target.value)}
+              disabled={!canEdit}
+              className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm"
+              placeholder="Tình trạng hoặc lý do"
+            />
+          </div>
+          <button
+            type="button"
+            title="Ghi nhận sự cố"
+            onClick={reportIncident}
+            disabled={!canEdit || !incidentItemId || !onReportIncident}
+            className="md:col-span-1 h-[42px] inline-flex items-center justify-center rounded-lg bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-50"
+          >
+            <Check size={18} />
+          </button>
+        </div>
+
+        {(checklist.incidents || []).length > 0 && (
+          <div className="border-t border-slate-100">
+            <div className="px-4 py-2.5 bg-slate-50 flex items-center gap-2 text-xs font-bold text-slate-600">
+              <History size={14} /> Sự cố đã ghi nhận
+            </div>
+            <div className="divide-y divide-slate-100">
+              {(checklist.incidents || []).slice(0, 8).map(incident => {
+                const item = inventoryMap.get(incident.itemId);
+                return (
+                  <div key={incident.id} className="px-4 py-3 flex flex-wrap items-center justify-between gap-2 text-sm">
+                    <div>
+                      <span className="font-bold text-slate-900">{item?.name || incident.itemId}</span>
+                      <span className="text-slate-500"> · {INCIDENT_LABELS[incident.type]} · {incident.quantity}</span>
+                      {incident.note && <p className="text-xs text-slate-500 mt-0.5">{incident.note}</p>}
+                    </div>
+                    <span className="text-xs text-slate-400">{formatDateTime(incident.createdAt)}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </section>
     </div>
   );
 };

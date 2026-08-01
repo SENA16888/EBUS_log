@@ -28,12 +28,33 @@ import {
   XAxis,
   YAxis
 } from 'recharts';
-import { AppState, Event, EventExpense, EventStatus, SaleOrder } from '../types';
+import { AppState, Event, EventExpense, EventStatus, InventoryItem, PayrollAdjustment, Quotation, SaleOrder } from '../types';
 import { calcLineTotal } from '../services/pricing';
 
 interface ReportManagerProps {
   appState: AppState;
 }
+
+type ConsumableAggregate = {
+  itemId: string;
+  name: string;
+  category: string;
+  unit: string;
+  quantity: number;
+  events: Set<string>;
+  eventName: string;
+};
+
+type EquipmentUsageAggregate = {
+  itemId: string;
+  name: string;
+  category: string;
+  quantity: number;
+  events: Set<string>;
+  totalUsage: number;
+  maxUsage?: number;
+  totalQuantity: number;
+};
 
 type MoneyRow = {
   label: string;
@@ -250,8 +271,8 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
     const period = normalizeMonthRange(startMonth, endMonth);
     const periodLabel = formatRangeLabel(period.startMonth, period.endMonth);
     const venueLabel = getVenueLabel(venueFilter);
-    const inventoryMap = new Map(appState.inventory.map(item => [item.id, item]));
-    const quotationMap = new Map(appState.quotations.map(quotation => [quotation.id, quotation]));
+    const inventoryMap = new Map<string, InventoryItem>(appState.inventory.map(item => [item.id, item]));
+    const quotationMap = new Map<string, Quotation>(appState.quotations.map(quotation => [quotation.id, quotation]));
     const allLinkedQuotationIds = new Set(appState.events.map(event => event.quotationId).filter((id): id is string => Boolean(id)));
     const allMonthlyEvents = appState.events
       .filter(event => isEventInRange(event, period.startMonth, period.endMonth))
@@ -356,7 +377,7 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
       map.set(key, current);
       return map;
     }, new Map<string, { employeeId: string; month: string; eh: number; ebus: number }>());
-    const payrollAdjustmentMap = new Map((appState.payrollAdjustments || [])
+    const payrollAdjustmentMap = new Map<string, PayrollAdjustment>((appState.payrollAdjustments || [])
       .map(adjustment => [`${adjustment.employeeId}::${adjustment.month}`, adjustment]));
     const payrollAllocationByEmployeeMonth = Array.from(payrollBaseByEmployeeMonth.values()).reduce((map, base) => {
       const key = `${base.employeeId}::${base.month}`;
@@ -447,29 +468,116 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
       (event.items || []).map(allocation => {
         const item = inventoryMap.get(allocation.itemId);
         if (!item || item.lifecycle !== 'CONSUMABLE') return null;
-        const checklistUsed = Math.max(
-          0,
-          (event.checklist?.outbound?.[allocation.itemId] || 0) - (event.checklist?.inbound?.[allocation.itemId] || 0)
-        );
-        const usedQuantity = checklistUsed || Math.max(0, (allocation.quantity || 0) - (allocation.returnedQuantity || 0));
-        if (usedQuantity <= 0) return null;
+        const preparedQuantity = event.checklist?.preparation?.[allocation.itemId]?.quantity;
+        const legacyCarried = event.checklist?.outbound?.[allocation.itemId] || allocation.quantity || 0;
+        const carriedQuantity = Math.max(0, preparedQuantity ?? legacyCarried);
+        if (carriedQuantity <= 0) return null;
         return {
           itemId: item.id,
           name: item.name,
           category: item.category,
           unit: item.consumableUnit || 'cái',
           eventName: event.name,
-          quantity: usedQuantity
+          quantity: carriedQuantity
         };
       }).filter((row): row is NonNullable<typeof row> => Boolean(row))
     );
-    const consumableSummary = Array.from(consumableRows.reduce((map, row) => {
+    const carriedAggregateMap = consumableRows.reduce((map, row) => {
       const current = map.get(row.itemId) || { ...row, quantity: 0, events: new Set<string>() };
       current.quantity += row.quantity;
       current.events.add(row.eventName);
       map.set(row.itemId, current);
       return map;
-    }, new Map<string, { itemId: string; name: string; category: string; unit: string; quantity: number; events: Set<string>; eventName: string }>()).values())
+    }, new Map<string, ConsumableAggregate>());
+    const consumableCarriedSummary = Array.from(carriedAggregateMap.values() as IterableIterator<ConsumableAggregate>)
+      .map(row => ({ ...row, events: Array.from(row.events) }))
+      .sort((a, b) => b.quantity - a.quantity);
+
+    const actualConsumptionRows = [
+      ...monthlyEvents.flatMap(event => (event.checklist?.incidents || [])
+        .filter(incident => incident.type === 'CONSUMED')
+        .map(incident => {
+          const item = inventoryMap.get(incident.itemId);
+          if (!item || item.lifecycle !== 'CONSUMABLE') return null;
+          return {
+            itemId: item.id,
+            name: item.name,
+            category: item.category,
+            unit: item.consumableUnit || 'cái',
+            eventName: event.name,
+            quantity: incident.quantity || 0
+          };
+        })
+        .filter((row): row is NonNullable<typeof row> => Boolean(row))),
+      ...((venueFilter === 'EH' ? [] : appState.inventoryAudits || [])
+        .filter(audit => !!audit.reconciledAt && isDateInRange(audit.reconciledAt || audit.createdAt, period.startMonth, period.endMonth))
+        .flatMap(audit => (audit.items || [])
+          .filter(row => row.varianceReason === 'CONSUMED' && (row.variance || 0) < 0)
+          .map(row => {
+            const item = inventoryMap.get(row.itemId);
+            if (!item || item.lifecycle !== 'CONSUMABLE') return null;
+            return {
+              itemId: item.id,
+              name: item.name,
+              category: item.category,
+              unit: item.consumableUnit || 'cái',
+              eventName: audit.code,
+              quantity: Math.abs(row.variance || 0)
+            };
+          })
+          .filter((row): row is NonNullable<typeof row> => Boolean(row)))
+      )
+    ];
+    const actualAggregateMap = actualConsumptionRows.reduce((map, row) => {
+      const current = map.get(row.itemId) || { ...row, quantity: 0, events: new Set<string>() };
+      current.quantity += row.quantity;
+      current.events.add(row.eventName);
+      map.set(row.itemId, current);
+      return map;
+    }, new Map<string, ConsumableAggregate>());
+    const actualConsumableSummary = Array.from(actualAggregateMap.values() as IterableIterator<ConsumableAggregate>)
+      .map(row => ({
+        ...row,
+        events: Array.from(row.events),
+        carriedQuantity: consumableCarriedSummary.find(carried => carried.itemId === row.itemId)?.quantity || 0
+      }))
+      .sort((a, b) => b.quantity - a.quantity);
+    const consumableSummary = [
+      ...actualConsumableSummary,
+      ...consumableCarriedSummary
+        .filter(carried => !actualConsumableSummary.some(actual => actual.itemId === carried.itemId))
+        .map(carried => ({ ...carried, quantity: 0, carriedQuantity: carried.quantity }))
+    ].sort((a, b) => b.quantity - a.quantity || b.carriedQuantity - a.carriedQuantity);
+
+    const equipmentUsageMap = monthlyEvents.flatMap(event =>
+      (event.items || []).map(allocation => {
+        const item = inventoryMap.get(allocation.itemId);
+        if (!item || item.lifecycle === 'CONSUMABLE') return null;
+        const prepared = event.checklist?.preparation?.[allocation.itemId];
+        const legacyQuantity = event.checklist?.outbound?.[allocation.itemId] || 0;
+        const quantity = prepared
+          ? (prepared.status === 'MISSING' && prepared.quantity === 0 ? 0 : prepared.quantity)
+          : legacyQuantity;
+        if (quantity <= 0) return null;
+        return { item, eventName: event.name, quantity };
+      }).filter((row): row is NonNullable<typeof row> => Boolean(row))
+    ).reduce((map, row) => {
+      const current = map.get(row.item.id) || {
+        itemId: row.item.id,
+        name: row.item.name,
+        category: row.item.category,
+        quantity: 0,
+        events: new Set<string>(),
+        totalUsage: row.item.usageCount || 0,
+        maxUsage: row.item.maxUsage,
+        totalQuantity: row.item.totalQuantity || 0
+      };
+      current.quantity += row.quantity;
+      current.events.add(row.eventName);
+      map.set(row.item.id, current);
+      return map;
+    }, new Map<string, EquipmentUsageAggregate>());
+    const equipmentUsageSummary = Array.from(equipmentUsageMap.values() as IterableIterator<EquipmentUsageAggregate>)
       .map(row => ({ ...row, events: Array.from(row.events) }))
       .sort((a, b) => b.quantity - a.quantity);
 
@@ -492,8 +600,8 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
     };
 
     monthlyEvents.forEach(event => {
-      Object.entries(event.checklist?.damaged || {}).forEach(([itemId, qty]) => addDamage(itemId, qty || 0, 0, event.name));
-      Object.entries(event.checklist?.lost || {}).forEach(([itemId, qty]) => addDamage(itemId, 0, qty || 0, event.name));
+      Object.entries(event.checklist?.damaged || {}).forEach(([itemId, qty]) => addDamage(itemId, Number(qty) || 0, 0, event.name));
+      Object.entries(event.checklist?.lost || {}).forEach(([itemId, qty]) => addDamage(itemId, 0, Number(qty) || 0, event.name));
     });
     (appState.transactions || [])
       .filter(tx => isDateInRange(tx.date, period.startMonth, period.endMonth))
@@ -573,7 +681,9 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
       confirmedAdvance,
       advances,
       consumableRows,
+      consumableCarriedSummary,
       consumableSummary,
+      equipmentUsageSummary,
       damageRows,
       receipts,
       receiptUnits,
@@ -656,8 +766,12 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
       ...report.damageRows.map(row => [row.itemId, row.name, row.category, row.damaged, row.lost, row.sources.join('; ')]),
       [],
       ['Hàng tiêu hao'],
-      ['Mã hàng', 'Tên hàng', 'Danh mục', 'Số lượng', 'Đơn vị', 'Sự kiện'],
-      ...report.consumableSummary.map(row => [row.itemId, row.name, row.category, row.quantity, row.unit, row.events.join('; ')]),
+      ['Mã hàng', 'Tên hàng', 'Danh mục', 'Tiêu hao thực tế', 'Lượt mang theo', 'Đơn vị', 'Nguồn ghi nhận'],
+      ...report.consumableSummary.map(row => [row.itemId, row.name, row.category, row.quantity, row.carriedQuantity, row.unit, row.events.join('; ')]),
+      [],
+      ['Mức độ sử dụng thiết bị'],
+      ['Mã hàng', 'Tên hàng', 'Danh mục', 'Lượt dùng trong kỳ', 'Số sự kiện', 'Tổng lượt tích lũy', 'Ngưỡng khấu hao mỗi đơn vị'],
+      ...report.equipmentUsageSummary.map(row => [row.itemId, row.name, row.category, row.quantity, row.events.length, row.totalUsage, row.maxUsage || '']),
       [],
       ['Phiếu nhập/hóa đơn kho'],
       ['Mã phiếu', 'Ngày tạo', 'Nguồn', 'Số dòng', 'Số lượng', 'Ghi chú'],
@@ -923,7 +1037,7 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
         <StatCard
           title="Hàng tiêu hao"
           value={formatNumber(consumableTotal)}
-          sub={`${formatNumber(report.consumableSummary.length)} mã hàng có tiêu hao`}
+          sub={`${formatNumber(report.consumableSummary.filter(row => row.quantity > 0).length)} mã có tiêu hao thực tế`}
           icon={<Boxes size={18} />}
           tone="bg-cyan-50 text-cyan-700"
         />
@@ -1045,6 +1159,49 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
             ) : (
               <div className="h-full flex items-center justify-center text-sm text-slate-400">Chưa có khoản chi trong giai đoạn.</div>
             )}
+          </div>
+        </section>
+
+        <section className="bg-white border border-slate-100 rounded-xl p-4 shadow-sm">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <p className="text-xs font-black uppercase text-slate-400">Khấu hao</p>
+              <h3 className="text-base font-bold text-slate-900">Thiết bị được dùng nhiều</h3>
+            </div>
+            <TrendingUp size={16} className="text-blue-700" />
+          </div>
+          <div className="overflow-x-auto max-h-80">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-white">
+                <tr className="text-left text-xs uppercase text-slate-400 border-b">
+                  <th className="py-2 pr-3">Thiết bị</th>
+                  <th className="py-2 px-3 text-right">Trong kỳ</th>
+                  <th className="py-2 px-3 text-right">Sự kiện</th>
+                  <th className="py-2 pl-3 text-right">Tích lũy</th>
+                </tr>
+              </thead>
+              <tbody>
+                {report.equipmentUsageSummary.length === 0 && (
+                  <tr><td colSpan={4} className="py-6 text-center text-slate-400">Chưa có lượt sử dụng được chốt trong giai đoạn.</td></tr>
+                )}
+                {report.equipmentUsageSummary.slice(0, 20).map(row => {
+                  const usageCapacity = row.maxUsage ? row.maxUsage * Math.max(1, row.totalQuantity) : null;
+                  return (
+                    <tr key={row.itemId} className="border-b border-slate-50">
+                      <td className="py-2 pr-3">
+                        <div className="font-semibold text-slate-800">{row.name}</div>
+                        <div className="text-xs text-slate-500">{row.category}</div>
+                      </td>
+                      <td className="py-2 px-3 text-right font-bold text-blue-700">{formatNumber(row.quantity)}</td>
+                      <td className="py-2 px-3 text-right font-bold">{formatNumber(row.events.length)}</td>
+                      <td className="py-2 pl-3 text-right text-xs font-bold text-slate-700">
+                        {formatNumber(row.totalUsage)}{usageCapacity ? ` / ${formatNumber(usageCapacity)}` : ''}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         </section>
       </div>
@@ -1185,7 +1342,7 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
           <div className="flex items-center justify-between mb-3">
             <div>
               <p className="text-xs font-black uppercase text-slate-400">Kho</p>
-              <h3 className="text-base font-bold text-slate-900">Hàng tiêu hao</h3>
+              <h3 className="text-base font-bold text-slate-900">Tiêu hao thực tế và lượt mang theo</h3>
             </div>
             <Boxes size={16} className="text-cyan-700" />
           </div>
@@ -1194,13 +1351,14 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
               <thead className="sticky top-0 bg-white">
                 <tr className="text-left text-xs uppercase text-slate-400 border-b">
                   <th className="py-2 pr-3">Hàng hóa</th>
-                  <th className="py-2 px-3 text-right">Số lượng</th>
-                  <th className="py-2 pl-3">Sự kiện</th>
+                  <th className="py-2 px-3 text-right">Thực tế</th>
+                  <th className="py-2 px-3 text-right">Mang theo</th>
+                  <th className="py-2 pl-3">Nguồn ghi nhận</th>
                 </tr>
               </thead>
               <tbody>
                 {report.consumableSummary.length === 0 && (
-                  <tr><td colSpan={3} className="py-6 text-center text-slate-400">Không có hàng tiêu hao trong giai đoạn.</td></tr>
+                  <tr><td colSpan={4} className="py-6 text-center text-slate-400">Không có hàng tiêu hao trong giai đoạn.</td></tr>
                 )}
                 {report.consumableSummary.map(row => (
                   <tr key={row.itemId} className="border-b border-slate-50">
@@ -1209,6 +1367,7 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
                       <div className="text-xs text-slate-500">{row.category}</div>
                     </td>
                     <td className="py-2 px-3 text-right font-bold">{formatNumber(row.quantity)} {row.unit}</td>
+                    <td className="py-2 px-3 text-right font-bold text-blue-700">{formatNumber(row.carriedQuantity)} {row.unit}</td>
                     <td className="py-2 pl-3 text-xs text-slate-500">{row.events.join('; ')}</td>
                   </tr>
                 ))}

@@ -3,7 +3,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { InventoryItem, InventoryReceipt, InventoryReceiptItem } from '../types';
 import { 
   Search, X, Trash2, AlertTriangle, Wrench,
-  ShoppingCart, Info, Settings2, Link as LinkIcon, CheckCircle, CalendarClock, Printer, History, FilePlus, Download
+  ShoppingCart, Info, Settings2, Link as LinkIcon, CheckCircle, CalendarClock, Printer, History, FilePlus, Download, Truck
 } from 'lucide-react';
 import JsBarcode from 'jsbarcode';
 import { findDuplicateBarcodeItem, generateBarcode, normalizeBarcode } from '../services/barcodeService';
@@ -454,6 +454,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
       brokenQuantity: 0,
       lostQuantity: 0,
       usageCount: 0,
+      busQuantity: 0,
       imageUrl: newItemData.imageUrl,
       rentalPrice: Number(newItemData.rentalPrice),
       purchaseLink: newItemData.purchaseLink,
@@ -1115,6 +1116,16 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
                   </div>
                   <div className="flex items-center gap-2 bg-slate-50 p-2 rounded-xl border border-slate-100 text-[11px] font-bold text-slate-600 truncate uppercase tracking-tighter">
                     {item.location || 'Chưa định vị'}
+                  </div>
+
+                  <div className="flex items-center justify-between bg-emerald-50 border border-emerald-100 p-2 rounded-xl text-[11px] font-bold text-emerald-700">
+                    <div className="flex items-center gap-2">
+                      <Truck size={14} />
+                      <span>Trên xe EBUS</span>
+                    </div>
+                    <span className="text-sm text-slate-800">
+                      {(typeof item.busQuantity === 'number' ? item.busQuantity : item.availableQuantity).toLocaleString()}
+                    </span>
                   </div>
 
                   <div className="flex items-center justify-between bg-blue-50 border border-blue-100 p-2 rounded-xl text-[11px] font-bold text-blue-700">

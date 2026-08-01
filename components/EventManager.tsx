@@ -1,6 +1,6 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { Event, InventoryItem, EventStatus, ComboPackage, Employee, EventExpense, EventAdvanceRequest, EventStaffAllocation, Quotation, EventLayout, EventLayoutBlock, LayoutPackageSource, ChecklistDirection, ChecklistStatus, ChecklistSignature, EventTimelineEntry, EventTimelinePhase, EventProfile, EventVenueType, EducationActivity, LearningTrack, EventContentProgram } from '../types';
+import { Event, InventoryItem, EventStatus, ComboPackage, Employee, EventExpense, EventAdvanceRequest, EventStaffAllocation, Quotation, EventLayout, EventLayoutBlock, LayoutPackageSource, ChecklistDirection, ChecklistStatus, ChecklistSignature, EventPreparationEntry, EventInventoryIncidentType, EventTimelineEntry, EventTimelinePhase, EventProfile, EventVenueType, EducationActivity, LearningTrack, EventContentProgram } from '../types';
 import {
   Calendar, MapPin, Box, ArrowLeft, Plus, Minus, X, Layers, Building2,
   Users, DollarSign, Trash2, Truck, BookOpen, 
@@ -65,6 +65,8 @@ interface EventManagerProps {
   onChecklistScan?: (payload: { eventId: string; barcode: string; direction: ChecklistDirection; status?: ChecklistStatus; quantity?: number; note?: string }) => void;
   onUpdateChecklistNote?: (eventId: string, itemId: string, note: string) => void;
   onSaveChecklistSignature?: (eventId: string, payload: { direction: ChecklistDirection; manager?: ChecklistSignature; operator?: ChecklistSignature; note?: string; itemsSnapshot?: { itemId: string; name?: string; orderQty: number; scannedOut: number; scannedIn: number; damaged: number; lost: number; missing: number; }[]; createSlip?: boolean }) => void;
+  onSaveEventPreparation?: (eventId: string, entries: Record<string, EventPreparationEntry>, finalize: boolean) => void;
+  onReportEventInventoryIncident?: (payload: { eventId: string; itemId: string; type: EventInventoryIncidentType; quantity: number; note?: string }) => void;
 }
 
 const PROCESS_STEPS_TEMPLATE = [
@@ -130,7 +132,7 @@ const DETAIL_SECTIONS: { key: EventDetailSection; label: string; description: st
 
 const DETAIL_TABS: { key: EventDetailTab; section: EventDetailSection; label: string; icon: DetailIcon; requireEdit?: boolean }[] = [
   { key: 'EQUIPMENT', section: 'PREP_LOGISTICS', label: 'Order Thiết Bị', icon: Box },
-  { key: 'CHECKLIST', section: 'PREP_LOGISTICS', label: 'Checklist Barcode', icon: ScanBarcode },
+  { key: 'CHECKLIST', section: 'PREP_LOGISTICS', label: 'Checklist xe EBUS', icon: ScanBarcode },
   { key: 'TIMELINE', section: 'PREP_LOGISTICS', label: 'Timeline hậu cần', icon: Clock3 },
   { key: 'STAFF', section: 'PREP_LOGISTICS', label: 'Nhân Sự', icon: Users, requireEdit: true },
   { key: 'COSTS', section: 'PREP_LOGISTICS', label: 'Chi Phí & Lợi Nhuận', icon: DollarSign, requireEdit: true },
@@ -1228,7 +1230,9 @@ export const EventManager: React.FC<EventManagerProps> = ({
   onSyncDoneItemsToChecklist,
   onChecklistScan,
   onUpdateChecklistNote,
-  onSaveChecklistSignature
+  onSaveChecklistSignature,
+  onSaveEventPreparation,
+  onReportEventInventoryIncident
 }) => {
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [eventScreenMode, setEventScreenMode] = useState<'HOME' | 'DASHBOARD' | 'DETAIL'>('HOME');
@@ -3757,7 +3761,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
                         disabled={!selectedEvent?.items.some(item => item.done) || !onSyncDoneItemsToChecklist}
                         className={`px-4 py-2 rounded-lg text-sm font-bold border ${selectedEvent?.items.some(item => item.done) && onSyncDoneItemsToChecklist ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100' : 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'}`}
                       >
-                        Đồng bộ sang Checklist Barcode
+                        Đồng bộ sang Checklist xe EBUS
                       </button>
                       <button
                         onClick={handleRemoveSelectedItems}
@@ -3900,6 +3904,9 @@ export const EventManager: React.FC<EventManagerProps> = ({
                   onScan={onChecklistScan || (() => {})}
                   onUpdateNote={onUpdateChecklistNote}
                   onSaveSignature={onSaveChecklistSignature}
+                  onSavePreparation={onSaveEventPreparation}
+                  onReportIncident={onReportEventInventoryIncident}
+                  canEdit={canEdit}
                 />
               )}
 

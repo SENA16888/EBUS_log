@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, Barcode, CheckCircle2, ClipboardCheck, Download, FileText, History, PackageCheck, Printer, RotateCcw, Save, Search, X, XCircle } from 'lucide-react';
-import { InventoryAuditBaseline, InventoryAuditItem, InventoryAuditSession, InventoryItem } from '../types';
+import { AlertTriangle, Barcode, CheckCircle2, ClipboardCheck, Download, FileText, History, PackageCheck, Printer, RotateCcw, Save, Search, Truck, X, XCircle } from 'lucide-react';
+import { InventoryAuditBaseline, InventoryAuditItem, InventoryAuditScope, InventoryAuditSession, InventoryItem, InventoryVarianceReason } from '../types';
 import { findItemByBarcode, normalizeBarcode } from '../services/barcodeService';
 
 type CountDraft = {
@@ -15,16 +15,30 @@ interface StocktakeManagerProps {
   onSaveAudit: (payload: {
     title: string;
     baseline: InventoryAuditBaseline;
+    scope: InventoryAuditScope;
     note?: string;
     items: InventoryAuditItem[];
     unknownBarcodes?: string[];
     summary: InventoryAuditSession['summary'];
+    reconcile?: boolean;
   }) => void;
   canEdit?: boolean;
 }
 
-const getSystemQuantity = (item: InventoryItem, baseline: InventoryAuditBaseline) =>
-  baseline === 'TOTAL' ? item.totalQuantity || 0 : item.availableQuantity || 0;
+const getSystemQuantity = (item: InventoryItem, baseline: InventoryAuditBaseline, scope: InventoryAuditScope) => {
+  if (scope === 'EBUS') {
+    return typeof item.busQuantity === 'number' ? item.busQuantity : item.availableQuantity || 0;
+  }
+  return baseline === 'TOTAL' ? item.totalQuantity || 0 : item.availableQuantity || 0;
+};
+
+const VARIANCE_REASON_LABELS: Record<InventoryVarianceReason, string> = {
+  CONSUMED: 'Tiêu hao trong kỳ',
+  BROKEN: 'Hỏng',
+  LOST: 'Mất',
+  TRANSFER_TO_STORAGE: 'Đã chuyển về kho tổng',
+  ADJUSTMENT: 'Điều chỉnh mốc/vị trí'
+};
 
 const buildSnapshot = (item: InventoryItem): InventoryAuditItem['snapshot'] => ({
   totalQuantity: item.totalQuantity || 0,
@@ -58,6 +72,7 @@ export const StocktakeManager: React.FC<StocktakeManagerProps> = ({
   onSaveAudit,
   canEdit = true
 }) => {
+  const [scope, setScope] = useState<InventoryAuditScope>('EBUS');
   const [baseline, setBaseline] = useState<InventoryAuditBaseline>('AVAILABLE');
   const [scanCode, setScanCode] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
@@ -65,6 +80,7 @@ export const StocktakeManager: React.FC<StocktakeManagerProps> = ({
   const [quantityDraft, setQuantityDraft] = useState(1);
   const [noteDraft, setNoteDraft] = useState('');
   const [counts, setCounts] = useState<Record<string, CountDraft>>({});
+  const [varianceReasons, setVarianceReasons] = useState<Record<string, InventoryVarianceReason>>({});
   const [barcodeAttached, setBarcodeAttached] = useState<Record<string, boolean>>({});
   const [unknownBarcodes, setUnknownBarcodes] = useState<string[]>([]);
   const [sessionTitle, setSessionTitle] = useState(() => `Kiểm kho ${new Date().toLocaleDateString('vi-VN')}`);
@@ -84,7 +100,7 @@ export const StocktakeManager: React.FC<StocktakeManagerProps> = ({
   const auditRows = useMemo<InventoryAuditItem[]>(() => {
     return inventory.map(item => {
       const counted = counts[item.id]?.countedQuantity;
-      const systemQuantity = getSystemQuantity(item, baseline);
+      const systemQuantity = getSystemQuantity(item, baseline, scope);
       const countedQuantity = typeof counted === 'number' ? counted : null;
       const variance = countedQuantity === null ? null : countedQuantity - systemQuantity;
 
@@ -99,10 +115,11 @@ export const StocktakeManager: React.FC<StocktakeManagerProps> = ({
         variance,
         barcodeAttached: !!barcodeAttached[item.id],
         note: counts[item.id]?.note,
+        varianceReason: varianceReasons[item.id],
         snapshot: buildSnapshot(item)
       };
     });
-  }, [barcodeAttached, baseline, counts, inventory]);
+  }, [barcodeAttached, baseline, counts, inventory, scope, varianceReasons]);
 
   const summary = useMemo<InventoryAuditSession['summary']>(() => {
     const countedRows = auditRows.filter(row => row.countedQuantity !== null);
@@ -142,9 +159,9 @@ export const StocktakeManager: React.FC<StocktakeManagerProps> = ({
   useEffect(() => {
     if (!selectedItem) return;
     const existing = counts[selectedItem.id];
-    setQuantityDraft(existing?.countedQuantity ?? getSystemQuantity(selectedItem, baseline));
+    setQuantityDraft(existing?.countedQuantity ?? getSystemQuantity(selectedItem, baseline, scope));
     setNoteDraft(existing?.note || '');
-  }, [baseline, counts, selectedItem]);
+  }, [baseline, counts, scope, selectedItem]);
 
   const selectItem = (item: InventoryItem) => {
     setSelectedItemId(item.id);
@@ -168,17 +185,27 @@ export const StocktakeManager: React.FC<StocktakeManagerProps> = ({
   const applyCount = (mode: 'SET' | 'ADD' = 'SET') => {
     if (!selectedItem || !canEdit) return;
     const safeQty = Math.max(0, Math.round(Number(quantityDraft) || 0));
-    setCounts(prev => {
-      const current = prev[selectedItem.id]?.countedQuantity || 0;
-      const nextQty = mode === 'ADD' ? current + safeQty : safeQty;
-      return {
-        ...prev,
-        [selectedItem.id]: {
-          countedQuantity: nextQty,
-          note: noteDraft.trim() || undefined,
-          updatedAt: new Date().toISOString()
-        }
-      };
+    const current = counts[selectedItem.id]?.countedQuantity || 0;
+    const appliedCount = mode === 'ADD' ? current + safeQty : safeQty;
+    setCounts(prev => ({
+      ...prev,
+      [selectedItem.id]: {
+        countedQuantity: appliedCount,
+        note: noteDraft.trim() || undefined,
+        updatedAt: new Date().toISOString()
+      }
+    }));
+    const expected = getSystemQuantity(selectedItem, baseline, scope);
+    setVarianceReasons(prev => {
+      if (appliedCount >= expected) {
+        const next = { ...prev };
+        delete next[selectedItem.id];
+        return next;
+      }
+      if (prev[selectedItem.id]) return prev;
+      return selectedItem.lifecycle === 'CONSUMABLE'
+        ? { ...prev, [selectedItem.id]: 'CONSUMED' }
+        : prev;
     });
     setTimeout(() => scanInputRef.current?.focus(), 20);
   };
@@ -189,11 +216,17 @@ export const StocktakeManager: React.FC<StocktakeManagerProps> = ({
       delete next[itemId];
       return next;
     });
+    setVarianceReasons(prev => {
+      const next = { ...prev };
+      delete next[itemId];
+      return next;
+    });
   };
 
   const resetDraft = () => {
     if (!window.confirm('Xóa toàn bộ số lượng đã kiểm trong phiên đang nhập?')) return;
     setCounts({});
+    setVarianceReasons({});
     setBarcodeAttached({});
     setUnknownBarcodes([]);
     setSelectedItemId('');
@@ -203,21 +236,45 @@ export const StocktakeManager: React.FC<StocktakeManagerProps> = ({
     setTimeout(() => scanInputRef.current?.focus(), 20);
   };
 
-  const saveAudit = () => {
+  const switchScope = (nextScope: InventoryAuditScope) => {
+    if (scope === nextScope) return;
+    if (summary.countedItems > 0 && !window.confirm('Đổi phạm vi sẽ xóa số lượng đang nhập trong phiên này. Tiếp tục?')) return;
+    setCounts({});
+    setVarianceReasons({});
+    setBarcodeAttached({});
+    setSelectedItemId('');
+    setScope(nextScope);
+    if (nextScope === 'ALL') setBaseline('AVAILABLE');
+  };
+
+  const saveAudit = (reconcile = false) => {
     if (!canEdit) return;
     if (summary.countedItems === 0) {
       alert('Vui lòng kiểm ít nhất 1 mã hàng trước khi lưu phiên.');
       return;
     }
+    if (reconcile) {
+      const unresolved = discrepancyRows.filter(row =>
+        (row.variance || 0) < 0 && !row.varianceReason
+      );
+      if (unresolved.length > 0) {
+        alert(`Còn ${unresolved.length} mã thiếu chưa chọn cách xử lý.`);
+        return;
+      }
+      if (!window.confirm(`Chốt phiên kiểm và cập nhật tồn thực tế cho ${summary.countedItems} mã đã kiểm?`)) return;
+    }
     onSaveAudit({
       title: sessionTitle.trim() || `Kiểm kho ${new Date().toLocaleDateString('vi-VN')}`,
       baseline,
+      scope,
       note: sessionNote.trim() || undefined,
       items: auditRows,
       unknownBarcodes,
-      summary
+      summary,
+      reconcile
     });
     setCounts({});
+    setVarianceReasons({});
     setBarcodeAttached({});
     setUnknownBarcodes([]);
     setSelectedItemId('');
@@ -227,17 +284,18 @@ export const StocktakeManager: React.FC<StocktakeManagerProps> = ({
   };
 
   const exportCsv = () => {
-    const headers = ['Ma hang', 'Barcode', 'Da dan barcode', 'Ten thiet bi', 'Danh muc', 'Vi tri', 'He thong', 'Thuc dem', 'Lech', 'Ghi chu'];
+    const headers = ['Ma hang', 'Barcode', 'Da dan barcode', 'Ten thiet bi', 'Danh muc', 'Pham vi', 'He thong', 'Thuc dem', 'Lech', 'Xu ly', 'Ghi chu'];
     const lines = auditRows.map(row => [
       row.itemId,
       row.barcode || '',
       row.barcodeAttached ? 'Co' : 'Khong',
       row.name,
       row.category,
-      row.location || '',
+      scope === 'EBUS' ? 'Xe EBUS' : (row.location || ''),
       String(row.systemQuantity),
       row.countedQuantity === null ? '' : String(row.countedQuantity),
       row.variance === null ? '' : String(row.variance),
+      row.varianceReason ? VARIANCE_REASON_LABELS[row.varianceReason] : '',
       row.note || ''
     ]);
     const csv = [headers, ...lines]
@@ -274,6 +332,7 @@ export const StocktakeManager: React.FC<StocktakeManagerProps> = ({
           <td class="num">${formatNumber(row.systemQuantity)}</td>
           <td class="num">${row.countedQuantity === null ? '' : formatNumber(row.countedQuantity)}</td>
           <td class="num ${row.variance === null ? '' : varianceClass}">${varianceLabel}</td>
+          <td>${row.varianceReason ? escapeHtml(VARIANCE_REASON_LABELS[row.varianceReason]) : ''}</td>
           <td>${escapeHtml(row.note || '')}</td>
         </tr>
       `;
@@ -281,7 +340,9 @@ export const StocktakeManager: React.FC<StocktakeManagerProps> = ({
 
     const unknownRows = (audit.unknownBarcodes || []).map(code => `<span class="tag">${escapeHtml(code)}</span>`).join('');
     const createdAt = audit.createdAt ? new Date(audit.createdAt).toLocaleString('vi-VN') : '';
-    const baselineLabel = audit.baseline === 'TOTAL' ? 'Tổng kho' : 'Sẵn kho';
+    const baselineLabel = audit.scope === 'EBUS'
+      ? 'Xe EBUS'
+      : audit.baseline === 'TOTAL' ? 'Tổng kho' : 'Sẵn kho';
 
     return `
       <div class="audit-doc">
@@ -357,6 +418,7 @@ export const StocktakeManager: React.FC<StocktakeManagerProps> = ({
               <th>Hệ thống</th>
               <th>Thực đếm</th>
               <th>Lệch</th>
+              <th>Xử lý</th>
               <th>Ghi chú</th>
             </tr>
           </thead>
@@ -434,13 +496,14 @@ export const StocktakeManager: React.FC<StocktakeManagerProps> = ({
   };
 
   const recentAudits = audits.slice(0, 5);
+  const uninitializedBusItems = inventory.filter(item => typeof item.busQuantity !== 'number').length;
 
   return (
     <div className="space-y-4">
       <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-3">
         <div>
-          <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight">Kiểm Kho</h2>
-          <p className="text-sm text-slate-500 font-medium leading-snug">Quét barcode, nhập số lượng thực tế và đối chiếu lệch với số kho hệ thống.</p>
+          <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight">Kiểm Kho Định Kỳ</h2>
+          <p className="text-sm text-slate-500 font-medium leading-snug">Đếm hàng trên xe EBUS, phân loại chênh lệch và chốt lại số tồn thực tế.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button
@@ -460,11 +523,19 @@ export const StocktakeManager: React.FC<StocktakeManagerProps> = ({
           </button>
           <button
             type="button"
-            onClick={saveAudit}
+            onClick={() => saveAudit(false)}
             disabled={!canEdit || summary.countedItems === 0}
-            className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 text-white text-[11px] font-black uppercase tracking-widest shadow-md hover:bg-blue-700 disabled:opacity-50"
+            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-blue-200 bg-blue-50 text-blue-700 text-[11px] font-black uppercase tracking-widest hover:bg-blue-100 disabled:opacity-50"
           >
             <Save size={15} /> Lưu phiên
+          </button>
+          <button
+            type="button"
+            onClick={() => saveAudit(true)}
+            disabled={!canEdit || summary.countedItems === 0}
+            className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 text-white text-[11px] font-black uppercase tracking-widest shadow-md hover:bg-emerald-700 disabled:opacity-50"
+          >
+            <ClipboardCheck size={15} /> Chốt và cập nhật tồn
           </button>
         </div>
       </div>
@@ -500,6 +571,15 @@ export const StocktakeManager: React.FC<StocktakeManagerProps> = ({
         </div>
       </div>
 
+      {scope === 'EBUS' && uninitializedBusItems > 0 && (
+        <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <AlertTriangle size={17} className="mt-0.5 shrink-0" />
+          <span>
+            {uninitializedBusItems} mã chưa có mốc riêng trên xe; phiên đầu đang tạm lấy số khả dụng làm đối chiếu. Với hàng thực tế nằm ở kho tổng, chọn “Đã chuyển về kho tổng” hoặc “Điều chỉnh mốc/vị trí”.
+          </span>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
         <div className="xl:col-span-4 space-y-4">
           <section className="bg-white border border-slate-100 rounded-xl p-4 shadow-sm">
@@ -527,17 +607,17 @@ export const StocktakeManager: React.FC<StocktakeManagerProps> = ({
             <div className="mt-4 grid grid-cols-2 gap-2">
               <button
                 type="button"
-                onClick={() => setBaseline('AVAILABLE')}
-                className={`px-3 py-3 rounded-xl border text-[11px] font-black uppercase tracking-widest ${baseline === 'AVAILABLE' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-200'}`}
+                onClick={() => switchScope('EBUS')}
+                className={`px-3 py-3 rounded-xl border text-[11px] font-black uppercase tracking-widest inline-flex items-center justify-center gap-2 ${scope === 'EBUS' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-200'}`}
               >
-                Sẵn kho
+                <Truck size={14} /> Xe EBUS
               </button>
               <button
                 type="button"
-                onClick={() => setBaseline('TOTAL')}
-                className={`px-3 py-3 rounded-xl border text-[11px] font-black uppercase tracking-widest ${baseline === 'TOTAL' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-200'}`}
+                onClick={() => switchScope('ALL')}
+                className={`px-3 py-3 rounded-xl border text-[11px] font-black uppercase tracking-widest ${scope === 'ALL' ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-200'}`}
               >
-                Tổng kho
+                Toàn bộ khả dụng
               </button>
             </div>
 
@@ -581,8 +661,8 @@ export const StocktakeManager: React.FC<StocktakeManagerProps> = ({
                       <p className="font-black text-blue-600">{selectedItem.availableQuantity}</p>
                     </div>
                     <div className="bg-white rounded-lg p-2 border border-slate-100">
-                      <p className="text-[10px] font-black text-slate-400 uppercase">Đang dùng</p>
-                      <p className="font-black text-amber-600">{selectedItem.inUseQuantity}</p>
+                      <p className="text-[10px] font-black text-slate-400 uppercase">Trên xe</p>
+                      <p className="font-black text-amber-600">{typeof selectedItem.busQuantity === 'number' ? selectedItem.busQuantity : selectedItem.availableQuantity}</p>
                     </div>
                   </div>
                   <div className="mt-2 text-[11px] text-slate-500">
@@ -696,7 +776,7 @@ export const StocktakeManager: React.FC<StocktakeManagerProps> = ({
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-4">
               <div>
                 <h3 className="font-black text-slate-800 uppercase tracking-tight">Bảng đối chiếu</h3>
-                <p className="text-sm text-slate-500">Số hệ thống đang so theo {baseline === 'AVAILABLE' ? 'số sẵn kho' : 'tổng số lượng'}.</p>
+                <p className="text-sm text-slate-500">Đang đối chiếu theo {scope === 'EBUS' ? 'số lượng trên xe EBUS' : 'toàn bộ hàng khả dụng'}.</p>
               </div>
               <div className="relative w-full md:w-80">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
@@ -716,11 +796,12 @@ export const StocktakeManager: React.FC<StocktakeManagerProps> = ({
                     <th className="px-3 py-3">Thiết bị</th>
                     <th className="px-3 py-3 text-right">Tổng</th>
                     <th className="px-3 py-3 text-right">Sẵn</th>
-                    <th className="px-3 py-3 text-right">Đang dùng</th>
+                    <th className="px-3 py-3 text-right">Trên xe</th>
                     <th className="px-3 py-3 text-center">Đã dán barcode</th>
                     <th className="px-3 py-3 text-right">Hệ thống</th>
                     <th className="px-3 py-3 text-right">Thực đếm</th>
                     <th className="px-3 py-3 text-right">Lệch</th>
+                    <th className="px-3 py-3">Xử lý chênh lệch</th>
                     <th className="px-3 py-3"></th>
                   </tr>
                 </thead>
@@ -739,7 +820,7 @@ export const StocktakeManager: React.FC<StocktakeManagerProps> = ({
                         </td>
                         <td className="px-3 py-3 text-right font-bold text-slate-700">{formatNumber(row.snapshot.totalQuantity)}</td>
                         <td className="px-3 py-3 text-right font-bold text-blue-600">{formatNumber(row.snapshot.availableQuantity)}</td>
-                        <td className="px-3 py-3 text-right font-bold text-amber-600">{formatNumber(row.snapshot.inUseQuantity)}</td>
+                        <td className="px-3 py-3 text-right font-bold text-amber-600">{formatNumber(typeof item?.busQuantity === 'number' ? item.busQuantity : row.snapshot.availableQuantity)}</td>
                         <td className="px-3 py-3 text-center">
                           <input
                             type="checkbox"
@@ -761,6 +842,32 @@ export const StocktakeManager: React.FC<StocktakeManagerProps> = ({
                             <span className="font-black text-slate-800">{formatNumber(row.countedQuantity || 0)}</span>
                           ) : (
                             <span className="text-slate-300 font-bold">Chưa kiểm</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-3 min-w-[190px]">
+                          {isCounted && variance < 0 ? (
+                            <select
+                              value={row.varianceReason || ''}
+                              disabled={!canEdit}
+                              onClick={event => event.stopPropagation()}
+                              onChange={event => {
+                                event.stopPropagation();
+                                const value = event.target.value as InventoryVarianceReason;
+                                setVarianceReasons(prev => ({ ...prev, [row.itemId]: value }));
+                              }}
+                              className={`w-full border rounded-lg px-2 py-2 text-xs bg-white ${row.varianceReason ? 'border-slate-200 text-slate-700' : 'border-amber-300 text-amber-700'}`}
+                            >
+                              <option value="">Chọn cách xử lý</option>
+                              {item?.lifecycle === 'CONSUMABLE' && <option value="CONSUMED">Tiêu hao trong kỳ</option>}
+                              <option value="BROKEN">Hỏng</option>
+                              <option value="LOST">Mất</option>
+                              <option value="TRANSFER_TO_STORAGE">Đã chuyển về kho tổng</option>
+                              <option value="ADJUSTMENT">Điều chỉnh mốc/vị trí</option>
+                            </select>
+                          ) : isCounted && variance > 0 ? (
+                            <span className="text-xs font-semibold text-cyan-700">Điều chỉnh tăng theo thực đếm</span>
+                          ) : (
+                            <span className="text-slate-300">-</span>
                           )}
                         </td>
                         <td className="px-3 py-3 text-right">
@@ -812,6 +919,11 @@ export const StocktakeManager: React.FC<StocktakeManagerProps> = ({
                       <div>
                         <p className="text-sm font-bold text-slate-800">{row.name}</p>
                         <p className="text-[11px] text-slate-500">Hệ thống {row.systemQuantity} • Thực đếm {row.countedQuantity}</p>
+                        {(row.variance || 0) < 0 && (
+                          <p className={`text-[11px] mt-1 font-semibold ${row.varianceReason ? 'text-blue-700' : 'text-amber-700'}`}>
+                            {row.varianceReason ? VARIANCE_REASON_LABELS[row.varianceReason] : 'Chưa chọn cách xử lý'}
+                          </p>
+                        )}
                       </div>
                       <span className={`px-2 py-1 rounded-lg text-xs font-black ${(row.variance || 0) > 0 ? 'bg-cyan-100 text-cyan-700' : 'bg-red-100 text-red-700'}`}>
                         {(row.variance || 0) > 0 ? '+' : ''}{row.variance}
@@ -851,7 +963,10 @@ export const StocktakeManager: React.FC<StocktakeManagerProps> = ({
                 <p className="text-[11px] font-black text-blue-600 uppercase tracking-widest">{viewingAudit.code}</p>
                 <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight">{viewingAudit.title}</h3>
                 <p className="text-sm text-slate-500">
-                  {new Date(viewingAudit.createdAt).toLocaleString('vi-VN')} • Người kiểm: {viewingAudit.createdBy?.name || 'Chưa rõ'} • So theo {viewingAudit.baseline === 'TOTAL' ? 'tổng kho' : 'sẵn kho'}
+                  {new Date(viewingAudit.createdAt).toLocaleString('vi-VN')} • Người kiểm: {viewingAudit.createdBy?.name || 'Chưa rõ'} • So theo {viewingAudit.scope === 'EBUS' ? 'xe EBUS' : viewingAudit.baseline === 'TOTAL' ? 'tổng kho' : 'sẵn kho'}
+                </p>
+                <p className={`text-xs font-bold mt-1 ${viewingAudit.reconciledAt ? 'text-emerald-700' : 'text-amber-700'}`}>
+                  {viewingAudit.reconciledAt ? `Đã cập nhật tồn: ${new Date(viewingAudit.reconciledAt).toLocaleString('vi-VN')}` : 'Chỉ lưu biên bản, chưa cập nhật tồn'}
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -917,6 +1032,7 @@ export const StocktakeManager: React.FC<StocktakeManagerProps> = ({
                       <th className="px-3 py-3 text-right">Hệ thống</th>
                       <th className="px-3 py-3 text-right">Thực đếm</th>
                       <th className="px-3 py-3 text-right">Lệch</th>
+                      <th className="px-3 py-3">Xử lý</th>
                       <th className="px-3 py-3">Ghi chú</th>
                     </tr>
                   </thead>
@@ -947,6 +1063,9 @@ export const StocktakeManager: React.FC<StocktakeManagerProps> = ({
                                 {variance > 0 ? '+' : ''}{formatNumber(variance)}
                               </span>
                             ) : '-'}
+                          </td>
+                          <td className="px-3 py-3 text-xs text-slate-600 min-w-[160px]">
+                            {row.varianceReason ? VARIANCE_REASON_LABELS[row.varianceReason] : ''}
                           </td>
                           <td className="px-3 py-3 text-slate-600 min-w-[180px]">{row.note || ''}</td>
                         </tr>
