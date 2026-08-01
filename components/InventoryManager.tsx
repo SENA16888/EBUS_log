@@ -195,10 +195,55 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
     return matchesSearch && matchesCategory && isLowStock;
   });
 
-  const escapeCsvCell = (value: unknown) => {
-    const text = value === undefined || value === null ? '' : String(value);
-    const safeText = /^[=+\-@]/.test(text) ? `'${text}` : text;
-    return `"${safeText.replace(/"/g, '""')}"`;
+  const escapeExcelCell = (value: unknown) =>
+    String(value ?? '').replace(/[&<>"']/g, char => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;'
+    }[char] || char));
+
+  const downloadExcelTable = (filename: string, title: string, headers: string[], rows: unknown[][], textColumns: number[] = []) => {
+    const textColumnSet = new Set(textColumns);
+    const worksheetName = escapeExcelCell(title.slice(0, 31) || 'Sheet1');
+    const buildCell = (value: unknown, forceText = false, styleId = '') => {
+      const text = value === undefined || value === null ? '' : String(value);
+      const isNumber = !forceText && typeof value === 'number' && Number.isFinite(value);
+      const safeText = /^[=+\-@]/.test(text) ? `'${text}` : text;
+      const style = styleId ? ` ss:StyleID="${styleId}"` : forceText ? ' ss:StyleID="Text"' : '';
+      return `<Cell${style}><Data ss:Type="${isNumber ? 'Number' : 'String'}">${escapeExcelCell(safeText)}</Data></Cell>`;
+    };
+    const headerXml = headers.map(header => buildCell(header, true, 'Header')).join('');
+    const rowXml = rows.map(row =>
+      `<Row>${row.map((cell, index) => buildCell(cell, textColumnSet.has(index))).join('')}</Row>`
+    ).join('');
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+ <Styles>
+  <Style ss:ID="Header"><Font ss:Bold="1"/><Interior ss:Color="#EAF2FF" ss:Pattern="Solid"/></Style>
+  <Style ss:ID="Text"><NumberFormat ss:Format="@"/></Style>
+ </Styles>
+ <Worksheet ss:Name="${worksheetName}">
+  <Table>
+   <Row>${headerXml}</Row>
+   ${rowXml}
+  </Table>
+ </Worksheet>
+</Workbook>`;
+    const blob = new Blob([`\uFEFF${xml}`], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
   };
 
   const handleExportPurchaseList = () => {
@@ -258,19 +303,14 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
       ];
     });
 
-    const csv = ['sep=,', ...[headers, ...rows]
-      .map(row => row.map(escapeCsvCell).join(','))
-    ].join('\r\n');
-    const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
     const today = new Date().toISOString().slice(0, 10);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `Danh_sach_mua_sam_sap_het_hang_${today}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(url);
+    downloadExcelTable(
+      `Danh_sach_mua_sam_sap_het_hang_${today}.xls`,
+      'Danh sách mua sắm sắp hết hàng',
+      headers,
+      rows,
+      [0, 1]
+    );
   };
 
   const getStatusMaxQty = (item: InventoryItem | null, type: string) => {
