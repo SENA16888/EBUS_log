@@ -12,23 +12,18 @@ import {
   YAxis
 } from 'recharts';
 import {
-  AlertTriangle,
-  ArrowUpRight,
+  Award,
   Boxes,
-  Building2,
   BusFront,
   CalendarDays,
-  CheckCircle2,
+  CircleDollarSign,
   ClipboardList,
-  FileText,
-  Package,
-  ReceiptText,
-  ShoppingBag,
+  MapPin,
+  School,
   TrendingUp,
   Users
 } from 'lucide-react';
-import { AppState, Event, EventStatus, EventVenueType, SaleOrder } from '../types';
-import { calcLineTotal } from '../services/pricing';
+import { AppState, Event, EventStatus, EventVenueType } from '../types';
 
 interface DashboardProps {
   appState: AppState;
@@ -37,7 +32,6 @@ interface DashboardProps {
 const formatNumber = (value: number) => Math.round(value || 0).toLocaleString('vi-VN');
 const formatCurrency = (value: number) => `${formatNumber(value)} đ`;
 const todayKey = () => new Date().toISOString().slice(0, 10);
-const monthKey = () => new Date().toISOString().slice(0, 7);
 
 const getEventVenue = (event: Pick<Event, 'organizationVenue'>): EventVenueType => event.organizationVenue || 'EH';
 
@@ -61,14 +55,12 @@ const getEffectiveEventStatus = (event: Event, today = todayKey()): EventStatus 
   return EventStatus.UPCOMING;
 };
 
-const isDateInCurrentMonth = (date?: string) => Boolean(date && date.slice(0, 7) === monthKey());
-
-const getOrderRevenue = (order: SaleOrder) => {
-  const subtotal = (order.items || []).reduce((acc, item) => {
-    const qty = item.soldQuantity ?? item.quantity ?? 0;
-    return acc + calcLineTotal(item.price || 0, qty, item.discount || 0, item.discountPercent || 0);
-  }, 0);
-  return Math.max(0, subtotal - (order.orderDiscount || 0));
+const getEventStudentCount = (event: Event) => {
+  const value = event.studentCount
+    ?? event.houseOperation?.studentCount
+    ?? event.eventProfile?.attendanceMax
+    ?? event.eventProfile?.attendanceMin;
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : 0;
 };
 
 const getServiceRevenue = (event: Event, appState: AppState) => {
@@ -77,126 +69,124 @@ const getServiceRevenue = (event: Event, appState: AppState) => {
   return Math.max(0, Number(quotation?.totalAmount) || Number(quotation?.contract?.contractAmount) || 0);
 };
 
-const compactList = <T,>(items: T[], limit: number) => items.slice(0, limit);
+const getEventExpenseTotal = (event: Event) =>
+  (event.expenses || []).reduce((sum, expense) => sum + (Number(expense.amount) || 0), 0);
+
+const countBy = <T,>(items: T[], keyGetter: (item: T) => string) => {
+  const map = new Map<string, number>();
+  items.forEach(item => {
+    const key = keyGetter(item).trim() || 'Chưa cập nhật';
+    map.set(key, (map.get(key) || 0) + 1);
+  });
+  return Array.from(map.entries())
+    .map(([name, value]) => ({ name, value }))
+    .sort((a, b) => b.value - a.value);
+};
 
 export const Dashboard: React.FC<DashboardProps> = ({ appState }) => {
   const data = useMemo(() => {
     const today = todayKey();
-    const month = monthKey();
-    const saleOrders = appState.saleOrders || [];
-    const saleOrdersOnly = saleOrders.filter(order => (order.type || 'SALE') !== 'RETURN');
-    const finalizedSalesThisMonth = saleOrdersOnly.filter(order => order.status === 'FINALIZED' && isDateInCurrentMonth(order.date));
-    const monthSaleRevenue = finalizedSalesThisMonth.reduce((sum, order) => sum + getOrderRevenue(order), 0);
+    const normalizedEvents = appState.events.map(event => {
+      const dates = getEventDateKeys(event);
+      return {
+        event,
+        venue: getEventVenue(event),
+        status: getEffectiveEventStatus(event, today),
+        firstDate: dates[0] || event.startDate,
+        lastDate: dates[dates.length - 1] || event.endDate || event.startDate
+      };
+    });
 
-    const events = appState.events.map(event => ({
-      event,
-      status: getEffectiveEventStatus(event, today),
-      firstDate: getEventDateKeys(event)[0] || event.startDate,
-      lastDate: getEventDateKeys(event).slice(-1)[0] || event.endDate || event.startDate,
-      venue: getEventVenue(event)
-    }));
-    const monthEvents = events.filter(item => isDateInCurrentMonth(item.firstDate) || isDateInCurrentMonth(item.lastDate));
-    const todayEvents = events.filter(item => item.firstDate <= today && item.lastDate >= today);
-    const upcomingEvents = events
+    const ebusEvents = normalizedEvents.filter(item => item.venue === 'EBUS');
+    const completedEbusEvents = ebusEvents
+      .filter(item => item.status === EventStatus.COMPLETED)
+      .sort((a, b) => (a.firstDate || '').localeCompare(b.firstDate || ''));
+    const activeEbusEvents = ebusEvents.filter(item => item.status === EventStatus.ONGOING);
+    const upcomingEbusEvents = ebusEvents
       .filter(item => item.status === EventStatus.UPCOMING)
       .sort((a, b) => (a.firstDate || '').localeCompare(b.firstDate || ''));
 
-    const serviceRevenueThisMonth = monthEvents.reduce((sum, item) => sum + getServiceRevenue(item.event, appState), 0);
-    const quotePipeline = appState.quotations
-      .filter(quote => isDateInCurrentMonth(quote.date))
-      .reduce((sum, quote) => sum + (Number(quote.totalAmount) || 0), 0);
-    const expensesThisMonth = monthEvents.reduce((sum, item) =>
-      sum + (item.event.expenses || []).reduce((expenseSum, expense) => expenseSum + (expense.amount || 0), 0), 0);
-    const staffAssignmentsThisMonth = monthEvents.reduce((sum, item) => sum + (item.event.staff?.length || 0), 0);
+    const totalStudents = completedEbusEvents.reduce((sum, item) => sum + getEventStudentCount(item.event), 0);
+    const totalRevenue = completedEbusEvents.reduce((sum, item) => sum + getServiceRevenue(item.event, appState), 0);
+    const totalExpense = completedEbusEvents.reduce((sum, item) => sum + getEventExpenseTotal(item.event), 0);
+    const totalStaffAssignments = completedEbusEvents.reduce((sum, item) => sum + (item.event.staff?.length || 0), 0);
+    const totalEquipmentUnits = completedEbusEvents.reduce((sum, item) =>
+      sum + (item.event.items || []).reduce((itemSum, allocation) => itemSum + (Number(allocation.quantity) || 0), 0), 0);
+    const schools = new Set(completedEbusEvents.map(item => item.event.client).filter(Boolean));
+    const locations = new Set(completedEbusEvents.map(item => item.event.location).filter(Boolean));
 
-    const totalItems = appState.inventory.reduce((sum, item) => sum + (item.totalQuantity || 0), 0);
-    const availableItems = appState.inventory.reduce((sum, item) => sum + (item.availableQuantity || 0), 0);
-    const inUseItems = appState.inventory.reduce((sum, item) => sum + (item.inUseQuantity || 0), 0);
-    const lowStockItems = [...appState.inventory]
-      .filter(item => (item.availableQuantity || 0) < (item.minStock || 5))
-      .sort((a, b) => (a.availableQuantity || 0) - (b.availableQuantity || 0));
-    const damagedOrLost = appState.inventory.reduce((sum, item) => sum + (item.brokenQuantity || 0) + (item.lostQuantity || 0), 0);
+    const monthlyTrendMap = new Map<string, { name: string; events: number; students: number }>();
+    completedEbusEvents.forEach(item => {
+      const month = (item.firstDate || '').slice(0, 7) || 'Chưa rõ';
+      const current = monthlyTrendMap.get(month) || { name: month, events: 0, students: 0 };
+      current.events += 1;
+      current.students += getEventStudentCount(item.event);
+      monthlyTrendMap.set(month, current);
+    });
+    const monthlyTrend = Array.from(monthlyTrendMap.values()).slice(-12);
 
     const statusData = [
-      { name: 'Sắp tới', value: events.filter(item => item.status === EventStatus.UPCOMING).length, color: '#2563eb' },
-      { name: 'Đang chạy', value: events.filter(item => item.status === EventStatus.ONGOING).length, color: '#16a34a' },
-      { name: 'Hoàn thành', value: events.filter(item => item.status === EventStatus.COMPLETED).length, color: '#0f766e' },
-      { name: 'Đã hủy', value: events.filter(item => item.status === EventStatus.CANCELLED).length, color: '#94a3b8' }
+      { name: 'Đã diễn ra', value: completedEbusEvents.length, color: '#0f766e' },
+      { name: 'Đang chạy', value: activeEbusEvents.length, color: '#16a34a' },
+      { name: 'Sắp tới', value: upcomingEbusEvents.length, color: '#2563eb' },
+      { name: 'Đã hủy', value: ebusEvents.filter(item => item.status === EventStatus.CANCELLED).length, color: '#94a3b8' }
     ];
-
-    const venueData = [
-      { name: 'EH', value: monthEvents.filter(item => item.venue === 'EH').length, color: '#0f766e' },
-      { name: 'EBUS', value: monthEvents.filter(item => item.venue === 'EBUS').length, color: '#2563eb' }
-    ];
-
-    const revenueData = [
-      { name: 'Dịch vụ', value: serviceRevenueThisMonth, fill: '#0f766e' },
-      { name: 'Bán hàng', value: monthSaleRevenue, fill: '#2563eb' },
-      { name: 'Pipeline', value: Math.max(0, quotePipeline - serviceRevenueThisMonth), fill: '#f59e0b' }
-    ].filter(item => item.value > 0);
-
-    const inventoryByCategory = Object.values(appState.inventory.reduce((acc, item) => {
-      const key = item.category || 'Khác';
-      acc[key] = acc[key] || { name: key, value: 0 };
-      acc[key].value += item.totalQuantity || 0;
-      return acc;
-    }, {} as Record<string, { name: string; value: number }>))
-      .sort((a, b) => b.value - a.value)
-      .slice(0, 8);
 
     return {
-      today,
-      month,
-      monthEvents,
-      todayEvents,
-      upcomingEvents,
+      completedEbusEvents,
+      activeEbusEvents,
+      upcomingEbusEvents,
+      totalStudents,
+      totalRevenue,
+      totalExpense,
+      totalStaffAssignments,
+      totalEquipmentUnits,
+      schools: schools.size,
+      locations: locations.size,
+      avgStudents: completedEbusEvents.length ? Math.round(totalStudents / completedEbusEvents.length) : 0,
+      monthlyTrend,
       statusData,
-      venueData,
-      revenueData,
-      inventoryByCategory,
-      monthSaleRevenue,
-      serviceRevenueThisMonth,
-      quotePipeline,
-      expensesThisMonth,
-      staffAssignmentsThisMonth,
-      totalItems,
-      availableItems,
-      inUseItems,
-      lowStockItems,
-      damagedOrLost,
-      recentOrders: compactList([...saleOrdersOnly].sort((a, b) => (b.date || '').localeCompare(a.date || '')), 5),
-      recentQuotes: compactList([...appState.quotations].sort((a, b) => (b.date || '').localeCompare(a.date || '')), 5)
+      topSchools: countBy(completedEbusEvents, item => item.event.client).slice(0, 6),
+      topLocations: countBy(completedEbusEvents, item => item.event.location).slice(0, 6),
+      recentCompleted: completedEbusEvents.slice(-6).reverse()
     };
   }, [appState]);
 
   const kpis = [
     {
-      title: 'Sự kiện tháng này',
-      value: formatNumber(data.monthEvents.length),
-      sub: `${formatNumber(data.todayEvents.length)} đang diễn ra hôm nay`,
-      icon: <CalendarDays size={18} />,
+      title: 'Sự kiện EBUS đã diễn ra',
+      value: formatNumber(data.completedEbusEvents.length),
+      sub: `${formatNumber(data.activeEbusEvents.length)} đang chạy, ${formatNumber(data.upcomingEbusEvents.length)} sắp tới`,
+      icon: <BusFront size={18} />,
       tone: 'bg-blue-50 text-blue-700 border-blue-100'
     },
     {
-      title: 'Doanh thu ghi nhận',
-      value: formatCurrency(data.serviceRevenueThisMonth + data.monthSaleRevenue),
-      sub: `${formatCurrency(data.serviceRevenueThisMonth)} dịch vụ, ${formatCurrency(data.monthSaleRevenue)} bán hàng`,
-      icon: <TrendingUp size={18} />,
+      title: 'Số lượng học sinh tiếp đón',
+      value: formatNumber(data.totalStudents),
+      sub: `Trung bình ${formatNumber(data.avgStudents)} học sinh / sự kiện`,
+      icon: <Users size={18} />,
       tone: 'bg-emerald-50 text-emerald-700 border-emerald-100'
     },
     {
-      title: 'Chi phí vận hành',
-      value: formatCurrency(data.expensesThisMonth),
-      sub: `${formatNumber(data.staffAssignmentsThisMonth)} lượt nhân sự trong tháng`,
-      icon: <ReceiptText size={18} />,
-      tone: 'bg-rose-50 text-rose-700 border-rose-100'
+      title: 'Trường/đơn vị đã phục vụ',
+      value: formatNumber(data.schools),
+      sub: `${formatNumber(data.locations)} địa điểm tổ chức`,
+      icon: <School size={18} />,
+      tone: 'bg-cyan-50 text-cyan-700 border-cyan-100'
     },
     {
-      title: 'Kho sẵn sàng',
-      value: `${formatNumber(data.availableItems)} / ${formatNumber(data.totalItems)}`,
-      sub: `${formatNumber(data.inUseItems)} đang xuất, ${formatNumber(data.lowStockItems.length)} cảnh báo tồn`,
-      icon: <Boxes size={18} />,
-      tone: 'bg-cyan-50 text-cyan-700 border-cyan-100'
+      title: 'Doanh thu dịch vụ ghi nhận',
+      value: formatCurrency(data.totalRevenue),
+      sub: `Chi phí vận hành ${formatCurrency(data.totalExpense)}`,
+      icon: <CircleDollarSign size={18} />,
+      tone: 'bg-amber-50 text-amber-700 border-amber-100'
+    },
+    {
+      title: 'Nhân sự triển khai',
+      value: formatNumber(data.totalStaffAssignments),
+      sub: `${formatNumber(data.totalEquipmentUnits)} lượt thiết bị đã mang đi`,
+      icon: <ClipboardList size={18} />,
+      tone: 'bg-slate-100 text-slate-800 border-slate-200'
     }
   ];
 
@@ -206,29 +196,27 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState }) => {
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <div className="flex items-center gap-2 text-xs font-black uppercase text-blue-700">
-              <ClipboardList size={16} /> Tổng quan vận hành
+              <Award size={16} /> Tổng quan chương trình EBUS
             </div>
-            <h2 className="mt-1 text-2xl font-black text-slate-900">Einstein House & EBUS</h2>
-            <p className="mt-1 text-sm text-slate-500">Snapshot tháng {data.month}: sự kiện, doanh thu, kho và nhân sự đang vận hành.</p>
+            <h2 className="mt-1 text-2xl font-black text-slate-900">Các chỉ số EBUS đã diễn ra</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Tổng hợp tích lũy các sự kiện EBUS đã tổ chức. Báo cáo chi tiết theo kỳ nằm ở module Báo cáo.
+            </p>
           </div>
           <div className="grid grid-cols-2 gap-2 sm:flex">
-            <div className="rounded-lg border border-teal-100 bg-teal-50 px-3 py-2">
-              <p className="text-[11px] font-bold uppercase text-teal-700">EH tháng này</p>
-              <p className="text-lg font-black text-slate-900">{formatNumber(data.venueData[0].value)}</p>
-            </div>
             <div className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2">
-              <p className="text-[11px] font-bold uppercase text-blue-700">EBUS tháng này</p>
-              <p className="text-lg font-black text-slate-900">{formatNumber(data.venueData[1].value)}</p>
+              <p className="text-[11px] font-bold uppercase text-blue-700">Sắp tới</p>
+              <p className="text-lg font-black text-slate-900">{formatNumber(data.upcomingEbusEvents.length)}</p>
             </div>
-            <div className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2">
-              <p className="text-[11px] font-bold uppercase text-amber-700">Pipeline báo giá</p>
-              <p className="text-lg font-black text-slate-900">{formatCurrency(data.quotePipeline)}</p>
+            <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2">
+              <p className="text-[11px] font-bold uppercase text-emerald-700">Đang chạy</p>
+              <p className="text-lg font-black text-slate-900">{formatNumber(data.activeEbusEvents.length)}</p>
             </div>
           </div>
         </div>
       </section>
 
-      <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
         {kpis.map(item => (
           <div key={item.title} className="rounded-xl border border-slate-100 bg-white p-4 shadow-sm">
             <div className={`mb-3 flex h-9 w-9 items-center justify-center rounded-lg border ${item.tone}`}>
@@ -245,26 +233,26 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState }) => {
         <div className="xl:col-span-2 rounded-xl border border-slate-100 bg-white p-4 shadow-sm">
           <div className="mb-3 flex items-center justify-between">
             <div>
-              <p className="text-xs font-black uppercase text-slate-400">Doanh thu tháng</p>
-              <h3 className="text-base font-bold text-slate-900">Dịch vụ, bán hàng và pipeline</h3>
+              <p className="text-xs font-black uppercase text-slate-400">Tăng trưởng chương trình</p>
+              <h3 className="text-base font-bold text-slate-900">Sự kiện và học sinh theo tháng</h3>
             </div>
-            <ArrowUpRight size={18} className="text-slate-400" />
+            <TrendingUp size={18} className="text-slate-400" />
           </div>
           <div className="h-72">
-            {data.revenueData.length ? (
+            {data.monthlyTrend.length ? (
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={data.revenueData}>
+                <BarChart data={data.monthlyTrend}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
                   <XAxis dataKey="name" stroke="#64748b" fontSize={12} tickLine={false} axisLine={false} />
-                  <YAxis stroke="#64748b" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => `${Math.round(Number(value) / 1000000)}m`} />
-                  <Tooltip formatter={(value: unknown) => formatCurrency(Number(value))} />
-                  <Bar dataKey="value" radius={[7, 7, 0, 0]}>
-                    {data.revenueData.map(item => <Cell key={item.name} fill={item.fill} />)}
-                  </Bar>
+                  <YAxis yAxisId="left" stroke="#64748b" fontSize={12} tickLine={false} axisLine={false} />
+                  <YAxis yAxisId="right" orientation="right" stroke="#0f766e" fontSize={12} tickLine={false} axisLine={false} />
+                  <Tooltip formatter={(value: unknown) => formatNumber(Number(value))} />
+                  <Bar yAxisId="left" dataKey="events" name="Sự kiện" fill="#2563eb" radius={[7, 7, 0, 0]} />
+                  <Bar yAxisId="right" dataKey="students" name="Học sinh" fill="#0f766e" radius={[7, 7, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             ) : (
-              <div className="flex h-full items-center justify-center text-sm text-slate-400">Chưa có dữ liệu doanh thu trong tháng.</div>
+              <div className="flex h-full items-center justify-center text-sm text-slate-400">Chưa có dữ liệu EBUS đã diễn ra.</div>
             )}
           </div>
         </div>
@@ -272,10 +260,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState }) => {
         <div className="rounded-xl border border-slate-100 bg-white p-4 shadow-sm">
           <div className="mb-3 flex items-center justify-between">
             <div>
-              <p className="text-xs font-black uppercase text-slate-400">Trạng thái sự kiện</p>
-              <h3 className="text-base font-bold text-slate-900">Toàn hệ thống</h3>
+              <p className="text-xs font-black uppercase text-slate-400">Trạng thái EBUS</p>
+              <h3 className="text-base font-bold text-slate-900">Toàn chương trình</h3>
             </div>
-            <CheckCircle2 size={18} className="text-slate-400" />
+            <BusFront size={18} className="text-blue-600" />
           </div>
           <div className="h-48">
             <ResponsiveContainer width="100%" height="100%">
@@ -305,178 +293,88 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState }) => {
         <div className="rounded-xl border border-slate-100 bg-white p-4 shadow-sm">
           <div className="mb-3 flex items-center justify-between">
             <div>
-              <p className="text-xs font-black uppercase text-slate-400">Hôm nay</p>
-              <h3 className="text-base font-bold text-slate-900">Sự kiện đang chạy</h3>
+              <p className="text-xs font-black uppercase text-slate-400">Đơn vị tiêu biểu</p>
+              <h3 className="text-base font-bold text-slate-900">Theo số lần tổ chức</h3>
             </div>
-            <CalendarDays size={18} className="text-blue-600" />
+            <School size={18} className="text-slate-500" />
           </div>
-          <div className="space-y-2.5">
-            {data.todayEvents.length === 0 && <p className="py-6 text-center text-sm text-slate-400">Không có sự kiện trong hôm nay.</p>}
-            {compactList(data.todayEvents, 5).map(({ event, venue }) => (
-              <div key={event.id} className="rounded-lg border border-slate-100 bg-slate-50 p-3">
+          <div className="space-y-2">
+            {data.topSchools.length === 0 && <p className="py-6 text-center text-sm text-slate-400">Chưa có dữ liệu.</p>}
+            {data.topSchools.map(row => (
+              <div key={row.name} className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2">
+                <span className="font-semibold text-slate-800">{row.name}</span>
+                <span className="text-sm font-black text-blue-700">{formatNumber(row.value)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-slate-100 bg-white p-4 shadow-sm">
+          <div className="mb-3 flex items-center justify-between">
+            <div>
+              <p className="text-xs font-black uppercase text-slate-400">Địa điểm</p>
+              <h3 className="text-base font-bold text-slate-900">Nơi đã triển khai</h3>
+            </div>
+            <MapPin size={18} className="text-slate-500" />
+          </div>
+          <div className="space-y-2">
+            {data.topLocations.length === 0 && <p className="py-6 text-center text-sm text-slate-400">Chưa có dữ liệu.</p>}
+            {data.topLocations.map(row => (
+              <div key={row.name} className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2">
+                <span className="font-semibold text-slate-800">{row.name}</span>
+                <span className="text-sm font-black text-teal-700">{formatNumber(row.value)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-slate-100 bg-white p-4 shadow-sm">
+          <div className="mb-3 flex items-center justify-between">
+            <div>
+              <p className="text-xs font-black uppercase text-slate-400">Gần nhất</p>
+              <h3 className="text-base font-bold text-slate-900">EBUS đã diễn ra</h3>
+            </div>
+            <CalendarDays size={18} className="text-slate-500" />
+          </div>
+          <div className="space-y-2">
+            {data.recentCompleted.length === 0 && <p className="py-6 text-center text-sm text-slate-400">Chưa có sự kiện đã diễn ra.</p>}
+            {data.recentCompleted.map(({ event, firstDate }) => (
+              <div key={event.id} className="rounded-lg border border-slate-100 bg-white px-3 py-2">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <p className="font-bold text-slate-900">{event.name}</p>
-                    <p className="text-xs text-slate-500">{event.client} - {event.location}</p>
+                    <p className="font-semibold text-slate-900">{event.name}</p>
+                    <p className="text-xs text-slate-500">{event.client}</p>
                   </div>
-                  <span className={`rounded-full px-2 py-1 text-[11px] font-black ${venue === 'EH' ? 'bg-teal-50 text-teal-700' : 'bg-blue-50 text-blue-700'}`}>
-                    {venue}
-                  </span>
+                  <span className="text-xs font-bold text-slate-600">{firstDate}</span>
                 </div>
-                <p className="mt-2 text-xs text-slate-500">{event.items.length} thiết bị, {event.staff?.length || 0} nhân sự</p>
+                <p className="mt-1 text-xs text-slate-500">{formatNumber(getEventStudentCount(event))} học sinh tiếp đón</p>
               </div>
             ))}
-          </div>
-        </div>
-
-        <div className="rounded-xl border border-slate-100 bg-white p-4 shadow-sm">
-          <div className="mb-3 flex items-center justify-between">
-            <div>
-              <p className="text-xs font-black uppercase text-slate-400">Sắp tới</p>
-              <h3 className="text-base font-bold text-slate-900">Lịch gần nhất</h3>
-            </div>
-            <BusFront size={18} className="text-slate-500" />
-          </div>
-          <div className="space-y-2.5">
-            {data.upcomingEvents.length === 0 && <p className="py-6 text-center text-sm text-slate-400">Chưa có sự kiện sắp tới.</p>}
-            {compactList(data.upcomingEvents, 5).map(({ event, firstDate, venue }) => (
-              <div key={event.id} className="flex items-start justify-between gap-3 rounded-lg border border-slate-100 bg-white p-3">
-                <div>
-                  <p className="font-semibold text-slate-900">{event.name}</p>
-                  <p className="text-xs text-slate-500">{event.client}</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-xs font-bold text-slate-700">{firstDate}</p>
-                  <p className={`mt-1 text-[11px] font-black ${venue === 'EH' ? 'text-teal-700' : 'text-blue-700'}`}>{venue}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="rounded-xl border border-slate-100 bg-white p-4 shadow-sm">
-          <div className="mb-3 flex items-center justify-between">
-            <div>
-              <p className="text-xs font-black uppercase text-slate-400">Cảnh báo kho</p>
-              <h3 className="text-base font-bold text-slate-900">Cần xử lý</h3>
-            </div>
-            <AlertTriangle size={18} className="text-amber-600" />
-          </div>
-          <div className="space-y-2.5">
-            {data.lowStockItems.length === 0 && data.damagedOrLost === 0 && <p className="py-6 text-center text-sm text-slate-400">Kho đang ổn định.</p>}
-            {data.damagedOrLost > 0 && (
-              <div className="rounded-lg border border-rose-100 bg-rose-50 p-3">
-                <p className="font-bold text-rose-800">Hư hỏng/mất: {formatNumber(data.damagedOrLost)}</p>
-                <p className="text-xs text-rose-600">Kiểm tra lại biên bản và tồn kho thực tế.</p>
-              </div>
-            )}
-            {compactList(data.lowStockItems, 4).map(item => (
-              <div key={item.id} className="rounded-lg border border-amber-100 bg-amber-50 p-3">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="font-semibold text-slate-900">{item.name}</p>
-                  <span className="text-xs font-black text-amber-800">{formatNumber(item.availableQuantity)}</span>
-                </div>
-                <p className="text-xs text-amber-700">{item.category} - ngưỡng {formatNumber(item.minStock || 5)}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section className="grid grid-cols-1 gap-5 xl:grid-cols-2">
-        <div className="rounded-xl border border-slate-100 bg-white p-4 shadow-sm">
-          <div className="mb-3 flex items-center justify-between">
-            <div>
-              <p className="text-xs font-black uppercase text-slate-400">Kho theo nhóm</p>
-              <h3 className="text-base font-bold text-slate-900">Phân bổ thiết bị</h3>
-            </div>
-            <Package size={18} className="text-slate-500" />
-          </div>
-          <div className="h-72">
-            {data.inventoryByCategory.length ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={data.inventoryByCategory} layout="vertical" margin={{ left: 18 }}>
-                  <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" />
-                  <XAxis type="number" tickLine={false} axisLine={false} />
-                  <YAxis type="category" dataKey="name" width={120} fontSize={12} tickLine={false} axisLine={false} />
-                  <Tooltip />
-                  <Bar dataKey="value" fill="#2563eb" radius={[0, 7, 7, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="flex h-full items-center justify-center text-sm text-slate-400">Chưa có dữ liệu kho.</div>
-            )}
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 gap-5">
-          <div className="rounded-xl border border-slate-100 bg-white p-4 shadow-sm">
-            <div className="mb-3 flex items-center justify-between">
-              <div>
-                <p className="text-xs font-black uppercase text-slate-400">Hoạt động thương mại</p>
-                <h3 className="text-base font-bold text-slate-900">Đơn bán gần nhất</h3>
-              </div>
-              <ShoppingBag size={18} className="text-slate-500" />
-            </div>
-            <div className="space-y-2">
-              {data.recentOrders.length === 0 && <p className="text-sm text-slate-400">Chưa có đơn bán.</p>}
-              {data.recentOrders.map(order => (
-                <div key={order.id} className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2">
-                  <div>
-                    <p className="font-semibold text-slate-900">{order.customerName || 'Khách lẻ'}</p>
-                    <p className="text-xs text-slate-500">{order.date} - {order.status || 'DRAFT'}</p>
-                  </div>
-                  <span className="text-sm font-black text-emerald-700">{formatCurrency(getOrderRevenue(order))}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-slate-100 bg-white p-4 shadow-sm">
-            <div className="mb-3 flex items-center justify-between">
-              <div>
-                <p className="text-xs font-black uppercase text-slate-400">Báo giá</p>
-                <h3 className="text-base font-bold text-slate-900">Mới cập nhật</h3>
-              </div>
-              <FileText size={18} className="text-slate-500" />
-            </div>
-            <div className="space-y-2">
-              {data.recentQuotes.length === 0 && <p className="text-sm text-slate-400">Chưa có báo giá.</p>}
-              {data.recentQuotes.map(quote => (
-                <div key={quote.id} className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2">
-                  <div>
-                    <p className="font-semibold text-slate-900">{quote.clientName}</p>
-                    <p className="text-xs text-slate-500">{quote.eventName || quote.id} - {quote.status}</p>
-                  </div>
-                  <span className="text-sm font-black text-blue-700">{formatCurrency(quote.totalAmount || 0)}</span>
-                </div>
-              ))}
-            </div>
           </div>
         </div>
       </section>
 
       <section className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <div className="rounded-xl border border-teal-100 bg-teal-50 p-4">
-          <div className="flex items-center gap-2 text-teal-800">
-            <Building2 size={18} />
-            <p className="font-black">EH</p>
-          </div>
-          <p className="mt-2 text-sm text-teal-700">{formatNumber(data.venueData[0].value)} sự kiện trong tháng, ưu tiên lịch phòng và nhân sự đón đoàn.</p>
-        </div>
         <div className="rounded-xl border border-blue-100 bg-blue-50 p-4">
           <div className="flex items-center gap-2 text-blue-800">
             <BusFront size={18} />
-            <p className="font-black">EBUS</p>
+            <p className="font-black">Phạm vi tổng quan</p>
           </div>
-          <p className="mt-2 text-sm text-blue-700">{formatNumber(data.venueData[1].value)} sự kiện trong tháng, theo dõi thiết bị xuất kho và vận chuyển.</p>
+          <p className="mt-2 text-sm text-blue-700">Chỉ tính các sự kiện thuộc EBUS và đã diễn ra, dựa theo ngày tổ chức thực tế.</p>
+        </div>
+        <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-4">
+          <div className="flex items-center gap-2 text-emerald-800">
+            <Users size={18} />
+            <p className="font-black">Học sinh tiếp đón</p>
+          </div>
+          <p className="mt-2 text-sm text-emerald-700">Ưu tiên số học sinh trong sự kiện, sau đó lấy dữ liệu vận hành hoặc quy mô dự kiến trong hồ sơ.</p>
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-4">
           <div className="flex items-center gap-2 text-slate-800">
-            <Users size={18} />
-            <p className="font-black">Nhân sự</p>
+            <Boxes size={18} />
+            <p className="font-black">Chi tiết</p>
           </div>
-          <p className="mt-2 text-sm text-slate-600">{formatNumber(data.staffAssignmentsThisMonth)} lượt phân công trong tháng hiện tại.</p>
+          <p className="mt-2 text-sm text-slate-600">Các bảng chi phí, nhân sự, hóa đơn và lọc EH/EBUS vẫn nằm trong module Báo cáo.</p>
         </div>
       </section>
     </div>

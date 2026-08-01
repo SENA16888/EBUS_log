@@ -10,6 +10,7 @@ import {
   PackageX,
   Printer,
   ReceiptText,
+  School,
   TrendingDown,
   TrendingUp,
   Users,
@@ -168,6 +169,14 @@ const getEffectiveEventStatus = (event: Event, todayKey = getLocalDateKey()): Ev
 
 const getEventVenue = (event: Pick<Event, 'organizationVenue'>) => event.organizationVenue || 'EH';
 
+const getEventStudentCount = (event: Event) => {
+  const value = event.studentCount
+    ?? event.houseOperation?.studentCount
+    ?? event.eventProfile?.attendanceMax
+    ?? event.eventProfile?.attendanceMin;
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : 0;
+};
+
 const getVenueLabel = (venue: VenueFilter) => {
   if (venue === 'EH') return 'Einstein House (EH)';
   if (venue === 'EBUS') return 'EBUS';
@@ -250,6 +259,7 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
     const monthlyEvents = allMonthlyEvents
       .filter(event => venueFilter === 'ALL' || getEventVenue(event) === venueFilter)
       .sort((a, b) => (a.startDate || '').localeCompare(b.startDate || ''));
+    const studentTotal = monthlyEvents.reduce((sum, event) => sum + getEventStudentCount(event), 0);
     const monthlyEventIds = new Set(monthlyEvents.map(event => event.id));
     const monthlyEventSaleOrderIds = new Set(monthlyEvents.flatMap(event => event.saleOrderIds || []));
     const todayKey = getLocalDateKey();
@@ -539,6 +549,7 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
       venueLabel,
       eventStatusById,
       monthlyEvents,
+      studentTotal,
       sales,
       finalizedSales,
       returns,
@@ -594,6 +605,7 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
       ['Tổng quan'],
       ['Chỉ số', 'Giá trị', 'Ghi chú'],
       ['Số sự kiện', report.monthlyEvents.length, ''],
+      ['Số lượng học sinh tiếp đón', report.studentTotal, 'Lấy từ số học sinh sự kiện/vận hành hoặc quy mô dự kiến trong hồ sơ'],
       ['Doanh thu ghi nhận', report.recognizedRevenue, 'Đơn bán đã chốt + dịch vụ từ sự kiện đã gắn báo giá/hợp đồng + báo giá đã chấp nhận chưa gắn sự kiện'],
       ['Chi phí sự kiện', report.expenseTotal, ''],
       ['Chi phí nhân sự', report.staffCost, ''],
@@ -611,7 +623,7 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
       ...report.serviceRevenueRows.map(row => [row.eventName, row.eventDate, row.quotationId, row.source, row.amount]),
       [],
       ['Sự kiện trong giai đoạn'],
-      ['Tên sự kiện', 'Khách hàng', 'Địa điểm', 'Ngày bắt đầu', 'Ngày kết thúc', 'Trạng thái', 'Doanh thu dịch vụ', 'Chi phí', 'Nhân sự'],
+      ['Tên sự kiện', 'Khách hàng', 'Địa điểm', 'Ngày bắt đầu', 'Ngày kết thúc', 'Trạng thái', 'Học sinh tiếp đón', 'Doanh thu dịch vụ', 'Chi phí', 'Nhân sự'],
       ...report.monthlyEvents.map(event => [
         event.name,
         event.client,
@@ -619,6 +631,7 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
         event.startDate,
         event.endDate,
         STATUS_LABELS[report.eventStatusById.get(event.id) || event.status],
+        getEventStudentCount(event),
         report.serviceRevenueByEvent.get(event.id) || 0,
         (event.expenses || []).reduce((sum, expense) => sum + (expense.amount || 0), 0),
         event.staff?.length || 0
@@ -679,6 +692,7 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
         <td>${escapeHtml(event.client)}</td>
         <td>${escapeHtml(event.startDate)} - ${escapeHtml(event.endDate)}</td>
         <td>${escapeHtml(STATUS_LABELS[report.eventStatusById.get(event.id) || event.status])}</td>
+        <td style="text-align:right;">${escapeHtml(formatNumber(getEventStudentCount(event)))}</td>
         <td style="text-align:right;">${escapeHtml(formatCurrency(report.serviceRevenueByEvent.get(event.id) || 0))}</td>
         <td style="text-align:right;">${escapeHtml(formatCurrency((event.expenses || []).reduce((sum, expense) => sum + (expense.amount || 0), 0)))}</td>
       </tr>
@@ -712,7 +726,7 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
             h1 { margin: 0 0 4px; font-size: 24px; }
             h2 { margin: 24px 0 8px; font-size: 16px; }
             .meta { color: #64748b; font-size: 12px; margin-bottom: 18px; }
-            .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 16px 0; }
+            .grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin: 16px 0; }
             .box { border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px; }
             .label { color: #64748b; font-size: 11px; }
             .value { font-weight: 800; font-size: 16px; margin-top: 3px; }
@@ -726,6 +740,7 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
           <div class="meta">Phạm vi: ${escapeHtml(report.venueLabel)} • In lúc ${escapeHtml(new Date().toLocaleString('vi-VN'))}</div>
           <div class="grid">
             <div class="box"><div class="label">Sự kiện</div><div class="value">${escapeHtml(report.monthlyEvents.length)}</div></div>
+            <div class="box"><div class="label">Học sinh tiếp đón</div><div class="value">${escapeHtml(formatNumber(report.studentTotal))}</div></div>
             <div class="box"><div class="label">Doanh thu ghi nhận</div><div class="value">${escapeHtml(formatCurrency(report.recognizedRevenue))}</div></div>
             <div class="box"><div class="label">Chi phí + nhân sự</div><div class="value">${escapeHtml(formatCurrency(report.expenseTotal + report.staffCost))}</div></div>
             <div class="box"><div class="label">Tạm tính còn lại</div><div class="value">${escapeHtml(formatCurrency(netAfterOperatingCost))}</div></div>
@@ -733,7 +748,7 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
           <h2>Tài chính</h2>
           <table><thead><tr><th>Hạng mục</th><th>Giá trị</th><th>Ghi chú</th></tr></thead><tbody>${moneyRows}</tbody></table>
           <h2>Sự kiện</h2>
-          <table><thead><tr><th>Tên</th><th>Khách hàng</th><th>Thời gian</th><th>Trạng thái</th><th>Doanh thu dịch vụ</th><th>Chi phí</th></tr></thead><tbody>${eventRows || '<tr><td colspan="6">Không có dữ liệu.</td></tr>'}</tbody></table>
+          <table><thead><tr><th>Tên</th><th>Khách hàng</th><th>Thời gian</th><th>Trạng thái</th><th>Học sinh</th><th>Doanh thu dịch vụ</th><th>Chi phí</th></tr></thead><tbody>${eventRows || '<tr><td colspan="7">Không có dữ liệu.</td></tr>'}</tbody></table>
           <h2>Nhân sự</h2>
           <table><thead><tr><th>Nhân sự</th><th>Vai trò</th><th>Số lượt</th><th>Lương gốc</th><th>Thưởng</th><th>Phạt đã trừ</th><th>Lương thực tính</th></tr></thead><tbody>${staffRows || '<tr><td colspan="7">Không có dữ liệu.</td></tr>'}</tbody></table>
           <h2>Hư hỏng/mất mát</h2>
@@ -855,13 +870,20 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3.5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3.5">
         <StatCard
           title="Số sự kiện"
           value={formatNumber(report.monthlyEvents.length)}
           sub={`${formatNumber(report.monthlyEvents.filter(event => report.eventStatusById.get(event.id) === EventStatus.COMPLETED).length)} hoàn thành`}
           icon={<CalendarDays size={18} />}
           tone="bg-blue-50 text-blue-700"
+        />
+        <StatCard
+          title="Số lượng học sinh tiếp đón"
+          value={formatNumber(report.studentTotal)}
+          sub={`Tính theo ${report.venueLabel.toLowerCase()} trong giai đoạn`}
+          icon={<School size={18} />}
+          tone="bg-teal-50 text-teal-700"
         />
         <StatCard
           title="Doanh thu ghi nhận"
@@ -1043,13 +1065,14 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
                   <th className="py-2 pr-3">Sự kiện</th>
                   <th className="py-2 px-3">Thời gian</th>
                   <th className="py-2 px-3">Trạng thái</th>
+                  <th className="py-2 px-3 text-right">Học sinh</th>
                   <th className="py-2 px-3 text-right">Doanh thu dịch vụ</th>
                   <th className="py-2 pl-3 text-right">Chi phí</th>
                 </tr>
               </thead>
               <tbody>
                 {report.monthlyEvents.length === 0 && (
-                  <tr><td colSpan={5} className="py-6 text-center text-slate-400">Không có sự kiện trong giai đoạn.</td></tr>
+                  <tr><td colSpan={6} className="py-6 text-center text-slate-400">Không có sự kiện trong giai đoạn.</td></tr>
                 )}
                 {report.monthlyEvents.map(event => (
                   <tr key={event.id} className="border-b border-slate-50">
@@ -1061,6 +1084,7 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
                     <td className="py-2 px-3">
                       <span className="px-2 py-1 rounded-full bg-slate-100 text-xs font-bold text-slate-700">{STATUS_LABELS[report.eventStatusById.get(event.id) || event.status]}</span>
                     </td>
+                    <td className="py-2 px-3 text-right font-bold text-teal-700">{formatNumber(getEventStudentCount(event))}</td>
                     <td className="py-2 px-3 text-right font-bold text-emerald-700">{formatCurrency(report.serviceRevenueByEvent.get(event.id) || 0)}</td>
                     <td className="py-2 pl-3 text-right font-bold">{formatCurrency((event.expenses || []).reduce((sum, expense) => sum + (expense.amount || 0), 0))}</td>
                   </tr>
