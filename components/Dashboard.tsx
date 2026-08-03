@@ -23,7 +23,8 @@ import {
   TrendingUp,
   Users
 } from 'lucide-react';
-import { AppState, Event, EventStatus, EventVenueType } from '../types';
+import { AppState, Event, EventStatus, EventVenueType, SaleOrder } from '../types';
+import { calcLineTotal } from '../services/pricing';
 
 interface DashboardProps {
   appState: AppState;
@@ -69,6 +70,26 @@ const getServiceRevenue = (event: Event, appState: AppState) => {
   return Math.max(0, Number(quotation?.totalAmount) || Number(quotation?.contract?.contractAmount) || 0);
 };
 
+const getSaleOrderRevenue = (order: SaleOrder) => {
+  if ((order.type || 'SALE') === 'RETURN' || order.status !== 'FINALIZED') return 0;
+  const subtotal = (order.items || []).reduce((sum, item) => {
+    const quantity = item.soldQuantity ?? item.quantity ?? 0;
+    return sum + calcLineTotal(item.price || 0, quantity, item.discount || 0, item.discountPercent || 0);
+  }, 0);
+  return Math.max(0, subtotal - (order.orderDiscount || 0));
+};
+
+const getEventSaleRevenue = (event: Event, appState: AppState) => {
+  const linkedIds = new Set(event.saleOrderIds || []);
+  const saleOrderById = new Map((appState.saleOrders || []).map(order => [order.id, order]));
+  return (appState.saleOrders || []).reduce((sum, order) => {
+    const directLinked = order.eventId === event.id || linkedIds.has(order.id);
+    const sourceOrder = order.relatedOrderId ? saleOrderById.get(order.relatedOrderId) : undefined;
+    const sourceLinked = Boolean(sourceOrder && (sourceOrder.eventId === event.id || linkedIds.has(sourceOrder.id)));
+    return directLinked || sourceLinked ? sum + getSaleOrderRevenue(order) : sum;
+  }, 0);
+};
+
 const getEventExpenseTotal = (event: Event) =>
   (event.expenses || []).reduce((sum, expense) => sum + (Number(expense.amount) || 0), 0);
 
@@ -107,7 +128,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState }) => {
       .sort((a, b) => (a.firstDate || '').localeCompare(b.firstDate || ''));
 
     const totalStudents = completedEbusEvents.reduce((sum, item) => sum + getEventStudentCount(item.event), 0);
-    const totalRevenue = completedEbusEvents.reduce((sum, item) => sum + getServiceRevenue(item.event, appState), 0);
+    const totalRevenue = ebusEvents.reduce((sum, item) => (
+      sum + getServiceRevenue(item.event, appState) + getEventSaleRevenue(item.event, appState)
+    ), 0);
     const totalExpense = completedEbusEvents.reduce((sum, item) => sum + getEventExpenseTotal(item.event), 0);
     const totalStaffAssignments = completedEbusEvents.reduce((sum, item) => sum + (item.event.staff?.length || 0), 0);
     const totalEquipmentUnits = completedEbusEvents.reduce((sum, item) =>
@@ -179,7 +202,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState }) => {
       tone: 'bg-cyan-50 text-cyan-700 border-cyan-100'
     },
     {
-      title: 'Doanh thu dịch vụ ghi nhận',
+      title: 'Doanh thu ghi nhận',
       value: formatCurrency(data.totalRevenue),
       sub: `Chi phí vận hành ${formatCurrency(data.totalExpense)}`,
       icon: <CircleDollarSign size={18} />,

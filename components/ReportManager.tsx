@@ -285,13 +285,16 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
     const monthlyEventSaleOrderIds = new Set(monthlyEvents.flatMap(event => event.saleOrderIds || []));
     const todayKey = getLocalDateKey();
     const eventStatusById = new Map(monthlyEvents.map(event => [event.id, getEffectiveEventStatus(event, todayKey)]));
+    const saleOrderById = new Map((appState.saleOrders || []).map(order => [order.id, order]));
 
     const periodSaleOrders = (appState.saleOrders || []).filter(order => isDateInRange(order.date, period.startMonth, period.endMonth));
-    const saleOrders = periodSaleOrders.filter(order =>
-      venueFilter === 'ALL'
-      || (order.eventId ? monthlyEventIds.has(order.eventId) : false)
-      || monthlyEventSaleOrderIds.has(order.id)
-    );
+    const saleOrders = periodSaleOrders.filter(order => {
+      if (venueFilter === 'ALL') return true;
+      if ((order.eventId ? monthlyEventIds.has(order.eventId) : false) || monthlyEventSaleOrderIds.has(order.id)) return true;
+      if (!order.relatedOrderId) return false;
+      const sourceOrder = saleOrderById.get(order.relatedOrderId);
+      return Boolean(sourceOrder && ((sourceOrder.eventId ? monthlyEventIds.has(sourceOrder.eventId) : false) || monthlyEventSaleOrderIds.has(sourceOrder.id)));
+    });
     const sales = saleOrders.filter(order => (order.type || 'SALE') !== 'RETURN');
     const returns = saleOrders.filter(order => (order.type || '') === 'RETURN');
     const finalizedSales = sales.filter(order => order.status === 'FINALIZED');

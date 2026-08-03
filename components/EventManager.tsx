@@ -1451,14 +1451,27 @@ export const EventManager: React.FC<EventManagerProps> = ({
   );
   const filledAutoStaffSlots = autoStaffSlots.filter(slot => slot.assigned.length > 0).length;
   const linkedQuotation = selectedEvent?.quotationId ? quotations.find(q => q.id === selectedEvent.quotationId) : null;
+  const saleOrderById = useMemo(() => new Map(saleOrders.map(order => [order.id, order])), [saleOrders]);
   const linkedSaleOrders = useMemo(() => {
     if (!selectedEvent) return [];
-    return saleOrders.filter(o => o.eventId === selectedEvent.id || (selectedEvent.saleOrderIds || []).includes(o.id));
-  }, [saleOrders, selectedEvent]);
+    const linkedIds = new Set(selectedEvent.saleOrderIds || []);
+    return saleOrders.filter(order => {
+      if (order.eventId === selectedEvent.id || linkedIds.has(order.id)) return true;
+      if (!order.relatedOrderId) return false;
+      const sourceOrder = saleOrderById.get(order.relatedOrderId);
+      return Boolean(sourceOrder && (sourceOrder.eventId === selectedEvent.id || linkedIds.has(sourceOrder.id)));
+    });
+  }, [saleOrderById, saleOrders, selectedEvent]);
   const selectableSaleOrders = useMemo(() => {
     if (!selectedEvent) return [];
-    return saleOrders.filter(o => o.eventId === undefined || o.eventId === selectedEvent.id || (selectedEvent.saleOrderIds || []).includes(o.id));
-  }, [saleOrders, selectedEvent]);
+    const linkedIds = new Set(selectedEvent.saleOrderIds || []);
+    return saleOrders.filter(order => {
+      if (order.eventId === undefined || order.eventId === selectedEvent.id || linkedIds.has(order.id)) return true;
+      if (!order.relatedOrderId) return false;
+      const sourceOrder = saleOrderById.get(order.relatedOrderId);
+      return Boolean(sourceOrder && (sourceOrder.eventId === selectedEvent.id || linkedIds.has(sourceOrder.id)));
+    });
+  }, [saleOrderById, saleOrders, selectedEvent]);
 
   useEffect(() => {
     if (!selectedEvent || !autoAdvancePlan || !onUpdateEvent || !canEdit) return;

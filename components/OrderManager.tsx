@@ -93,6 +93,17 @@ export const OrderManager: React.FC<OrderManagerProps> = ({
     return map;
   }, [finalizedPaymentOrders]);
 
+  const paymentsBySourceOrderId = useMemo(() => {
+    const map: Record<string, SaleOrder[]> = {};
+    finalizedPaymentOrders.forEach(order => {
+      if (!order.relatedOrderId) return;
+      if (!map[order.relatedOrderId]) map[order.relatedOrderId] = [];
+      map[order.relatedOrderId].push(order);
+    });
+    Object.values(map).forEach(list => list.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+    return map;
+  }, [finalizedPaymentOrders]);
+
   const getLinkedSoldQuantity = (order: SaleOrder, itemId: string) => {
     const legacySoldQuantity = (order.items || []).find(item => item.itemId === itemId)?.soldQuantity || 0;
     return legacySoldQuantity + (soldBySourceOrderId[order.id]?.[itemId] || 0);
@@ -126,7 +137,7 @@ export const OrderManager: React.FC<OrderManagerProps> = ({
   };
 
   const getLinkedOrderRevenue = (order: SaleOrder) => {
-    const linkedPayments = finalizedPaymentOrders.filter(payment => payment.relatedOrderId === order.id);
+    const linkedPayments = paymentsBySourceOrderId[order.id] || [];
     return getOrderRevenue(order) + linkedPayments.reduce((sum, payment) => sum + getOrderRevenue(payment), 0);
   };
 
@@ -249,7 +260,7 @@ export const OrderManager: React.FC<OrderManagerProps> = ({
           <tr>
             <td>${index + 1}</td>
             <td>${getBarcode(item.itemId, item.barcode) || '-'}</td>
-            <td>${item.name}</td>
+            <td>${item.name}<div style="font-size:10px;color:#64748b;">${item.paymentId}${item.paymentEventName ? ` • ${item.paymentEventName}` : ''}</div></td>
             <td class="right">${item.quantity || 0}</td>
             <td class="right">${(item.price || 0).toLocaleString()}đ</td>
             <td class="right">${lineValue.toLocaleString()}đ</td>
@@ -287,8 +298,12 @@ export const OrderManager: React.FC<OrderManagerProps> = ({
       return { body, title };
     }
     if (mode === 'SOLD') {
-      const rows = (order.items || []).map((item, index) => {
-        const soldQty = getLinkedSoldQuantity(order, item.itemId);
+      const linkedPayments = paymentsBySourceOrderId[order.id] || [];
+      const soldRows = linkedPayments.length > 0
+        ? linkedPayments.flatMap(payment => (payment.items || []).map(item => ({ ...item, paymentId: payment.id, paymentDate: payment.date, paymentEventName: payment.eventName })))
+        : (order.items || []).filter(item => (item.soldQuantity || 0) > 0).map(item => ({ ...item, paymentId: order.id, paymentDate: order.date, paymentEventName: order.eventName }));
+      const rows = soldRows.map((item, index) => {
+        const soldQty = item.soldQuantity ?? item.quantity ?? 0;
         const discount = item.discount || 0;
         const discountPercent = item.discountPercent || 0;
         const lineRevenue = Math.max(0, calcLineTotal(item.price || 0, soldQty, discount, discountPercent));
@@ -305,7 +320,7 @@ export const OrderManager: React.FC<OrderManagerProps> = ({
           </tr>
         `;
       }).join('');
-      const totalRevenue = getOrderRevenue(order);
+      const totalRevenue = getLinkedOrderRevenue(order);
       const body = `
         ${header}
         <table>
@@ -463,7 +478,7 @@ export const OrderManager: React.FC<OrderManagerProps> = ({
               const returns = returnsByOrderId[order.id] || [];
               return acc + returns.reduce((sub, ret) => sub + (ret.items || []).reduce((itemAcc, item) => itemAcc + (item.quantity || 0), 0), 0);
             }, 0);
-            const finalizedCount = group.orders.filter(order => order.status === 'FINALIZED').length;
+            const finalizedCount = group.orders.filter(order => order.status === 'FINALIZED' || getLinkedOrderRevenue(order) > 0).length;
 
             return (
               <div key={group.key} className="border rounded-xl p-4 bg-slate-50/40">
@@ -494,13 +509,15 @@ export const OrderManager: React.FC<OrderManagerProps> = ({
                   <div className="mt-4 space-y-3">
                     {group.orders.map(order => {
                       const orderReturns = returnsByOrderId[order.id] || [];
+                      const paymentOrders = paymentsBySourceOrderId[order.id] || [];
                       const orderValue = order.total || order.subtotal || 0;
                       const orderRevenue = getLinkedOrderRevenue(order);
                       const orderExportQty = (order.items || []).reduce((acc, item) => acc + (item.quantity || 0), 0);
                       const orderSoldQty = (order.items || []).reduce((acc, item) => acc + getLinkedSoldQuantity(order, item.itemId), 0);
                       const orderReturnQty = orderReturns.reduce((acc, ret) => acc + (ret.items || []).reduce((sub, item) => sub + (item.quantity || 0), 0), 0);
                       const isCompleted = orderExportQty > 0 && (orderSoldQty + orderReturnQty) >= orderExportQty;
-                      const statusLabel = isCompleted ? 'Hoàn tất đơn hàng' : order.exportConfirmed ? 'Đã xuất kho' : 'Chờ xuất kho';
+                      const hasPayment = orderRevenue > 0;
+                      const statusLabel = isCompleted ? 'Hoàn tất đơn hàng' : hasPayment ? 'Đang bán' : order.exportConfirmed ? 'Đã xuất kho' : 'Chờ xuất kho';
                       return (
                         <div key={order.id} className="border rounded-lg p-3 bg-white">
                           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
@@ -648,6 +665,22 @@ export const OrderManager: React.FC<OrderManagerProps> = ({
                               )}
                             </div>
                           </div>
+
+                          {paymentOrders.length > 0 && (
+                            <div className="mt-3 space-y-2 border-l-2 border-green-100 pl-4">
+                              {paymentOrders.map(payment => (
+                                <div key={payment.id} className="rounded-lg bg-green-50 border border-green-100 px-3 py-2 text-xs text-slate-700">
+                                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+                                    <span className="font-bold">{payment.id} • {new Date(payment.date).toLocaleString()} • {payment.eventName || payment.groupName || order.eventName || '-'}</span>
+                                    <span className="font-black text-green-700">{getOrderRevenue(payment).toLocaleString()}đ</span>
+                                  </div>
+                                  <div className="mt-1 text-slate-500">
+                                    {(payment.items || []).map(item => `${item.name} x ${item.soldQuantity ?? item.quantity ?? 0}`).join(' • ')}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
 
                           {orderReturns.length > 0 && (
                             <div className="mt-3 space-y-2 border-l-2 border-slate-100 pl-4">
