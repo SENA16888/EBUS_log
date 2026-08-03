@@ -36,6 +36,8 @@ export const OrderManager: React.FC<OrderManagerProps> = ({
   const [scanReturn, setScanReturn] = useState('');
 
   const saleOrdersOnly = useMemo(() => saleOrders.filter(order => (order.type || 'SALE') !== 'RETURN'), [saleOrders]);
+  const outboundSaleOrders = useMemo(() => saleOrdersOnly.filter(order => !order.relatedOrderId), [saleOrdersOnly]);
+  const finalizedPaymentOrders = useMemo(() => saleOrdersOnly.filter(order => !!order.relatedOrderId && order.status === 'FINALIZED'), [saleOrdersOnly]);
   const returnOrders = useMemo(() => saleOrders.filter(order => (order.type || '') === 'RETURN'), [saleOrders]);
 
   const returnsByOrderId = useMemo(() => {
@@ -51,7 +53,7 @@ export const OrderManager: React.FC<OrderManagerProps> = ({
 
   const orderGroups = useMemo(() => {
     const groupMap = new Map<string, { key: string; label: string; type: 'EVENT' | 'CUSTOMER'; orders: SaleOrder[]; lastDate: string }>();
-    saleOrdersOnly.forEach(order => {
+    outboundSaleOrders.forEach(order => {
       const type = order.groupType === 'EVENT' ? 'EVENT' : 'CUSTOMER';
       const keyBase = type === 'EVENT' && order.groupId ? order.groupId : (order.groupName || order.customerName || 'Khách lẻ');
       const key = `${type}:${keyBase}`;
@@ -71,17 +73,35 @@ export const OrderManager: React.FC<OrderManagerProps> = ({
         orders: group.orders.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
       }))
       .sort((a, b) => new Date(b.lastDate).getTime() - new Date(a.lastDate).getTime());
-  }, [saleOrdersOnly]);
+  }, [outboundSaleOrders]);
 
   const orphanReturns = useMemo(() => {
-    const saleOrderIds = new Set(saleOrdersOnly.map(order => order.id));
+    const saleOrderIds = new Set(outboundSaleOrders.map(order => order.id));
     return returnOrders.filter(order => !order.relatedOrderId || !saleOrderIds.has(order.relatedOrderId));
-  }, [saleOrdersOnly, returnOrders]);
+  }, [outboundSaleOrders, returnOrders]);
+
+  const soldBySourceOrderId = useMemo(() => {
+    const map: Record<string, Record<string, number>> = {};
+    finalizedPaymentOrders.forEach(order => {
+      if (!order.relatedOrderId) return;
+      if (!map[order.relatedOrderId]) map[order.relatedOrderId] = {};
+      (order.items || []).forEach(item => {
+        const quantity = item.soldQuantity ?? item.quantity ?? 0;
+        map[order.relatedOrderId!][item.itemId] = (map[order.relatedOrderId!][item.itemId] || 0) + quantity;
+      });
+    });
+    return map;
+  }, [finalizedPaymentOrders]);
+
+  const getLinkedSoldQuantity = (order: SaleOrder, itemId: string) => {
+    const legacySoldQuantity = (order.items || []).find(item => item.itemId === itemId)?.soldQuantity || 0;
+    return legacySoldQuantity + (soldBySourceOrderId[order.id]?.[itemId] || 0);
+  };
 
   const summary = useMemo(() => {
-    const totalOrders = saleOrdersOnly.length;
+    const totalOrders = outboundSaleOrders.length;
     // Giá trị hàng hóa: tổng giá trị danh mục (price * qty) của các đơn xuất (không tính chiết khấu)
-    const totalGoodsValue = saleOrdersOnly.reduce((acc, o) => acc + ((o.items || []).reduce((s, it) => s + ((it.price || 0) * (it.quantity || 0)), 0)), 0);
+    const totalGoodsValue = outboundSaleOrders.reduce((acc, o) => acc + ((o.items || []).reduce((s, it) => s + ((it.price || 0) * (it.quantity || 0)), 0)), 0);
     // Doanh thu: chỉ tính số lượng đã bán, hàng trả về kho không phải hoàn tiền.
     const totalSalesRevenue = saleOrdersOnly
       .filter(o => o.status === 'FINALIZED')
@@ -92,7 +112,7 @@ export const OrderManager: React.FC<OrderManagerProps> = ({
     const returnedUnits = returnOrders.reduce((acc, r) => acc + (r.items || []).reduce((sum, item) => sum + (item.quantity || 0), 0), 0);
     const net = totalSalesRevenue;
     return { totalOrders, totalGoodsValue, totalSalesRevenue, returnedUnits, net };
-  }, [saleOrdersOnly, returnOrders]);
+  }, [outboundSaleOrders, saleOrdersOnly, returnOrders]);
 
   const getOrderRevenue = (order: SaleOrder) => {
     const items = order.items || [];
@@ -103,6 +123,11 @@ export const OrderManager: React.FC<OrderManagerProps> = ({
     }, 0);
     const orderDiscount = order.orderDiscount || 0;
     return Math.max(0, subtotal - orderDiscount);
+  };
+
+  const getLinkedOrderRevenue = (order: SaleOrder) => {
+    const linkedPayments = finalizedPaymentOrders.filter(payment => payment.relatedOrderId === order.id);
+    return getOrderRevenue(order) + linkedPayments.reduce((sum, payment) => sum + getOrderRevenue(payment), 0);
   };
 
   const openPrintWindow = (title: string, bodyHtml: string, autoPrint = true) => {
@@ -263,7 +288,7 @@ export const OrderManager: React.FC<OrderManagerProps> = ({
     }
     if (mode === 'SOLD') {
       const rows = (order.items || []).map((item, index) => {
-        const soldQty = item.soldQuantity ?? 0;
+        const soldQty = getLinkedSoldQuantity(order, item.itemId);
         const discount = item.discount || 0;
         const discountPercent = item.discountPercent || 0;
         const lineRevenue = Math.max(0, calcLineTotal(item.price || 0, soldQty, discount, discountPercent));
@@ -424,7 +449,7 @@ export const OrderManager: React.FC<OrderManagerProps> = ({
         </div>
 
         <div className="space-y-4 max-h-[60vh] overflow-auto">
-          {saleOrdersOnly.length === 0 && returnOrders.length === 0 && (
+          {outboundSaleOrders.length === 0 && returnOrders.length === 0 && (
             <div className="text-sm text-slate-400">Chưa có đơn bán nào.</div>
           )}
 
@@ -432,7 +457,7 @@ export const OrderManager: React.FC<OrderManagerProps> = ({
             const isExpanded = expandedGroups[group.key] ?? true;
             const groupRevenue = group.orders.reduce((acc, order) => acc + (order.total || order.subtotal || 0), 0);
             const groupOrderValue = groupRevenue;
-            const groupSalesRevenue = group.orders.reduce((acc, order) => acc + getOrderRevenue(order), 0);
+            const groupSalesRevenue = group.orders.reduce((acc, order) => acc + getLinkedOrderRevenue(order), 0);
             const exportQty = group.orders.reduce((acc, order) => acc + (order.items || []).reduce((sub, item) => sub + (item.quantity || 0), 0), 0);
             const returnQty = group.orders.reduce((acc, order) => {
               const returns = returnsByOrderId[order.id] || [];
@@ -470,9 +495,9 @@ export const OrderManager: React.FC<OrderManagerProps> = ({
                     {group.orders.map(order => {
                       const orderReturns = returnsByOrderId[order.id] || [];
                       const orderValue = order.total || order.subtotal || 0;
-                      const orderRevenue = getOrderRevenue(order);
+                      const orderRevenue = getLinkedOrderRevenue(order);
                       const orderExportQty = (order.items || []).reduce((acc, item) => acc + (item.quantity || 0), 0);
-                      const orderSoldQty = (order.items || []).reduce((acc, item) => acc + (item.soldQuantity || 0), 0);
+                      const orderSoldQty = (order.items || []).reduce((acc, item) => acc + getLinkedSoldQuantity(order, item.itemId), 0);
                       const orderReturnQty = orderReturns.reduce((acc, ret) => acc + (ret.items || []).reduce((sub, item) => sub + (item.quantity || 0), 0), 0);
                       const isCompleted = orderExportQty > 0 && (orderSoldQty + orderReturnQty) >= orderExportQty;
                       const statusLabel = isCompleted ? 'Hoàn tất đơn hàng' : order.exportConfirmed ? 'Đã xuất kho' : 'Chờ xuất kho';
@@ -870,7 +895,7 @@ export const OrderManager: React.FC<OrderManagerProps> = ({
                   {openOrder.items.map((it: any, idx: number) => {
                     const orderReturns = returnsByOrderId[openOrder.id] || [];
                     const alreadyReturnedQty = orderReturns.reduce((a, r) => a + ((r.items || []).reduce((s: number, ri: any) => s + (ri.itemId === it.itemId ? (ri.quantity || 0) : 0), 0)), 0);
-                    const soldQty = it.soldQuantity ?? 0;
+                    const soldQty = getLinkedSoldQuantity(openOrder, it.itemId);
                     const maxAllowed = Math.max(0, (it.quantity || 0) - soldQty - alreadyReturnedQty);
                     const returnDiscount = returnDiscounts[it.itemId]?.discount || 0;
                     const returnDiscountPercent = returnDiscounts[it.itemId]?.discountPercent || 0;
@@ -936,7 +961,7 @@ export const OrderManager: React.FC<OrderManagerProps> = ({
                       if (!matched) { alert('Không tìm thấy sản phẩm theo barcode.'); return; }
                       const orderReturns = returnsByOrderId[openOrder.id] || [];
                       const alreadyReturnedQty = orderReturns.reduce((a, r) => a + ((r.items || []).reduce((s: number, ri: any) => s + (ri.itemId === matched.itemId ? (ri.quantity || 0) : 0), 0)), 0);
-                      const soldQty = matched.soldQuantity ?? 0;
+                      const soldQty = getLinkedSoldQuantity(openOrder, matched.itemId);
                       const maxAllowed = Math.max(0, (matched.quantity || 0) - soldQty - alreadyReturnedQty);
                       const current = returnSelection[matched.itemId] || 0;
                       if (maxAllowed <= 0) { alert('Đã đạt số lượng tối đa có thể trả.'); return; }
@@ -956,7 +981,7 @@ export const OrderManager: React.FC<OrderManagerProps> = ({
                   const orderReturns = returnsByOrderId[openOrder.id] || [];
                   const canComplete = (openOrder.items || []).every((it: any) => {
                     const alreadyReturnedQty = orderReturns.reduce((a, r) => a + ((r.items || []).reduce((s: number, ri: any) => s + (ri.itemId === it.itemId ? (ri.quantity || 0) : 0), 0)), 0);
-                    const soldQty = it.soldQuantity ?? 0;
+                    const soldQty = getLinkedSoldQuantity(openOrder, it.itemId);
                     return (soldQty + alreadyReturnedQty) >= (it.quantity || 0);
                   });
                   return (
@@ -1003,7 +1028,7 @@ export const OrderManager: React.FC<OrderManagerProps> = ({
                     const built: any[] = [];
                     for (const it of (openOrder.items || [])) {
                       const alreadyReturnedQty = orderReturns.reduce((a, r) => a + ((r.items || []).reduce((s: number, ri: any) => s + (ri.itemId === it.itemId ? (ri.quantity || 0) : 0), 0)), 0);
-                      const soldQty = it.soldQuantity ?? 0;
+                      const soldQty = getLinkedSoldQuantity(openOrder, it.itemId);
                       const maxAllowed = Math.max(0, (it.quantity || 0) - soldQty - alreadyReturnedQty);
                       const qty = returnSelection[it.itemId] || 0;
                       if (qty > 0) {
@@ -1016,7 +1041,7 @@ export const OrderManager: React.FC<OrderManagerProps> = ({
                     }
                     const canComplete = (openOrder.items || []).every((it: any) => {
                       const alreadyReturnedQty = orderReturns.reduce((a, r) => a + ((r.items || []).reduce((s: number, ri: any) => s + (ri.itemId === it.itemId ? (ri.quantity || 0) : 0), 0)), 0);
-                      const soldQty = it.soldQuantity ?? 0;
+                      const soldQty = getLinkedSoldQuantity(openOrder, it.itemId);
                       return (soldQty + alreadyReturnedQty) >= (it.quantity || 0);
                     });
                     if (built.length === 0 && !canComplete) { alert('Chưa chọn sản phẩm trả.'); return; }

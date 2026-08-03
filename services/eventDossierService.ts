@@ -357,6 +357,7 @@ const calculateExpenseCosts = (event: Event) =>
   (event.expenses || []).reduce((sum, expense) => sum + (Number(expense.amount) || 0), 0);
 
 const calculateSaleOrderRevenue = (order: SaleOrder) => {
+  if ((order.type || 'SALE') === 'RETURN' || order.status !== 'FINALIZED') return 0;
   const itemRevenue = (order.items || []).reduce((sum, item) => {
     const quantity = item.soldQuantity ?? item.quantity ?? 0;
     return sum + calcLineTotal(item.price || 0, quantity, item.discount || 0, item.discountPercent || 0);

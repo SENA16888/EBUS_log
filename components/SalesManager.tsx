@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Event, SaleItem, SaleOrder } from '../types';
-import { CreditCard, ImageIcon, Plus, Printer, ScanLine, Trash2, X } from 'lucide-react';
+import { CreditCard, ImageIcon, Percent, Plus, Printer, ScanLine, Search, Trash2, X } from 'lucide-react';
 import OrderManager from './OrderManager';
 import { calcLineTotal } from '../services/pricing';
 
@@ -31,6 +31,18 @@ type PaymentLine = {
   discount: number;
   discountPercent: number;
 };
+
+type PaymentMatch = {
+  orderLine: SaleOrder['items'][number];
+  catalogItem?: SaleItem;
+  returnedQuantity: number;
+  soldQuantity: number;
+  remainingQuantity: number;
+};
+
+const normalizeSearch = (value?: string) => (value || '').trim().toLowerCase();
+
+const formatCurrency = (value: number) => `${Math.max(0, value || 0).toLocaleString()}đ`;
 
 export const SalesManager: React.FC<SalesManagerProps> = ({
   saleItems,
@@ -97,9 +109,14 @@ export const SalesManager: React.FC<SalesManagerProps> = ({
   const [paymentCart, setPaymentCart] = useState<Record<string, PaymentLine>>({});
   const [paymentCode, setPaymentCode] = useState(() => `PAY-${Date.now().toString().slice(-6)}`);
   const [selectedPaymentOrderId, setSelectedPaymentOrderId] = useState('');
+  const [selectedPaymentEventId, setSelectedPaymentEventId] = useState('');
+  const [priceCheckQuery, setPriceCheckQuery] = useState('');
+  const [priceCheckDiscount, setPriceCheckDiscount] = useState(20);
   const selectedSubtotal = selectedList.reduce((acc, { item }) => acc + ((item!.price - (lineDiscounts[item!.id] || 0)) * (selection[item!.id] || 1)), 0);
   const totalAfterDiscount = Math.max(0, selectedSubtotal - orderDiscount);
   const saleOrdersOnly = useMemo(() => saleOrders.filter(order => (order.type || 'SALE') !== 'RETURN'), [saleOrders]);
+  const outboundSaleOrders = useMemo(() => saleOrdersOnly.filter(order => !order.relatedOrderId), [saleOrdersOnly]);
+  const finalizedPaymentOrders = useMemo(() => saleOrdersOnly.filter(order => !!order.relatedOrderId && order.status === 'FINALIZED'), [saleOrdersOnly]);
   const returnOrders = useMemo(() => saleOrders.filter(order => (order.type || '') === 'RETURN'), [saleOrders]);
   const returnsByOrderId = useMemo(() => {
     const map: Record<string, SaleOrder[]> = {};
@@ -110,14 +127,28 @@ export const SalesManager: React.FC<SalesManagerProps> = ({
     });
     return map;
   }, [returnOrders]);
+  const soldBySourceOrderId = useMemo(() => {
+    const map: Record<string, Record<string, number>> = {};
+    finalizedPaymentOrders.forEach(order => {
+      if (!order.relatedOrderId) return;
+      if (!map[order.relatedOrderId]) map[order.relatedOrderId] = {};
+      (order.items || []).forEach(item => {
+        const quantity = item.soldQuantity ?? item.quantity ?? 0;
+        map[order.relatedOrderId!][item.itemId] = (map[order.relatedOrderId!][item.itemId] || 0) + quantity;
+      });
+    });
+    return map;
+  }, [finalizedPaymentOrders]);
   const finalizedOrders = useMemo(() => saleOrders.filter(order => (order.type || 'SALE') !== 'RETURN' && order.status === 'FINALIZED'), [saleOrders]);
   const paymentStats = useMemo(() => {
     const soldQuantity = finalizedOrders.reduce((acc, order) => acc + (order.items || []).reduce((sum, item) => sum + (item.soldQuantity ?? item.quantity ?? 0), 0), 0);
     const collected = finalizedOrders.reduce((acc, order) => acc + Math.max(0, order.total || order.subtotal || 0), 0);
     return { soldQuantity, collected };
   }, [finalizedOrders]);
-  const activePaymentOrderId = selectedPaymentOrderId || saleOrdersOnly[0]?.id || '';
-  const selectedPaymentOrder = saleOrdersOnly.find(order => order.id === activePaymentOrderId) || null;
+  const activePaymentOrderId = selectedPaymentOrderId || outboundSaleOrders[0]?.id || '';
+  const selectedPaymentOrder = outboundSaleOrders.find(order => order.id === activePaymentOrderId) || null;
+  const activePaymentEventId = selectedPaymentEventId || selectedPaymentOrder?.eventId || '';
+  const selectedPaymentEvent = events.find(event => event.id === activePaymentEventId) || null;
   const paymentLines = Object.values(paymentCart);
   const paymentSubtotal = paymentLines.reduce((acc, line) => acc + calcLineTotal(line.price || 0, line.quantity || 0, line.discount || 0, line.discountPercent || 0), 0);
   const getReturnedQuantity = (orderId: string, itemId: string) => {
@@ -125,30 +156,63 @@ export const SalesManager: React.FC<SalesManagerProps> = ({
       acc + (order.items || []).reduce((sum, item) => sum + (item.itemId === itemId ? (item.quantity || 0) : 0), 0)
     ), 0);
   };
+  const getSoldQuantity = (orderId: string, itemId: string) => {
+    const sourceOrder = outboundSaleOrders.find(order => order.id === orderId);
+    const legacySoldQuantity = sourceOrder?.items.find(item => item.itemId === itemId)?.soldQuantity || 0;
+    return legacySoldQuantity + (soldBySourceOrderId[orderId]?.[itemId] || 0);
+  };
   const selectedOrderRemainingQuantity = selectedPaymentOrder
     ? (selectedPaymentOrder.items || []).reduce((acc, item) => {
-      const remaining = Math.max(0, (item.quantity || 0) - (item.soldQuantity || 0) - getReturnedQuantity(selectedPaymentOrder.id, item.itemId));
+      const remaining = Math.max(0, (item.quantity || 0) - getSoldQuantity(selectedPaymentOrder.id, item.itemId) - getReturnedQuantity(selectedPaymentOrder.id, item.itemId));
       const inCart = paymentCart[item.itemId]?.quantity || 0;
       return acc + Math.max(0, remaining - inCart);
     }, 0)
     : 0;
 
-  const findOrderLineForPayment = (code: string) => {
-    const normalized = code.trim().toLowerCase();
-    if (!normalized) return null;
+  const buildPaymentMatch = (orderLine: SaleOrder['items'][number]): PaymentMatch | null => {
     if (!selectedPaymentOrder) return null;
-    const matchedCatalogItem = saleItems.find(item => (item.barcode || '').trim().toLowerCase() === normalized || item.id.toLowerCase() === normalized);
-    const orderLine = (selectedPaymentOrder.items || []).find(item =>
-      item.itemId.toLowerCase() === normalized ||
-      (item.barcode || '').trim().toLowerCase() === normalized ||
-      (matchedCatalogItem && item.itemId === matchedCatalogItem.id)
-    );
-    if (!orderLine) return null;
     const catalogItem = saleItems.find(item => item.id === orderLine.itemId);
     const returnedQuantity = getReturnedQuantity(selectedPaymentOrder.id, orderLine.itemId);
-    const remainingQuantity = Math.max(0, (orderLine.quantity || 0) - (orderLine.soldQuantity || 0) - returnedQuantity);
-    return { orderLine, catalogItem, returnedQuantity, remainingQuantity };
+    const soldQuantity = getSoldQuantity(selectedPaymentOrder.id, orderLine.itemId);
+    const remainingQuantity = Math.max(0, (orderLine.quantity || 0) - soldQuantity - returnedQuantity);
+    if (remainingQuantity <= 0) return null;
+    return { orderLine, catalogItem, returnedQuantity, soldQuantity, remainingQuantity };
   };
+
+  const findPaymentMatches = (query: string) => {
+    const normalized = normalizeSearch(query);
+    if (!normalized || !selectedPaymentOrder) return [];
+    const matchedCatalogItems = saleItems.filter(item =>
+      normalizeSearch(item.barcode) === normalized ||
+      normalizeSearch(item.id) === normalized ||
+      normalizeSearch(item.name).includes(normalized)
+    );
+    const catalogIds = new Set(matchedCatalogItems.map(item => item.id));
+    return (selectedPaymentOrder.items || [])
+      .filter(item =>
+        normalizeSearch(item.itemId) === normalized ||
+        normalizeSearch(item.barcode) === normalized ||
+        normalizeSearch(item.name).includes(normalized) ||
+        catalogIds.has(item.itemId)
+      )
+      .map(buildPaymentMatch)
+      .filter((match): match is PaymentMatch => Boolean(match));
+  };
+
+  const findOrderLineForPayment = (code: string) => findPaymentMatches(code)[0] || null;
+
+  const priceCheckResults = useMemo(() => {
+    const normalized = normalizeSearch(priceCheckQuery);
+    if (!normalized) return saleItems.slice(0, 6);
+    return saleItems
+      .filter(item =>
+        normalizeSearch(item.barcode).includes(normalized) ||
+        normalizeSearch(item.id).includes(normalized) ||
+        normalizeSearch(item.name).includes(normalized) ||
+        normalizeSearch(item.category).includes(normalized)
+      )
+      .slice(0, 8);
+  }, [priceCheckQuery, saleItems]);
 
   const addPaymentItem = (match: NonNullable<ReturnType<typeof findOrderLineForPayment>>) => {
     setPaymentCart(prev => {
@@ -166,7 +230,7 @@ export const SalesManager: React.FC<SalesManagerProps> = ({
             price: match.orderLine.price,
             imageUrl: match.catalogItem?.images?.[0],
             exportedQuantity: match.orderLine.quantity || 0,
-            alreadySoldQuantity: match.orderLine.soldQuantity || 0,
+            alreadySoldQuantity: match.soldQuantity,
             returnedQuantity: match.returnedQuantity,
             quantity: 1,
             discount: 0,
@@ -198,34 +262,49 @@ export const SalesManager: React.FC<SalesManagerProps> = ({
     if (paymentLines.length === 0) { alert('Chưa có sản phẩm trong thanh toán.'); return; }
     const invalidLine = paymentLines.find(line => line.quantity <= 0 || line.quantity > Math.max(0, line.exportedQuantity - line.alreadySoldQuantity - line.returnedQuantity));
     if (invalidLine) { alert(`Số lượng bán của "${invalidLine.name}" vượt số lượng còn lại.`); return; }
-    const updatedItems = (selectedPaymentOrder.items || []).map(item => {
-      const paymentLine = paymentCart[item.itemId];
-      if (!paymentLine) return item;
-      const nextSoldQuantity = (item.soldQuantity || 0) + paymentLine.quantity;
-      const lineTotal = Math.max(0, calcLineTotal(item.price || 0, nextSoldQuantity, paymentLine.discount || 0, paymentLine.discountPercent || 0));
+    const paymentItems = paymentLines.map(line => {
+      const lineTotal = Math.max(0, calcLineTotal(line.price || 0, line.quantity || 0, line.discount || 0, line.discountPercent || 0));
       return {
-        ...item,
-        soldQuantity: nextSoldQuantity,
-        discount: paymentLine.discount || 0,
-        discountPercent: paymentLine.discountPercent || 0,
+        itemId: line.itemId,
+        barcode: line.barcode,
+        name: line.name,
+        price: line.price,
+        quantity: line.quantity,
+        soldQuantity: line.quantity,
+        discount: line.discount || 0,
+        discountPercent: line.discountPercent || 0,
         lineTotal
       };
     });
-    const subtotal = updatedItems.reduce((acc, item) => acc + Math.max(0, calcLineTotal(item.price || 0, item.soldQuantity || 0, item.discount || 0, item.discountPercent || 0)), 0);
+    const subtotal = paymentItems.reduce((acc, item) => acc + (item.lineTotal || 0), 0);
+    const paymentEvent = selectedPaymentEvent || events.find(event => event.id === selectedPaymentOrder.eventId) || null;
     const updatedOrder: SaleOrder = {
-      ...selectedPaymentOrder,
-      items: updatedItems,
+      id: paymentCode.trim() || `PAY-${Date.now()}`,
+      date: new Date().toISOString(),
+      customerName: selectedPaymentOrder.customerName,
+      customerContact: selectedPaymentOrder.customerContact,
+      items: paymentItems,
       subtotal,
-      total: Math.max(0, subtotal - (selectedPaymentOrder.orderDiscount || 0)),
+      orderDiscount: 0,
+      total: subtotal,
       note: `${selectedPaymentOrder.note || ''}${selectedPaymentOrder.note ? '\n' : ''}Thanh toán ${paymentCode}`.trim(),
+      type: 'SALE',
+      relatedOrderId: selectedPaymentOrder.id,
+      groupType: paymentEvent ? 'EVENT' : selectedPaymentOrder.groupType,
+      groupId: paymentEvent?.id || selectedPaymentOrder.groupId,
+      groupName: paymentEvent?.name || selectedPaymentOrder.groupName,
+      eventId: paymentEvent?.id || selectedPaymentOrder.eventId,
+      eventName: paymentEvent?.name || selectedPaymentOrder.eventName,
       status: 'FINALIZED'
     };
     onCreateSaleOrder(updatedOrder);
     setPaymentCart({});
     setPaymentScan('');
     setPaymentCode(`PAY-${Date.now().toString().slice(-6)}`);
-    alert('Đã cập nhật thanh toán vào đơn hàng đã xuất.');
+    alert('Đã ghi nhận giao dịch bán và gắn doanh thu theo sự kiện/ngày bán.');
   };
+
+  const paymentSearchMatches = paymentScan.trim() ? findPaymentMatches(paymentScan).slice(0, 6) : [];
 
   return (
     <div className="space-y-6">
@@ -275,14 +354,15 @@ export const SalesManager: React.FC<SalesManagerProps> = ({
                   value={activePaymentOrderId}
                   onChange={e => {
                     setSelectedPaymentOrderId(e.target.value);
+                    setSelectedPaymentEventId('');
                     setPaymentCart({});
                     setPaymentScan('');
                   }}
-                  disabled={!canEdit || saleOrdersOnly.length === 0}
+                  disabled={!canEdit || outboundSaleOrders.length === 0}
                 >
-                  {saleOrdersOnly.length === 0 ? (
+                  {outboundSaleOrders.length === 0 ? (
                     <option value="">Chưa có đơn xuất</option>
-                  ) : saleOrdersOnly.map(order => (
+                  ) : outboundSaleOrders.map(order => (
                     <option key={order.id} value={order.id}>
                       {order.id} - {order.groupName || order.eventName || order.customerName}
                     </option>
@@ -311,14 +391,51 @@ export const SalesManager: React.FC<SalesManagerProps> = ({
                     disabled={!canEdit || !selectedPaymentOrder}
                   />
                 </div>
+                {paymentSearchMatches.length > 0 && (
+                  <div className="mt-2 border border-slate-100 rounded-lg bg-white shadow-sm overflow-hidden">
+                    {paymentSearchMatches.map(match => {
+                      const discountedPrice = calcLineTotal(match.orderLine.price || 0, 1, 0, 20);
+                      return (
+                        <button
+                          key={match.orderLine.itemId}
+                          type="button"
+                          onClick={() => {
+                            addPaymentItem(match);
+                            setPaymentScan('');
+                          }}
+                          className="w-full flex items-center justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-slate-50"
+                        >
+                          <span className="min-w-0">
+                            <span className="block font-bold truncate">{match.orderLine.name}</span>
+                            <span className="block text-xs text-slate-500 truncate">{match.orderLine.barcode || match.orderLine.itemId} - còn {match.remainingQuantity}</span>
+                          </span>
+                          <span className="text-right flex-shrink-0">
+                            <span className="block font-black">{formatCurrency(match.orderLine.price || 0)}</span>
+                            <span className="block text-xs text-emerald-700">-20%: {formatCurrency(discountedPrice)}</span>
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
               <div>
                 <label className="text-xs font-black text-slate-500">Mã thanh toán</label>
                 <input className="w-full border rounded-lg p-2" value={paymentCode} onChange={e => setPaymentCode(e.target.value)} disabled={!canEdit} />
               </div>
               <div>
-                <label className="text-xs font-black text-slate-500">Khách / sự kiện</label>
-                <input className="w-full border rounded-lg p-2 bg-slate-50" value={selectedPaymentOrder ? (selectedPaymentOrder.groupName || selectedPaymentOrder.eventName || selectedPaymentOrder.customerName) : ''} readOnly />
+                <label className="text-xs font-black text-slate-500">Sự kiện ghi doanh thu</label>
+                <select
+                  className="w-full border rounded-lg p-2"
+                  value={activePaymentEventId}
+                  onChange={e => setSelectedPaymentEventId(e.target.value)}
+                  disabled={!canEdit || events.length === 0}
+                >
+                  <option value="">Không gắn sự kiện</option>
+                  {events.map(event => (
+                    <option key={event.id} value={event.id}>{event.name}</option>
+                  ))}
+                </select>
               </div>
             </div>
 
@@ -354,7 +471,10 @@ export const SalesManager: React.FC<SalesManagerProps> = ({
                       </div>
                       <div className="lg:col-span-2">
                         <label className="text-xs text-slate-500">% CK</label>
-                        <input type="number" min={0} max={100} value={line.discountPercent} onChange={e => updatePaymentLine(line.itemId, { discountPercent: Number(e.target.value) })} className="w-full border rounded p-2" disabled={!canEdit} />
+                        <div className="flex gap-1">
+                          <input type="number" min={0} max={100} value={line.discountPercent} onChange={e => updatePaymentLine(line.itemId, { discountPercent: Number(e.target.value) })} className="w-full border rounded p-2" disabled={!canEdit} />
+                          <button type="button" onClick={() => updatePaymentLine(line.itemId, { discountPercent: 20 })} className="px-2 border rounded text-xs font-bold text-emerald-700" disabled={!canEdit}>20%</button>
+                        </div>
                       </div>
                       <div className="lg:col-span-2 flex items-center justify-between gap-2">
                         <div className="font-black text-blue-700">{lineTotal.toLocaleString()}đ</div>
@@ -378,6 +498,60 @@ export const SalesManager: React.FC<SalesManagerProps> = ({
             <button onClick={finalizePayment} disabled={!canEdit || !selectedPaymentOrder || paymentLines.length === 0} className="mt-4 w-full bg-blue-600 text-white px-4 py-3 rounded-lg font-bold disabled:opacity-50">
               Đã bán
             </button>
+          </div>
+        </div>
+      </section>
+
+      <section className="bg-white border border-slate-200 rounded-lg p-4 shadow-sm">
+        <div className="flex flex-col lg:flex-row lg:items-start gap-4">
+          <div className="lg:w-72">
+            <h3 className="text-lg font-black flex items-center gap-2"><Search size={20} /> Tra giá nhanh</h3>
+            <div className="mt-3 relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+              <input
+                value={priceCheckQuery}
+                onChange={e => setPriceCheckQuery(e.target.value)}
+                placeholder="Barcode hoặc tên sản phẩm"
+                className="w-full border rounded-lg py-2 pl-9 pr-3"
+              />
+            </div>
+            <div className="mt-3 flex items-center gap-2">
+              <Percent size={16} className="text-emerald-700" />
+              <input
+                type="number"
+                min={0}
+                max={100}
+                value={priceCheckDiscount}
+                onChange={e => setPriceCheckDiscount(Math.min(100, Math.max(0, Number(e.target.value) || 0)))}
+                className="w-20 border rounded p-2"
+              />
+              <span className="text-sm text-slate-500">% chiết khấu</span>
+              <button type="button" onClick={() => setPriceCheckDiscount(20)} className="ml-auto px-3 py-2 border rounded text-sm font-bold text-emerald-700">20%</button>
+            </div>
+          </div>
+          <div className="flex-1 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+            {priceCheckResults.map(item => {
+              const discounted = calcLineTotal(item.price || 0, 1, 0, priceCheckDiscount);
+              return (
+                <div key={item.id} className="border border-slate-100 rounded-lg p-3 bg-slate-50">
+                  <div className="font-bold truncate">{item.name}</div>
+                  <div className="text-xs text-slate-500 font-mono truncate">{item.barcode || item.id}</div>
+                  <div className="mt-2 flex items-end justify-between gap-3">
+                    <div>
+                      <div className="text-xs text-slate-500">Giá niêm yết</div>
+                      <div className="font-black">{formatCurrency(item.price || 0)}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-xs text-emerald-700">Sau CK {priceCheckDiscount}%</div>
+                      <div className="font-black text-emerald-700">{formatCurrency(discounted)}</div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+            {priceCheckResults.length === 0 && (
+              <div className="border border-dashed border-slate-200 rounded-lg p-4 text-sm text-slate-400">Không tìm thấy sản phẩm.</div>
+            )}
           </div>
         </div>
       </section>

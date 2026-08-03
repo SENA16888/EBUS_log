@@ -2040,11 +2040,18 @@ const App: React.FC = () => {
     setAppState(prev => {
       const currentOrders = [...(prev.saleOrders || [])];
       const existingIndex = currentOrders.findIndex(o => o.id === order.id);
+      const nextOrders = [...currentOrders];
       if (existingIndex >= 0) {
-        currentOrders[existingIndex] = order;
-        return { ...prev, saleOrders: currentOrders };
+        nextOrders[existingIndex] = order;
+      } else {
+        nextOrders.push(order);
       }
-      return { ...prev, saleOrders: [...currentOrders, order] };
+      const events = prev.events.map(event => {
+        const currentIds = new Set((event.saleOrderIds || []).filter(id => id !== order.id));
+        if (order.eventId === event.id) currentIds.add(order.id);
+        return { ...event, saleOrderIds: Array.from(currentIds) };
+      });
+      return { ...prev, saleOrders: nextOrders, events };
     });
     addLog(`${existed ? 'Cập nhật' : 'Tạo'} phiếu bán hàng: ${order.id} cho ${order.customerName}`, 'SUCCESS');
   };
@@ -2059,7 +2066,12 @@ const App: React.FC = () => {
       const target = (prev.saleOrders || []).find(o => o.id === orderId);
       if (!target) return prev;
       const remaining = (prev.saleOrders || []).filter(o => o.id !== orderId && o.relatedOrderId !== orderId);
-      return { ...prev, saleOrders: remaining };
+      const deletedIds = new Set([orderId, ...(prev.saleOrders || []).filter(o => o.relatedOrderId === orderId).map(o => o.id)]);
+      const events = prev.events.map(event => ({
+        ...event,
+        saleOrderIds: (event.saleOrderIds || []).filter(id => !deletedIds.has(id))
+      }));
+      return { ...prev, saleOrders: remaining, events };
     });
     addLog(`Đã xóa đơn bán hàng: ${orderId}`, 'WARNING');
   };

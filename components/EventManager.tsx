@@ -2774,6 +2774,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
   };
 
   const calculateSaleOrderRevenue = (order: any) => {
+    if ((order.type || 'SALE') === 'RETURN' || order.status !== 'FINALIZED') return 0;
     const items = order.items || [];
     const subtotal = items.reduce((sum: number, item: any) => {
       // Lấy số lượng đã bán nếu có, fallback sang số lượng xuất kho để phản ánh doanh thu thực mang đi
