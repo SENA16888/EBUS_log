@@ -788,6 +788,7 @@ export const SalesManager: React.FC<SalesManagerProps> = ({
         <OrderManager
           saleOrders={saleOrders}
           saleItems={saleItems}
+          events={events}
           onCreateSaleReturn={onCreateSaleReturn}
           onCreateSaleOrder={onCreateSaleOrder}
           onDeleteSaleOrder={onDeleteSaleOrder}

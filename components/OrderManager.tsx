@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
-import { ChevronDown, ChevronUp, Printer, Trash2, X } from 'lucide-react';
-import { SaleItem, SaleOrder } from '../types';
+import { ChevronDown, ChevronUp, Pencil, Printer, Trash2, X } from 'lucide-react';
+import { Event, SaleItem, SaleOrder } from '../types';
 import { calcLineTotal } from '../services/pricing';
 
 interface OrderManagerProps {
@@ -9,6 +9,7 @@ interface OrderManagerProps {
   onCreateSaleOrder?: (order: SaleOrder) => void;
   onDeleteSaleOrder?: (orderId: string) => void;
   saleItems?: SaleItem[];
+  events?: Event[];
   onClose?: () => void;
   canEdit?: boolean;
   canDelete?: boolean;
@@ -20,6 +21,7 @@ export const OrderManager: React.FC<OrderManagerProps> = ({
   onCreateSaleOrder,
   onDeleteSaleOrder,
   saleItems = [],
+  events = [],
   onClose,
   canEdit = true,
   canDelete = true
@@ -34,6 +36,9 @@ export const OrderManager: React.FC<OrderManagerProps> = ({
   const [printMenuOrderId, setPrintMenuOrderId] = useState<string | null>(null);
   const [scanSold, setScanSold] = useState('');
   const [scanReturn, setScanReturn] = useState('');
+  const [editingPaymentOrder, setEditingPaymentOrder] = useState<SaleOrder | null>(null);
+  const [editingPaymentMeta, setEditingPaymentMeta] = useState({ date: '', customerName: '', customerContact: '', eventId: '', note: '' });
+  const [editingPaymentItems, setEditingPaymentItems] = useState<Record<string, { quantity: number; discount: number; discountPercent: number }>>({});
 
   const saleOrdersOnly = useMemo(() => saleOrders.filter(order => (order.type || 'SALE') !== 'RETURN'), [saleOrders]);
   const outboundSaleOrders = useMemo(() => saleOrdersOnly.filter(order => !order.relatedOrderId), [saleOrdersOnly]);
@@ -191,6 +196,40 @@ export const OrderManager: React.FC<OrderManagerProps> = ({
     const matchedSaleItem = saleItems.find(si => (si.barcode || '').trim() === normalized);
     if (!matchedSaleItem) return null;
     return (order.items || []).find(it => it.itemId === matchedSaleItem.id) || null;
+  };
+
+  const toDateTimeLocal = (value?: string) => {
+    if (!value) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    const offsetMs = date.getTimezoneOffset() * 60000;
+    return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
+  };
+
+  const openPaymentEdit = (payment: SaleOrder) => {
+    setEditingPaymentOrder(payment);
+    setEditingPaymentMeta({
+      date: toDateTimeLocal(payment.date),
+      customerName: payment.customerName || '',
+      customerContact: payment.customerContact || '',
+      eventId: payment.eventId || '',
+      note: payment.note || ''
+    });
+    const map: Record<string, { quantity: number; discount: number; discountPercent: number }> = {};
+    (payment.items || []).forEach(item => {
+      map[item.itemId] = {
+        quantity: item.soldQuantity ?? item.quantity ?? 0,
+        discount: item.discount || 0,
+        discountPercent: item.discountPercent || 0
+      };
+    });
+    setEditingPaymentItems(map);
+  };
+
+  const closePaymentEdit = () => {
+    setEditingPaymentOrder(null);
+    setEditingPaymentMeta({ date: '', customerName: '', customerContact: '', eventId: '', note: '' });
+    setEditingPaymentItems({});
   };
 
   const buildPrintContent = (order: SaleOrder, mode: 'EXPORT' | 'SOLD' | 'RETURN') => {
@@ -617,39 +656,6 @@ export const OrderManager: React.FC<OrderManagerProps> = ({
                                   </div>
                                 )}
                               </div>
-                              {canEdit && (
-                                <button
-                                  onClick={() => {
-                                    setOpenOrder(order);
-                                    setShowDetail(true);
-                                    const map: Record<string, { quantity: number; discount: number; discountPercent: number }> = {};
-                                    (order.items || []).forEach(item => {
-                                      map[item.itemId] = { quantity: item.soldQuantity ?? 0, discount: item.discount || 0, discountPercent: item.discountPercent || 0 };
-                                    });
-                                    setEditingItems(map);
-                                  }}
-                                  className="px-3 py-1 bg-slate-100 rounded"
-                                >
-                                  NHẬP SL HÀNG ĐÃ BÁN
-                                </button>
-                              )}
-                              {canEdit && (
-                                <button
-                                  onClick={() => {
-                                    setOpenOrder(order);
-                                    setShowReturnModal(true);
-                                    const map: Record<string, number> = {};
-                                    (order.items || []).forEach(item => {
-                                      map[item.itemId] = 0;
-                                    });
-                                    setReturnSelection(map);
-                                    setReturnDiscounts({});
-                                  }}
-                                  className="px-3 py-1 bg-yellow-100 rounded"
-                                >
-                                  Tạo trả hàng
-                                </button>
-                              )}
                               {canDelete && (
                                 <button
                                   onClick={() => {
@@ -670,9 +676,32 @@ export const OrderManager: React.FC<OrderManagerProps> = ({
                             <div className="mt-3 space-y-2 border-l-2 border-green-100 pl-4">
                               {paymentOrders.map(payment => (
                                 <div key={payment.id} className="rounded-lg bg-green-50 border border-green-100 px-3 py-2 text-xs text-slate-700">
-                                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+                                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                                     <span className="font-bold">{payment.id} • {new Date(payment.date).toLocaleString()} • {payment.eventName || payment.groupName || order.eventName || '-'}</span>
-                                    <span className="font-black text-green-700">{getOrderRevenue(payment).toLocaleString()}đ</span>
+                                    <span className="flex items-center gap-2 sm:justify-end">
+                                      <span className="font-black text-green-700">{getOrderRevenue(payment).toLocaleString()}đ</span>
+                                      {canEdit && (
+                                        <button
+                                          onClick={() => openPaymentEdit(payment)}
+                                          className="px-2 py-1 bg-white border border-green-200 rounded text-green-700 font-bold"
+                                        >
+                                          <Pencil size={12} className="inline mr-1" /> Sửa
+                                        </button>
+                                      )}
+                                      {canDelete && (
+                                        <button
+                                          onClick={() => {
+                                            if (!onDeleteSaleOrder) return;
+                                            const confirmDelete = window.confirm(`Xóa giao dịch ${payment.id}?`);
+                                            if (!confirmDelete) return;
+                                            onDeleteSaleOrder(payment.id);
+                                          }}
+                                          className="px-2 py-1 bg-red-50 border border-red-100 rounded text-red-600 font-bold"
+                                        >
+                                          <Trash2 size={12} className="inline mr-1" /> Xóa
+                                        </button>
+                                      )}
+                                    </span>
                                   </div>
                                   <div className="mt-1 text-slate-500">
                                     {(payment.items || []).map(item => `${item.name} x ${item.soldQuantity ?? item.quantity ?? 0}`).join(' • ')}
@@ -909,6 +938,179 @@ export const OrderManager: React.FC<OrderManagerProps> = ({
                     alert('Đã chốt và lưu doanh thu.');
                   }} className="px-4 py-2 bg-blue-600 text-white rounded">Chốt & Lưu</button>
                 )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {editingPaymentOrder && (
+          <div className="fixed inset-0 bg-black/40 z-60 flex items-center justify-center p-4">
+            <div className="bg-white rounded-xl w-full max-w-3xl p-6 max-h-[85vh] flex flex-col shadow-2xl">
+              <div className="flex items-center justify-between gap-3 mb-4">
+                <div>
+                  <h3 className="font-bold">Sửa giao dịch {editingPaymentOrder.id}</h3>
+                  <div className="text-xs text-slate-500">Phiếu xuất gốc: {editingPaymentOrder.relatedOrderId || '-'}</div>
+                </div>
+                <button onClick={closePaymentEdit}><X size={18} /></button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+                <div>
+                  <label className="text-xs font-bold text-slate-500">Ngày giờ bán</label>
+                  <input
+                    type="datetime-local"
+                    value={editingPaymentMeta.date}
+                    onChange={e => setEditingPaymentMeta(prev => ({ ...prev, date: e.target.value }))}
+                    className="w-full border rounded p-2"
+                    disabled={!canEdit}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-500">Sự kiện ghi doanh thu</label>
+                  <select
+                    value={editingPaymentMeta.eventId}
+                    onChange={e => setEditingPaymentMeta(prev => ({ ...prev, eventId: e.target.value }))}
+                    className="w-full border rounded p-2"
+                    disabled={!canEdit}
+                  >
+                    <option value="">Không gắn sự kiện</option>
+                    {events.map(event => (
+                      <option key={event.id} value={event.id}>{event.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-500">Khách hàng</label>
+                  <input
+                    value={editingPaymentMeta.customerName}
+                    onChange={e => setEditingPaymentMeta(prev => ({ ...prev, customerName: e.target.value }))}
+                    className="w-full border rounded p-2"
+                    disabled={!canEdit}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-500">Liên hệ</label>
+                  <input
+                    value={editingPaymentMeta.customerContact}
+                    onChange={e => setEditingPaymentMeta(prev => ({ ...prev, customerContact: e.target.value }))}
+                    className="w-full border rounded p-2"
+                    disabled={!canEdit}
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="text-xs font-bold text-slate-500">Ghi chú</label>
+                  <textarea
+                    value={editingPaymentMeta.note}
+                    onChange={e => setEditingPaymentMeta(prev => ({ ...prev, note: e.target.value }))}
+                    className="w-full border rounded p-2"
+                    disabled={!canEdit}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2 flex-1 overflow-y-auto pr-1">
+                {(editingPaymentOrder.items || []).map(item => {
+                  const draft = editingPaymentItems[item.itemId] || { quantity: item.soldQuantity ?? item.quantity ?? 0, discount: item.discount || 0, discountPercent: item.discountPercent || 0 };
+                  const lineTotal = calcLineTotal(item.price || 0, draft.quantity || 0, draft.discount || 0, draft.discountPercent || 0);
+                  return (
+                    <div key={item.itemId} className="grid grid-cols-1 md:grid-cols-12 gap-2 items-center border-b py-2">
+                      <div className="md:col-span-4">
+                        <div className="font-bold text-sm">{item.name}</div>
+                        <div className="text-xs text-slate-500">{item.barcode || item.itemId}</div>
+                      </div>
+                      <div className="text-sm md:col-span-2">{(item.price || 0).toLocaleString()}đ</div>
+                      <div className="md:col-span-2">
+                        <label className="text-xs text-slate-500">SL bán</label>
+                        <input
+                          type="number"
+                          min={0}
+                          value={draft.quantity}
+                          onChange={e => setEditingPaymentItems(prev => ({ ...prev, [item.itemId]: { ...draft, quantity: Number(e.target.value) } }))}
+                          className="w-full border rounded p-2"
+                          disabled={!canEdit}
+                        />
+                      </div>
+                      <div className="md:col-span-2">
+                        <label className="text-xs text-slate-500">CK tiền</label>
+                        <input
+                          type="number"
+                          min={0}
+                          value={draft.discount}
+                          onChange={e => setEditingPaymentItems(prev => ({ ...prev, [item.itemId]: { ...draft, discount: Number(e.target.value) } }))}
+                          className="w-full border rounded p-2"
+                          disabled={!canEdit}
+                        />
+                      </div>
+                      <div className="md:col-span-1">
+                        <label className="text-xs text-slate-500">% CK</label>
+                        <input
+                          type="number"
+                          min={0}
+                          max={100}
+                          value={draft.discountPercent}
+                          onChange={e => setEditingPaymentItems(prev => ({ ...prev, [item.itemId]: { ...draft, discountPercent: Number(e.target.value) } }))}
+                          className="w-full border rounded p-2"
+                          disabled={!canEdit}
+                        />
+                      </div>
+                      <div className="md:col-span-1 text-right font-black text-green-700">{lineTotal.toLocaleString()}đ</div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="mt-4 flex items-center justify-between gap-3">
+                <div className="text-sm text-slate-600">
+                  Tổng mới: <span className="font-black text-green-700">
+                    {(editingPaymentOrder.items || []).reduce((sum, item) => {
+                      const draft = editingPaymentItems[item.itemId] || { quantity: item.soldQuantity ?? item.quantity ?? 0, discount: item.discount || 0, discountPercent: item.discountPercent || 0 };
+                      return sum + calcLineTotal(item.price || 0, draft.quantity || 0, draft.discount || 0, draft.discountPercent || 0);
+                    }, 0).toLocaleString()}đ
+                  </span>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={closePaymentEdit} className="px-4 py-2">Đóng</button>
+                  {canEdit && (
+                    <button
+                      onClick={() => {
+                        if (!onCreateSaleOrder || !editingPaymentOrder) return;
+                        const selectedEvent = events.find(event => event.id === editingPaymentMeta.eventId);
+                        const updatedItems = (editingPaymentOrder.items || []).map(item => {
+                          const draft = editingPaymentItems[item.itemId] || { quantity: item.soldQuantity ?? item.quantity ?? 0, discount: item.discount || 0, discountPercent: item.discountPercent || 0 };
+                          const quantity = Math.max(0, Number(draft.quantity) || 0);
+                          const discount = Math.max(0, Number(draft.discount) || 0);
+                          const discountPercent = Math.min(100, Math.max(0, Number(draft.discountPercent) || 0));
+                          const lineTotal = calcLineTotal(item.price || 0, quantity, discount, discountPercent);
+                          return { ...item, quantity, soldQuantity: quantity, discount, discountPercent, lineTotal };
+                        }).filter(item => item.quantity > 0);
+                        if (updatedItems.length === 0) { alert('Giao dịch phải có ít nhất 1 sản phẩm. Nếu muốn bỏ giao dịch, hãy dùng nút Xóa.'); return; }
+                        const subtotal = updatedItems.reduce((sum, item) => sum + (item.lineTotal || 0), 0);
+                        const updatedOrder: SaleOrder = {
+                          ...editingPaymentOrder,
+                          date: editingPaymentMeta.date ? new Date(editingPaymentMeta.date).toISOString() : editingPaymentOrder.date,
+                          customerName: editingPaymentMeta.customerName,
+                          customerContact: editingPaymentMeta.customerContact,
+                          note: editingPaymentMeta.note,
+                          eventId: selectedEvent?.id,
+                          eventName: selectedEvent?.name,
+                          groupType: selectedEvent ? 'EVENT' : editingPaymentOrder.groupType,
+                          groupId: selectedEvent?.id || editingPaymentOrder.groupId,
+                          groupName: selectedEvent?.name || editingPaymentOrder.groupName,
+                          items: updatedItems,
+                          subtotal,
+                          orderDiscount: 0,
+                          total: subtotal,
+                          status: 'FINALIZED'
+                        };
+                        onCreateSaleOrder(updatedOrder);
+                        closePaymentEdit();
+                      }}
+                      className="px-4 py-2 bg-blue-600 text-white rounded font-bold"
+                    >
+                      Lưu
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
