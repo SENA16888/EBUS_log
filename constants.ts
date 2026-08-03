@@ -1,5 +1,5 @@
 
-import { InventoryItem, Event, Transaction, EventStatus, TransactionType, ComboPackage, Employee, LearningTrack, LearningProfile, CareerRank, UserAccount, InventoryReceipt, EducationActivity, InteractiveDeviceProfile } from './types';
+import { InventoryItem, Event, Transaction, EventStatus, TransactionType, ComboPackage, Employee, LearningTrack, LearningProfile, CareerRank, UserAccount, InventoryReceipt, EducationActivity, InteractiveDeviceProfile, MakerAcademicYear, MakerAnnouncement, MakerAttendanceRecord, MakerCertificate, MakerClass, MakerClassSession, MakerEnrollment, MakerPayment, MakerStudent, MakerStudentProduct } from './types';
 import { getDefaultPermissionsForRole } from './services/accessControl';
 
 export const MOCK_INVENTORY: InventoryItem[] = [];
@@ -8,6 +8,207 @@ export const MOCK_EMPLOYEES: Employee[] = [];
 export const MOCK_EVENTS: Event[] = [];
 export const MOCK_TRANSACTIONS: Transaction[] = [];
 export const MOCK_INVENTORY_RECEIPTS: InventoryReceipt[] = [];
+
+export const MOCK_MAKER_ACADEMIC_YEARS: MakerAcademicYear[] = [
+  {
+    id: 'maker-year-einstein-2026',
+    name: 'Einstein',
+    programType: '3D_MAKER',
+    startDate: '2026-08-10',
+    endDate: '2026-10-08',
+    courseCount: 3,
+    lessonsPerCourse: 6,
+    totalLessons: 18
+  }
+];
+
+export const MOCK_MAKER_CLASSES: MakerClass[] = [
+  {
+    id: 'maker-class-einstein-k1-a',
+    academicYearId: 'maker-year-einstein-2026',
+    courseName: 'Khóa 1',
+    name: 'Einstein - K1 - A',
+    daysOfWeek: [1, 3],
+    slotName: 'Slot 1',
+    startTime: '17:00',
+    endTime: '19:00',
+    teacherName: 'Phạm Trần Nhân',
+    maxStudents: 6,
+    color: '#2563eb',
+    startDate: '2026-08-10',
+    endDate: '2026-08-26'
+  },
+  {
+    id: 'maker-class-einstein-k1-b',
+    academicYearId: 'maker-year-einstein-2026',
+    courseName: 'Khóa 1',
+    name: 'Einstein - K1 - B',
+    daysOfWeek: [2, 4],
+    slotName: 'Slot 2',
+    startTime: '19:00',
+    endTime: '21:00',
+    teacherName: 'Phạm Trần Nhân',
+    maxStudents: 6,
+    color: '#eab308',
+    startDate: '2026-08-11',
+    endDate: '2026-08-27'
+  }
+];
+
+export const MOCK_MAKER_CLASS_SESSIONS: MakerClassSession[] = [
+  { id: 'maker-session-k1a-01', classId: 'maker-class-einstein-k1-a', courseName: 'Khóa 1', lessonNumber: 1, date: '2026-08-10', startTime: '17:00', endTime: '19:00', topic: 'Móc khóa cá nhân' },
+  { id: 'maker-session-k1a-02', classId: 'maker-class-einstein-k1-a', courseName: 'Khóa 1', lessonNumber: 2, date: '2026-08-12', startTime: '17:00', endTime: '19:00', topic: 'Calibration Cube' },
+  { id: 'maker-session-k1a-03', classId: 'maker-class-einstein-k1-a', courseName: 'Khóa 1', lessonNumber: 3, date: '2026-08-17', startTime: '17:00', endTime: '19:00', topic: 'Name tag 3D' },
+  { id: 'maker-session-k1a-04', classId: 'maker-class-einstein-k1-a', courseName: 'Khóa 1', lessonNumber: 4, date: '2026-08-19', startTime: '17:00', endTime: '19:00', topic: 'Phone stand' },
+  { id: 'maker-session-k1a-05', classId: 'maker-class-einstein-k1-a', courseName: 'Khóa 1', lessonNumber: 5, date: '2026-08-24', startTime: '17:00', endTime: '19:00', topic: 'Mini robot shell' },
+  { id: 'maker-session-k1a-06', classId: 'maker-class-einstein-k1-a', courseName: 'Khóa 1', lessonNumber: 6, date: '2026-08-26', startTime: '17:00', endTime: '19:00', topic: 'Project showcase' },
+  { id: 'maker-session-k1b-01', classId: 'maker-class-einstein-k1-b', courseName: 'Khóa 1', lessonNumber: 1, date: '2026-08-11', startTime: '19:00', endTime: '21:00', topic: 'Móc khóa cá nhân' },
+  { id: 'maker-session-k1b-02', classId: 'maker-class-einstein-k1-b', courseName: 'Khóa 1', lessonNumber: 2, date: '2026-08-13', startTime: '19:00', endTime: '21:00', topic: 'Calibration Cube' },
+  { id: 'maker-session-k1b-03', classId: 'maker-class-einstein-k1-b', courseName: 'Khóa 1', lessonNumber: 3, date: '2026-08-18', startTime: '19:00', endTime: '21:00', topic: 'Name tag 3D' },
+  { id: 'maker-session-k1b-04', classId: 'maker-class-einstein-k1-b', courseName: 'Khóa 1', lessonNumber: 4, date: '2026-08-20', startTime: '19:00', endTime: '21:00', topic: 'Phone stand' },
+  { id: 'maker-session-k1b-05', classId: 'maker-class-einstein-k1-b', courseName: 'Khóa 1', lessonNumber: 5, date: '2026-08-25', startTime: '19:00', endTime: '21:00', topic: 'Mini robot shell' },
+  { id: 'maker-session-k1b-06', classId: 'maker-class-einstein-k1-b', courseName: 'Khóa 1', lessonNumber: 6, date: '2026-08-27', startTime: '19:00', endTime: '21:00', topic: 'Project showcase' }
+];
+
+export const MOCK_MAKER_STUDENTS: MakerStudent[] = [
+  {
+    id: 'maker-student-001',
+    code: '3DM-2026-001',
+    fullName: 'Nguyễn Minh Khang',
+    birthDate: '2014-05-18',
+    gender: 'MALE',
+    parentName: 'Nguyễn Hoàng Nam',
+    parentPhone: '0901234567',
+    parentEmail: 'nam.nguyen@example.com',
+    parentFacebook: 'facebook.com/nam.nguyen',
+    address: 'Quận 7, TP.HCM',
+    source: 'FACEBOOK',
+    saleNote: 'Phụ huynh quan tâm lộ trình in 3D nâng cao sau khóa 1.',
+    tags: ['PAID', 'STUDYING'],
+    saleStage: 'STUDYING',
+    createdAt: '2026-07-25T09:00:00.000Z',
+    updatedAt: '2026-08-01T09:00:00.000Z'
+  },
+  {
+    id: 'maker-student-002',
+    code: '3DM-2026-002',
+    fullName: 'Lê Gia Hân',
+    birthDate: '2015-11-02',
+    gender: 'FEMALE',
+    parentName: 'Lê Thanh Mai',
+    parentPhone: '0912345678',
+    parentEmail: 'mai.le@example.com',
+    address: 'Thủ Đức, TP.HCM',
+    source: 'EINSTEIN_BUS',
+    saleNote: 'Đã trải nghiệm EBUS, thích thiết kế mô hình nhân vật.',
+    tags: ['DEPOSITED'],
+    saleStage: 'DEPOSITED',
+    createdAt: '2026-07-28T10:30:00.000Z'
+  },
+  {
+    id: 'maker-student-003',
+    code: '3DM-2026-003',
+    fullName: 'Trần Nhật Minh',
+    birthDate: '2013-03-21',
+    gender: 'MALE',
+    parentName: 'Trần Thu Hà',
+    parentPhone: '0987654321',
+    parentEmail: 'ha.tran@example.com',
+    address: 'Bình Thạnh, TP.HCM',
+    source: 'REFERRAL',
+    saleNote: 'Chờ xếp lớp tối thứ 3 + thứ 5.',
+    tags: ['CONSULTED'],
+    saleStage: 'TRIAL_BOOKED',
+    createdAt: '2026-07-30T08:15:00.000Z'
+  }
+];
+
+export const MOCK_MAKER_ENROLLMENTS: MakerEnrollment[] = [
+  {
+    id: 'maker-enroll-001',
+    studentId: 'maker-student-001',
+    academicYearId: 'maker-year-einstein-2026',
+    courseName: 'Khóa 1',
+    classId: 'maker-class-einstein-k1-a',
+    slotName: 'Slot 1',
+    startDate: '2026-08-10',
+    endDate: '2026-08-26',
+    status: 'STUDYING',
+    tuitionFee: 3000000,
+    createdAt: '2026-07-25T09:30:00.000Z'
+  },
+  {
+    id: 'maker-enroll-002',
+    studentId: 'maker-student-002',
+    academicYearId: 'maker-year-einstein-2026',
+    courseName: 'Khóa 1',
+    classId: 'maker-class-einstein-k1-a',
+    slotName: 'Slot 1',
+    startDate: '2026-08-10',
+    endDate: '2026-08-26',
+    status: 'WAITING_START',
+    tuitionFee: 3000000,
+    createdAt: '2026-07-28T11:00:00.000Z'
+  }
+];
+
+export const MOCK_MAKER_ATTENDANCE: MakerAttendanceRecord[] = [
+  {
+    id: 'maker-att-001',
+    sessionId: 'maker-session-k1a-01',
+    enrollmentId: 'maker-enroll-001',
+    studentId: 'maker-student-001',
+    status: 'PRESENT',
+    note: 'Hoàn thành móc khóa.',
+    checkedAt: '2026-08-10T12:30:00.000Z'
+  }
+];
+
+export const MOCK_MAKER_PAYMENTS: MakerPayment[] = [
+  {
+    id: 'maker-pay-001',
+    enrollmentId: 'maker-enroll-001',
+    studentId: 'maker-student-001',
+    amount: 3000000,
+    paidAt: '2026-07-25',
+    method: 'BANK_TRANSFER',
+    note: 'Đóng đủ khóa 1'
+  },
+  {
+    id: 'maker-pay-002',
+    enrollmentId: 'maker-enroll-002',
+    studentId: 'maker-student-002',
+    amount: 500000,
+    paidAt: '2026-07-28',
+    method: 'QR',
+    note: 'Đặt cọc giữ chỗ'
+  }
+];
+
+export const MOCK_MAKER_PRODUCTS: MakerStudentProduct[] = [
+  {
+    id: 'maker-product-001',
+    studentId: 'maker-student-001',
+    enrollmentId: 'maker-enroll-001',
+    sessionId: 'maker-session-k1a-01',
+    title: 'Móc khóa Khang',
+    imageUrl: 'https://images.unsplash.com/photo-1635405050330-b0824eb1bf26?auto=format&fit=crop&w=600&q=80',
+    note: 'Thiết kế chữ nổi và bo góc.',
+    uploadedAt: '2026-08-10T13:00:00.000Z'
+  }
+];
+
+export const MOCK_MAKER_CERTIFICATES: MakerCertificate[] = [];
+
+export const MOCK_MAKER_ANNOUNCEMENTS: MakerAnnouncement[] = [
+  {
+    id: 'maker-ann-001',
+    title: 'Chuẩn bị khai giảng 3D Maker Einstein',
+    body: 'Sale xác nhận học phí, giảng viên kiểm tra máy in và vật tư PLA trước ngày 10/08/2026.',
+    createdAt: '2026-08-01T08:00:00.000Z',
+    audience: 'INTERNAL'
+  }
+];
 export const MOCK_INTERACTIVE_DEVICES: InteractiveDeviceProfile[] = [
   {
     id: 'eh-broadcast-center',

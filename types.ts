@@ -717,6 +717,9 @@ export type AccessRole = 'ADMIN' | 'MANAGER' | 'STAFF';
 export type AccessPermission =
   | 'DASHBOARD_VIEW'
   | 'REPORTS_VIEW'
+  | 'COURSES_VIEW'
+  | 'COURSES_EDIT'
+  | 'COURSES_DELETE'
   | 'INVENTORY_VIEW'
   | 'INVENTORY_EDIT'
   | 'INVENTORY_DELETE'
@@ -867,6 +870,144 @@ export interface PayrollAdjustment {
   penaltyAmount?: number;
   note?: string;
   penaltyNote?: string;
+}
+
+export type StemProgramType = '3D_MAKER' | 'ROBOTICS' | 'CODING' | 'STEM_OTHER';
+export type MakerStudentGender = 'MALE' | 'FEMALE' | 'OTHER';
+export type MakerLeadSource = 'FACEBOOK' | 'WEBSITE' | 'EINSTEIN_BUS' | 'REFERRAL' | 'WALK_IN' | 'OTHER';
+export type MakerStudentTag =
+  | 'POTENTIAL'
+  | 'CONSULTED'
+  | 'DEPOSITED'
+  | 'PAID'
+  | 'STUDYING'
+  | 'PAUSED'
+  | 'GRADUATED';
+export type MakerEnrollmentStatus = 'WAITING_START' | 'STUDYING' | 'COMPLETED' | 'PAUSED' | 'DROPPED';
+export type MakerAttendanceStatus = 'PRESENT' | 'LATE' | 'EXCUSED_ABSENCE' | 'UNEXCUSED_ABSENCE';
+export type MakerPaymentMethod = 'CASH' | 'BANK_TRANSFER' | 'QR';
+export type MakerSaleStage = 'NEW' | 'CONSULTED' | 'TRIAL_BOOKED' | 'DEPOSITED' | 'ENROLLED' | 'STUDYING' | 'GRADUATED';
+
+export interface MakerStudent {
+  id: string;
+  code: string;
+  fullName: string;
+  birthDate: string;
+  gender: MakerStudentGender;
+  parentName: string;
+  parentPhone: string;
+  parentEmail?: string;
+  parentFacebook?: string;
+  address?: string;
+  source: MakerLeadSource;
+  saleNote?: string;
+  tags: MakerStudentTag[];
+  saleStage: MakerSaleStage;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface MakerAcademicYear {
+  id: string;
+  name: string;
+  programType: StemProgramType;
+  startDate: string;
+  endDate: string;
+  courseCount: number;
+  lessonsPerCourse: number;
+  totalLessons: number;
+}
+
+export interface MakerClass {
+  id: string;
+  academicYearId: string;
+  courseName: string;
+  name: string;
+  daysOfWeek: number[];
+  slotName: string;
+  startTime: string;
+  endTime: string;
+  teacherName: string;
+  maxStudents: number;
+  color: string;
+  startDate: string;
+  endDate: string;
+}
+
+export interface MakerClassSession {
+  id: string;
+  classId: string;
+  courseName: string;
+  lessonNumber: number;
+  date: string;
+  startTime: string;
+  endTime: string;
+  topic: string;
+}
+
+export interface MakerEnrollment {
+  id: string;
+  studentId: string;
+  academicYearId: string;
+  courseName: string;
+  classId: string;
+  slotName: string;
+  startDate: string;
+  endDate: string;
+  status: MakerEnrollmentStatus;
+  tuitionFee: number;
+  createdAt: string;
+}
+
+export interface MakerAttendanceRecord {
+  id: string;
+  sessionId: string;
+  enrollmentId: string;
+  studentId: string;
+  status: MakerAttendanceStatus;
+  note?: string;
+  makeupRequired?: boolean;
+  makeupSessionId?: string;
+  checkedAt: string;
+}
+
+export interface MakerPayment {
+  id: string;
+  enrollmentId: string;
+  studentId: string;
+  amount: number;
+  paidAt: string;
+  method: MakerPaymentMethod;
+  note?: string;
+}
+
+export interface MakerStudentProduct {
+  id: string;
+  studentId: string;
+  enrollmentId: string;
+  sessionId: string;
+  title: string;
+  imageUrl: string;
+  note?: string;
+  uploadedAt: string;
+}
+
+export interface MakerCertificate {
+  id: string;
+  studentId: string;
+  enrollmentId: string;
+  certificateNo: string;
+  issuedAt: string;
+  teacherName: string;
+  verifyUrl: string;
+}
+
+export interface MakerAnnouncement {
+  id: string;
+  title: string;
+  body: string;
+  createdAt: string;
+  audience: 'INTERNAL' | 'PARENTS' | 'ALL';
 }
 
 export interface EducationEquipmentLink {
@@ -1036,4 +1177,14 @@ export interface AppState {
   educationActivities?: EducationActivity[];
   interactiveDevices?: InteractiveDeviceProfile[];
   ehRooms?: string[];
+  makerStudents?: MakerStudent[];
+  makerAcademicYears?: MakerAcademicYear[];
+  makerClasses?: MakerClass[];
+  makerClassSessions?: MakerClassSession[];
+  makerEnrollments?: MakerEnrollment[];
+  makerAttendance?: MakerAttendanceRecord[];
+  makerPayments?: MakerPayment[];
+  makerProducts?: MakerStudentProduct[];
+  makerCertificates?: MakerCertificate[];
+  makerAnnouncements?: MakerAnnouncement[];
 }

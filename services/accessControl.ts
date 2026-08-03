@@ -1,6 +1,6 @@
 import { AccessPermission, AccessRole, UserAccount } from '../types';
 
-export const ACCESS_PERMISSION_VERSION = 5;
+export const ACCESS_PERMISSION_VERSION = 6;
 
 export const ACCESS_PERMISSION_GROUPS: { group: string; items: { key: AccessPermission; label: string }[] }[] = [
   {
@@ -8,6 +8,14 @@ export const ACCESS_PERMISSION_GROUPS: { group: string; items: { key: AccessPerm
     items: [
       { key: 'DASHBOARD_VIEW', label: 'Xem dashboard tong quan' },
       { key: 'REPORTS_VIEW', label: 'Xem bao cao tong hop' }
+    ]
+  },
+  {
+    group: 'Khoa hoc STEM',
+    items: [
+      { key: 'COURSES_VIEW', label: 'Xem quan ly khoa hoc' },
+      { key: 'COURSES_EDIT', label: 'Them/sua hoc vien, lop, diem danh, hoc phi' },
+      { key: 'COURSES_DELETE', label: 'Xoa du lieu khoa hoc' }
     ]
   },
   {
@@ -95,6 +103,7 @@ const LEGACY_ROLE_VIEW_PERMISSIONS: Record<Exclude<AccessRole, 'ADMIN'>, AccessP
     'DASHBOARD_VIEW',
     'REPORTS_VIEW',
     'INVENTORY_VIEW',
+    'COURSES_VIEW',
     'PACKAGES_VIEW',
     'EVENTS_VIEW',
     'EMPLOYEES_VIEW',
@@ -109,6 +118,7 @@ const LEGACY_ROLE_VIEW_PERMISSIONS: Record<Exclude<AccessRole, 'ADMIN'>, AccessP
 
 const MODULE_VIEW_DEPENDENCIES: { view: AccessPermission; related: AccessPermission[] }[] = [
   { view: 'INVENTORY_VIEW', related: ['INVENTORY_EDIT', 'INVENTORY_DELETE'] },
+  { view: 'COURSES_VIEW', related: ['COURSES_EDIT', 'COURSES_DELETE'] },
   { view: 'PACKAGES_VIEW', related: ['PACKAGES_EDIT', 'PACKAGES_DELETE'] },
   { view: 'EVENTS_VIEW', related: ['EVENTS_EDIT', 'EVENTS_DELETE'] },
   { view: 'EMPLOYEES_VIEW', related: ['EMPLOYEES_EDIT', 'EMPLOYEES_DELETE'] },
@@ -159,6 +169,8 @@ export const normalizePermissionsForRole = (
     nextPermissions.add('INTERACTIVE_DEVICES_VIEW');
     nextPermissions.add('INTERACTIVE_DEVICES_EDIT');
     nextPermissions.add('REPORTS_VIEW');
+    nextPermissions.add('COURSES_VIEW');
+    nextPermissions.add('COURSES_EDIT');
   }
 
   MODULE_VIEW_DEPENDENCIES.forEach(({ view, related }) => {

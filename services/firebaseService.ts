@@ -76,7 +76,17 @@ export const PERSISTED_STATE_KEYS = [
   'userAccounts',
   'payrollAdjustments',
   'educationActivities',
-  'interactiveDevices'
+  'interactiveDevices',
+  'makerStudents',
+  'makerAcademicYears',
+  'makerClasses',
+  'makerClassSessions',
+  'makerEnrollments',
+  'makerAttendance',
+  'makerPayments',
+  'makerProducts',
+  'makerCertificates',
+  'makerAnnouncements'
 ] as const;
 
 export type PersistedStateKey = typeof PERSISTED_STATE_KEYS[number];
@@ -98,7 +108,17 @@ const PERSISTED_COLLECTIONS: Record<PersistedStateKey, string> = {
   userAccounts: 'userAccounts',
   payrollAdjustments: 'payrollAdjustments',
   educationActivities: 'educationActivities',
-  interactiveDevices: 'interactiveDevices'
+  interactiveDevices: 'interactiveDevices',
+  makerStudents: 'makerStudents',
+  makerAcademicYears: 'makerAcademicYears',
+  makerClasses: 'makerClasses',
+  makerClassSessions: 'makerClassSessions',
+  makerEnrollments: 'makerEnrollments',
+  makerAttendance: 'makerAttendance',
+  makerPayments: 'makerPayments',
+  makerProducts: 'makerProducts',
+  makerCertificates: 'makerCertificates',
+  makerAnnouncements: 'makerAnnouncements'
 };
 
 const COLLECTION_MODEL_META_PATH = ['systemMeta', 'collectionModel'] as const;

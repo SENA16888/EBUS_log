@@ -16,8 +16,9 @@ import { EinsteinHouseOS } from './components/EinsteinHouseOS';
 import { EducationContentManager } from './components/EducationContentManager';
 import { InteractiveDeviceManager } from './components/InteractiveDeviceManager';
 import { ReportManager } from './components/ReportManager';
+import { MakerCourseManager } from './components/MakerCourseManager';
 import { AppState, InventoryItem, Event, EventStatus, Transaction, TransactionType, ComboPackage, Employee, Quotation, EventStaffAllocation, EventStaffRegistration, EventExpense, EventAdvanceRequest, LogEntry, ChecklistDirection, ChecklistStatus, ChecklistSignature, EventChecklist, EventPreparationEntry, EventInventoryIncidentType, LearningAttempt, LearningProfile, AccessPermission, UserAccount, LearningTrack, InventoryReceipt, InventoryReceiptItem, ActiveSession, PayrollAdjustment, InventoryAuditSession, InventoryAuditItem, InventoryAuditBaseline, InventoryAuditScope, EducationActivity, EducationLessonLink, InteractiveDeviceProfile, HouseOperationInstance } from './types';
-import { MOCK_INVENTORY, MOCK_EVENTS, MOCK_TRANSACTIONS, MOCK_PACKAGES, MOCK_EMPLOYEES, MOCK_LEARNING_TRACKS, MOCK_CAREER_RANKS, DEFAULT_USER_ACCOUNTS, MOCK_INVENTORY_RECEIPTS, MOCK_EDUCATION_ACTIVITIES, MOCK_INTERACTIVE_DEVICES } from './constants';
+import { MOCK_INVENTORY, MOCK_EVENTS, MOCK_TRANSACTIONS, MOCK_PACKAGES, MOCK_EMPLOYEES, MOCK_LEARNING_TRACKS, MOCK_CAREER_RANKS, DEFAULT_USER_ACCOUNTS, MOCK_INVENTORY_RECEIPTS, MOCK_EDUCATION_ACTIVITIES, MOCK_INTERACTIVE_DEVICES, MOCK_MAKER_ACADEMIC_YEARS, MOCK_MAKER_ANNOUNCEMENTS, MOCK_MAKER_ATTENDANCE, MOCK_MAKER_CERTIFICATES, MOCK_MAKER_CLASSES, MOCK_MAKER_CLASS_SESSIONS, MOCK_MAKER_ENROLLMENTS, MOCK_MAKER_PAYMENTS, MOCK_MAKER_PRODUCTS, MOCK_MAKER_STUDENTS } from './constants';
 import { MessageSquare } from 'lucide-react';
 import { ensureCollectionModelInitialized, initializeAuth, loadCollectionState, subscribeToCollectionState, subscribeToSessions, setSessionOnline, setSessionOffline, syncCollectionStateDiff, saveLearningUserState, subscribeToLearningUserState, deleteLearningUserState, subscribeToLearningUsers } from './services/firebaseService';
 import { ensureInventoryBarcodes, ensureItemBarcode, findDuplicateBarcodeItem, findItemByBarcode, generateBarcode, normalizeBarcode } from './services/barcodeService';
@@ -37,7 +38,7 @@ const getEventStaffSessions = (staff?: Pick<EventStaffAllocation, 'session' | 's
 const getEventStaffAllocationKey = (staff: EventStaffAllocation, index?: number) =>
   staff.id || staff.autoKey || `${staff.employeeId}-${staff.shiftDate || 'no-date'}-${getEventStaffSessions(staff).join('-') || staff.session || 'no-session'}-${index ?? 0}`;
 
-type AppTab = 'dashboard' | 'reports' | 'inventory' | 'stocktake' | 'events' | 'education' | 'interactiveDevices' | 'packages' | 'employees' | 'quotations' | 'sales' | 'elearning' | 'logs';
+type AppTab = 'dashboard' | 'reports' | 'courses' | 'inventory' | 'stocktake' | 'events' | 'education' | 'interactiveDevices' | 'packages' | 'employees' | 'quotations' | 'sales' | 'elearning' | 'logs';
 
 const PRIMARY_CONTENT_PROGRAM_ID = 'primary-content-program';
 
@@ -290,7 +291,17 @@ const createInitialAppState = (): AppState => ({
   payrollAdjustments: [],
   educationActivities: MOCK_EDUCATION_ACTIVITIES,
   interactiveDevices: MOCK_INTERACTIVE_DEVICES,
-  ehRooms: []
+  ehRooms: [],
+  makerStudents: MOCK_MAKER_STUDENTS,
+  makerAcademicYears: MOCK_MAKER_ACADEMIC_YEARS,
+  makerClasses: MOCK_MAKER_CLASSES,
+  makerClassSessions: MOCK_MAKER_CLASS_SESSIONS,
+  makerEnrollments: MOCK_MAKER_ENROLLMENTS,
+  makerAttendance: MOCK_MAKER_ATTENDANCE,
+  makerPayments: MOCK_MAKER_PAYMENTS,
+  makerProducts: MOCK_MAKER_PRODUCTS,
+  makerCertificates: MOCK_MAKER_CERTIFICATES,
+  makerAnnouncements: MOCK_MAKER_ANNOUNCEMENTS
 });
 
 const buildLearningProfileForUser = (
@@ -429,7 +440,17 @@ const App: React.FC = () => {
       educationActivities: state.educationActivities && state.educationActivities.length > 0 ? state.educationActivities : MOCK_EDUCATION_ACTIVITIES,
       interactiveDevices: (state.interactiveDevices && state.interactiveDevices.length > 0 ? state.interactiveDevices : MOCK_INTERACTIVE_DEVICES)
         .map(normalizeInteractiveDeviceAgendaCopy),
-      ehRooms: Array.isArray(state.ehRooms) ? dedupeTextList(state.ehRooms) : extractEhRoomsFromEvents(state.events || [])
+      ehRooms: Array.isArray(state.ehRooms) ? dedupeTextList(state.ehRooms) : extractEhRoomsFromEvents(state.events || []),
+      makerStudents: state.makerStudents && state.makerStudents.length > 0 ? state.makerStudents : MOCK_MAKER_STUDENTS,
+      makerAcademicYears: state.makerAcademicYears && state.makerAcademicYears.length > 0 ? state.makerAcademicYears : MOCK_MAKER_ACADEMIC_YEARS,
+      makerClasses: state.makerClasses && state.makerClasses.length > 0 ? state.makerClasses : MOCK_MAKER_CLASSES,
+      makerClassSessions: state.makerClassSessions && state.makerClassSessions.length > 0 ? state.makerClassSessions : MOCK_MAKER_CLASS_SESSIONS,
+      makerEnrollments: state.makerEnrollments && state.makerEnrollments.length > 0 ? state.makerEnrollments : MOCK_MAKER_ENROLLMENTS,
+      makerAttendance: state.makerAttendance || MOCK_MAKER_ATTENDANCE,
+      makerPayments: state.makerPayments || MOCK_MAKER_PAYMENTS,
+      makerProducts: state.makerProducts || MOCK_MAKER_PRODUCTS,
+      makerCertificates: state.makerCertificates || MOCK_MAKER_CERTIFICATES,
+      makerAnnouncements: state.makerAnnouncements && state.makerAnnouncements.length > 0 ? state.makerAnnouncements : MOCK_MAKER_ANNOUNCEMENTS
     };
   };
 
@@ -442,6 +463,7 @@ const App: React.FC = () => {
   const canViewLogs = can('LOGS_VIEW');
   const canViewDashboard = can('DASHBOARD_VIEW');
   const canViewReports = can('REPORTS_VIEW');
+  const canViewCourses = can('COURSES_VIEW');
   const canViewInventory = can('INVENTORY_VIEW');
   const canViewStocktake = canViewInventory;
   const canViewPackages = can('PACKAGES_VIEW');
@@ -457,6 +479,7 @@ const App: React.FC = () => {
   const firstAccessibleTab: AppTab =
     (canViewDashboard && 'dashboard') ||
     (canViewReports && 'reports') ||
+    (canViewCourses && 'courses') ||
     (canViewEvents && 'events') ||
     (canViewEducation && 'education') ||
     (canViewInteractiveDevices && 'interactiveDevices') ||
@@ -556,6 +579,7 @@ const App: React.FC = () => {
     const tabAccessMap: Record<AppTab, boolean> = {
       dashboard: canViewDashboard,
       reports: canViewReports,
+      courses: canViewCourses,
       inventory: canViewInventory,
       stocktake: canViewStocktake,
       events: canViewEvents,
@@ -576,6 +600,7 @@ const App: React.FC = () => {
     activeTab,
     canViewDashboard,
     canViewReports,
+    canViewCourses,
     canViewEmployees,
     canViewInventory,
     canViewStocktake,
@@ -1010,6 +1035,34 @@ const App: React.FC = () => {
   const handleUpdateInteractiveDevices = (devices: InteractiveDeviceProfile[]) => {
     setAppState(prev => ({ ...prev, interactiveDevices: devices }));
     addLog('Cập nhật cấu hình Thiết bị tương tác / phát thanh trung tâm', 'INFO');
+  };
+
+  const handleUpdateMakerCourseState = (makerState: {
+    students: AppState['makerStudents'];
+    academicYears: AppState['makerAcademicYears'];
+    classes: AppState['makerClasses'];
+    sessions: AppState['makerClassSessions'];
+    enrollments: AppState['makerEnrollments'];
+    attendance: AppState['makerAttendance'];
+    payments: AppState['makerPayments'];
+    products: AppState['makerProducts'];
+    certificates: AppState['makerCertificates'];
+    announcements: AppState['makerAnnouncements'];
+  }) => {
+    setAppState(prev => ({
+      ...prev,
+      makerStudents: makerState.students || [],
+      makerAcademicYears: makerState.academicYears || [],
+      makerClasses: makerState.classes || [],
+      makerClassSessions: makerState.sessions || [],
+      makerEnrollments: makerState.enrollments || [],
+      makerAttendance: makerState.attendance || [],
+      makerPayments: makerState.payments || [],
+      makerProducts: makerState.products || [],
+      makerCertificates: makerState.certificates || [],
+      makerAnnouncements: makerState.announcements || []
+    }));
+    addLog('Cap nhat module khoa hoc STEM / 3D Maker', 'INFO');
   };
 
   const handleUpdateEhRooms = (rooms: string[]) => {
@@ -2734,6 +2787,7 @@ const App: React.FC = () => {
       canViewLogs={canViewLogs}
       canViewDashboard={canViewDashboard}
       canViewReports={canViewReports}
+      canViewCourses={canViewCourses}
       canViewInventory={canViewInventory}
       canViewStocktake={canViewStocktake}
       canViewPackages={canViewPackages}
@@ -2749,6 +2803,23 @@ const App: React.FC = () => {
     >
       {activeTab === 'dashboard' && canViewDashboard && <Dashboard appState={appState} />}
       {activeTab === 'reports' && canViewReports && <ReportManager appState={appState} />}
+      {activeTab === 'courses' && canViewCourses && (
+        <MakerCourseManager
+          students={appState.makerStudents || []}
+          academicYears={appState.makerAcademicYears || []}
+          classes={appState.makerClasses || []}
+          sessions={appState.makerClassSessions || []}
+          enrollments={appState.makerEnrollments || []}
+          attendance={appState.makerAttendance || []}
+          payments={appState.makerPayments || []}
+          products={appState.makerProducts || []}
+          certificates={appState.makerCertificates || []}
+          announcements={appState.makerAnnouncements || []}
+          canEdit={can('COURSES_EDIT')}
+          canDelete={can('COURSES_DELETE')}
+          onUpdate={guard('COURSES_EDIT', handleUpdateMakerCourseState)}
+        />
+      )}
       {activeTab === 'inventory' && canViewInventory && (
         <InventoryManager 
           inventory={appState.inventory} 
