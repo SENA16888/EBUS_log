@@ -52,10 +52,15 @@ const INVENTORY_PDF_FIELDS: { key: InventoryPdfFieldKey; label: string }[] = [
   { key: 'plannedPurchase', label: 'Dự kiến mua' }
 ];
 
-const loadPdfLib = async () => {
-  if ((window as any).html2pdf) return (window as any).html2pdf;
-  const mod: any = await import('html2pdf.js');
-  return (window as any).html2pdf || mod?.default || mod;
+const loadPdfRenderLibs = async () => {
+  const [canvasMod, pdfMod]: any[] = await Promise.all([
+    import('html2canvas'),
+    import('jspdf')
+  ]);
+  return {
+    html2canvas: canvasMod?.default || canvasMod,
+    jsPDF: pdfMod?.jsPDF || pdfMod?.default || pdfMod
+  };
 };
 
 const BarcodePreview: React.FC<{ value?: string }> = ({ value }) => {
@@ -480,7 +485,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
       return rows.join('');
     };
 
-    const cards = items.map(item => {
+    const cardHtmlList = items.map(item => {
       const isLowStock = item.availableQuantity <= (item.minStock || 0);
       const imageBlock = hasField('image')
         ? `<div class="thumb">${item.imageUrl ? `<img src="${escapeHtml(item.imageUrl)}" crossorigin="anonymous" referrerpolicy="no-referrer" />` : '<span>Không có ảnh</span>'}</div>`
@@ -510,7 +515,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
           <div class="details">${buildDetailRows(item)}</div>
         </section>
       `;
-    }).join('');
+    });
     const summaryItems = [
       `<div><span class="eyebrow">Tổng mã</span><b>${items.length}</b></div>`,
       hasField('quantities') ? `<div><span class="eyebrow">Sẵn kho</span><b>${items.reduce((sum, item) => sum + (item.availableQuantity || 0), 0)}</b></div>` : '',
@@ -518,44 +523,53 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
       hasField('stockStatus') ? `<div><span class="eyebrow">Sắp hết</span><b>${items.filter(item => item.availableQuantity <= (item.minStock || 0)).length}</b></div>` : ''
     ].filter(Boolean).join('');
     const summaryBlock = summaryItems ? `<div class="summary">${summaryItems}</div>` : '';
-
-    const root = document.createElement('div');
-    root.innerHTML = `
-      <div class="inventory-pdf">
-        <style>
-          .inventory-pdf { color: #0f172a; font-family: Arial, sans-serif; padding: 22px; background: #ffffff; }
-          .report-head { border-bottom: 2px solid #e2e8f0; margin-bottom: 18px; padding-bottom: 14px; }
-          .eyebrow { color: #64748b; font-size: 10px; font-weight: 800; letter-spacing: 1.4px; text-transform: uppercase; }
-          h1 { font-size: 24px; line-height: 1.2; margin: 6px 0 6px; text-transform: uppercase; }
-          .meta { color: #475569; font-size: 12px; line-height: 1.6; }
-          .summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 12px 0 18px; }
-          .summary div { border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px; background: #f8fafc; }
-          .summary b { display: block; font-size: 18px; margin-top: 2px; }
-          .item-card { break-inside: avoid; page-break-inside: avoid; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px; margin-bottom: 12px; }
-          .item-head { display: flex; gap: 12px; align-items: flex-start; margin-bottom: 10px; }
-          .thumb { width: 92px; height: 72px; flex: 0 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; background: #f8fafc; display: flex; align-items: center; justify-content: center; overflow: hidden; color: #94a3b8; font-size: 10px; font-weight: 700; text-align: center; }
-          .thumb img { width: 100%; height: 100%; object-fit: cover; }
-          .item-title { min-width: 0; flex: 1; }
-          h2 { font-size: 16px; line-height: 1.25; margin: 0 0 8px; }
-          .badges { display: flex; flex-wrap: wrap; gap: 6px; }
-          .badges span { background: #eef2ff; border-radius: 999px; color: #3730a3; font-size: 10px; font-weight: 800; padding: 4px 8px; text-transform: uppercase; }
-          .badges .danger { background: #fee2e2; color: #b91c1c; }
-          .badges .ok { background: #dcfce7; color: #15803d; }
-          .details { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; }
-          .detail-row { border-top: 1px solid #f1f5f9; padding-top: 6px; min-width: 0; }
-          .detail-label { color: #64748b; font-size: 9px; font-weight: 800; letter-spacing: .8px; text-transform: uppercase; }
-          .detail-value { color: #0f172a; font-size: 11px; line-height: 1.45; margin-top: 2px; overflow-wrap: anywhere; }
-        </style>
-        <header class="report-head">
-          <div class="eyebrow">Module kho hàng</div>
-          <h1>Báo cáo sản phẩm kho</h1>
-          <div class="meta">Phạm vi: ${escapeHtml(scopeLabel)} | Số sản phẩm: ${items.length} | Thời gian xuất: ${escapeHtml(printedAt)}</div>
-        </header>
-        ${summaryBlock}
-        ${cards}
+    const fieldsPerItem = enabledFields.length;
+    const itemsPerPage = fieldsPerItem <= 2 ? 6 : fieldsPerItem <= 6 ? 4 : fieldsPerItem <= 10 ? 3 : 2;
+    const cardPages = Array.from({ length: Math.ceil(cardHtmlList.length / itemsPerPage) }, (_, index) =>
+      cardHtmlList.slice(index * itemsPerPage, (index + 1) * itemsPerPage).join('')
+    );
+    const reportCss = `
+      .inventory-pdf-page { box-sizing: border-box; width: 794px; min-height: 1123px; color: #0f172a; font-family: Arial, sans-serif; padding: 30px; background: #ffffff; }
+      .report-head { border-bottom: 2px solid #e2e8f0; margin-bottom: 18px; padding-bottom: 14px; }
+      .eyebrow { color: #64748b; font-size: 10px; font-weight: 800; letter-spacing: 1.4px; text-transform: uppercase; }
+      h1 { font-size: 24px; line-height: 1.2; margin: 6px 0 6px; text-transform: uppercase; }
+      .meta { color: #475569; font-size: 12px; line-height: 1.6; }
+      .summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 12px 0 18px; }
+      .summary div { border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px; background: #f8fafc; }
+      .summary b { display: block; font-size: 18px; margin-top: 2px; }
+      .page-mini-head { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e2e8f0; margin-bottom: 14px; padding-bottom: 8px; color: #64748b; font-size: 10px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; }
+      .item-card { break-inside: avoid; page-break-inside: avoid; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px; margin-bottom: 12px; }
+      .item-head { display: flex; gap: 12px; align-items: flex-start; margin-bottom: 10px; }
+      .thumb { width: 92px; height: 72px; flex: 0 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; background: #f8fafc; display: flex; align-items: center; justify-content: center; overflow: hidden; color: #94a3b8; font-size: 10px; font-weight: 700; text-align: center; }
+      .thumb img { width: 100%; height: 100%; object-fit: cover; }
+      .item-title { min-width: 0; flex: 1; }
+      h2 { font-size: 16px; line-height: 1.25; margin: 0 0 8px; }
+      .badges { display: flex; flex-wrap: wrap; gap: 6px; }
+      .badges span { background: #eef2ff; border-radius: 999px; color: #3730a3; font-size: 10px; font-weight: 800; padding: 4px 8px; text-transform: uppercase; }
+      .badges .danger { background: #fee2e2; color: #b91c1c; }
+      .badges .ok { background: #dcfce7; color: #15803d; }
+      .details { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; }
+      .detail-row { border-top: 1px solid #f1f5f9; padding-top: 6px; min-width: 0; }
+      .detail-label { color: #64748b; font-size: 9px; font-weight: 800; letter-spacing: .8px; text-transform: uppercase; }
+      .detail-value { color: #0f172a; font-size: 11px; line-height: 1.45; margin-top: 2px; overflow-wrap: anywhere; }
+    `;
+    const buildPageHtml = (body: string, pageIndex: number) => `
+      <div class="inventory-pdf-page">
+        <style>${reportCss}</style>
+        ${pageIndex === 0
+          ? `<header class="report-head">
+              <div class="eyebrow">Module kho hàng</div>
+              <h1>Báo cáo sản phẩm kho</h1>
+              <div class="meta">Phạm vi: ${escapeHtml(scopeLabel)} | Số sản phẩm: ${items.length} | Thời gian xuất: ${escapeHtml(printedAt)}</div>
+            </header>
+            ${summaryBlock}`
+          : `<div class="page-mini-head"><span>Báo cáo sản phẩm kho</span><span>Trang ${pageIndex + 1}</span></div>`
+        }
+        ${body}
       </div>
     `;
 
+    const root = document.createElement('div');
     root.style.position = 'absolute';
     root.style.left = '0';
     root.style.top = `${window.scrollY}px`;
@@ -567,16 +581,32 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
 
     try {
       setIsExportingPdf(true);
-      const html2pdf = await loadPdfLib();
-      await new Promise(resolve => window.requestAnimationFrame(() => resolve(null)));
-      await html2pdf().set({
-        margin: [8, 8, 8, 8],
-        filename: `Bao_cao_kho_hang_${filenameDate}.pdf`,
-        image: { type: 'jpeg', quality: 0.96 },
-        html2canvas: { scale: 2, useCORS: true, allowTaint: false, logging: false },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-        pagebreak: { mode: ['css', 'legacy'] }
-      }).from(root.firstElementChild || root).save();
+      const { html2canvas, jsPDF } = await loadPdfRenderLibs();
+      const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+
+      for (let index = 0; index < cardPages.length; index += 1) {
+        root.innerHTML = buildPageHtml(cardPages[index], index);
+        await new Promise(resolve => window.requestAnimationFrame(() => resolve(null)));
+        const pageNode = root.firstElementChild as HTMLElement;
+        const canvas = await html2canvas(pageNode, {
+          scale: 1.5,
+          useCORS: true,
+          allowTaint: false,
+          backgroundColor: '#ffffff',
+          logging: false,
+          width: 794,
+          height: Math.max(1123, pageNode.scrollHeight),
+          windowWidth: 794,
+          windowHeight: Math.max(1123, pageNode.scrollHeight)
+        });
+        const imageData = canvas.toDataURL('image/jpeg', 0.9);
+        if (index > 0) pdf.addPage();
+        pdf.addImage(imageData, 'JPEG', 0, 0, 210, 297);
+        canvas.width = 0;
+        canvas.height = 0;
+      }
+
+      pdf.save(`Bao_cao_kho_hang_${filenameDate}.pdf`);
       setShowPdfExportModal(false);
     } catch (err) {
       console.error('Export inventory PDF error', err);
