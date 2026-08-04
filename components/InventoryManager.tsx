@@ -556,15 +556,19 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
       </div>
     `;
 
-    root.style.position = 'fixed';
-    root.style.left = '-10000px';
-    root.style.top = '0';
-    root.style.width = '210mm';
+    root.style.position = 'absolute';
+    root.style.left = '0';
+    root.style.top = `${window.scrollY}px`;
+    root.style.width = '794px';
+    root.style.background = '#ffffff';
+    root.style.pointerEvents = 'none';
+    root.style.zIndex = '-1';
     document.body.appendChild(root);
 
     try {
       setIsExportingPdf(true);
       const html2pdf = await loadPdfLib();
+      await new Promise(resolve => window.requestAnimationFrame(() => resolve(null)));
       await html2pdf().set({
         margin: [8, 8, 8, 8],
         filename: `Bao_cao_kho_hang_${filenameDate}.pdf`,
@@ -572,7 +576,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
         html2canvas: { scale: 2, useCORS: true, allowTaint: false, logging: false },
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
         pagebreak: { mode: ['css', 'legacy'] }
-      }).from(root).save();
+      }).from(root.firstElementChild || root).save();
       setShowPdfExportModal(false);
     } catch (err) {
       console.error('Export inventory PDF error', err);
