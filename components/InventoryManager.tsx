@@ -3,13 +3,60 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { InventoryItem, InventoryReceipt, InventoryReceiptItem } from '../types';
 import { 
   Search, X, Trash2, AlertTriangle, Wrench,
-  ShoppingCart, Info, Settings2, Link as LinkIcon, CheckCircle, CalendarClock, Printer, History, FilePlus, Download, Truck
+  ShoppingCart, Info, Settings2, Link as LinkIcon, CheckCircle, CalendarClock, Printer, History, FilePlus, Download, Truck, FileText, ChevronDown
 } from 'lucide-react';
 import JsBarcode from 'jsbarcode';
 import { findDuplicateBarcodeItem, generateBarcode, normalizeBarcode } from '../services/barcodeService';
 
 const DEFAULT_CATEGORY = 'Khác';
 const BASE_CATEGORY_SUGGESTIONS = ['STEM', 'Âm thanh', 'Ánh sáng', 'Hiệu ứng', 'Hình ảnh', 'Quảng cáo', 'CSVG'];
+
+type InventoryPdfFieldKey =
+  | 'image'
+  | 'id'
+  | 'barcode'
+  | 'name'
+  | 'category'
+  | 'description'
+  | 'lifecycle'
+  | 'location'
+  | 'quantities'
+  | 'busQuantity'
+  | 'stockStatus'
+  | 'minStock'
+  | 'rentalPrice'
+  | 'usage'
+  | 'purchaseLink'
+  | 'productionNote'
+  | 'plannedPurchase';
+
+type InventoryPdfScope = 'ALL' | 'FILTERED' | 'LOW_STOCK';
+
+const INVENTORY_PDF_FIELDS: { key: InventoryPdfFieldKey; label: string }[] = [
+  { key: 'image', label: 'Hình ảnh' },
+  { key: 'id', label: 'Mã sản phẩm' },
+  { key: 'barcode', label: 'Barcode' },
+  { key: 'name', label: 'Tên sản phẩm' },
+  { key: 'category', label: 'Danh mục' },
+  { key: 'description', label: 'Mô tả' },
+  { key: 'lifecycle', label: 'Loại hàng' },
+  { key: 'location', label: 'Vị trí kho' },
+  { key: 'quantities', label: 'Số lượng' },
+  { key: 'busQuantity', label: 'Số lượng trên xe EBUS' },
+  { key: 'stockStatus', label: 'Trạng thái kho' },
+  { key: 'minStock', label: 'Ngưỡng cảnh báo' },
+  { key: 'rentalPrice', label: 'Giá thuê' },
+  { key: 'usage', label: 'Số lần sử dụng' },
+  { key: 'purchaseLink', label: 'Link mua hàng' },
+  { key: 'productionNote', label: 'Ghi chú kỹ thuật / sản xuất' },
+  { key: 'plannedPurchase', label: 'Dự kiến mua' }
+];
+
+const loadPdfLib = async () => {
+  if ((window as any).html2pdf) return (window as any).html2pdf;
+  const mod: any = await import('html2pdf.js');
+  return (window as any).html2pdf || mod?.default || mod;
+};
 
 const BarcodePreview: React.FC<{ value?: string }> = ({ value }) => {
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -89,6 +136,13 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [showPrintModal, setShowPrintModal] = useState(false);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const [showPdfExportModal, setShowPdfExportModal] = useState(false);
+  const [pdfExportScope, setPdfExportScope] = useState<InventoryPdfScope>('ALL');
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const [selectedPdfFields, setSelectedPdfFields] = useState<Record<InventoryPdfFieldKey, boolean>>(
+    () => INVENTORY_PDF_FIELDS.reduce((acc, field) => ({ ...acc, [field.key]: true }), {} as Record<InventoryPdfFieldKey, boolean>)
+  );
   
   const [importMode, setImportMode] = useState<'NEW' | 'EDIT'>('NEW');
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
@@ -246,17 +300,14 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
     URL.revokeObjectURL(url);
   };
 
-  const handleExportPurchaseList = () => {
-    if (purchaseExportItems.length === 0) {
-      alert('Không có mã sắp hết hàng để xuất.');
-      return;
-    }
-
+  const getInventoryExcelPayload = (items: InventoryItem[]) => {
     const headers = [
       'Mã sản phẩm',
       'Barcode',
       'Tên sản phẩm',
       'Danh mục',
+      'Mô tả',
+      'Link ảnh',
       'Loại hàng',
       'Vị trí kho',
       'Tổng số lượng',
@@ -276,13 +327,15 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
       'Link mua hàng / NCC'
     ];
 
-    const rows = purchaseExportItems.map(item => {
+    const rows = items.map(item => {
       const reorderQuantity = Math.max(0, (item.minStock || 0) - (item.availableQuantity || 0));
       return [
         item.id,
         item.barcode || '',
         item.name,
         item.category,
+        item.description || '',
+        item.imageUrl || '',
         item.lifecycle === 'CONSUMABLE' ? 'Tiêu hao' : 'Khấu hao',
         item.location || '',
         item.totalQuantity || 0,
@@ -303,7 +356,17 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
       ];
     });
 
+    return { headers, rows };
+  };
+
+  const handleExportPurchaseList = () => {
+    if (purchaseExportItems.length === 0) {
+      alert('Không có mã sắp hết hàng để xuất.');
+      return;
+    }
+
     const today = new Date().toISOString().slice(0, 10);
+    const { headers, rows } = getInventoryExcelPayload(purchaseExportItems);
     downloadExcelTable(
       `Danh_sach_mua_sam_sap_het_hang_${today}.xls`,
       'Danh sách mua sắm sắp hết hàng',
@@ -311,6 +374,213 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
       rows,
       [0, 1]
     );
+    setShowExportMenu(false);
+  };
+
+  const handleExportFullInventory = () => {
+    if (inventory.length === 0) {
+      alert('Kho hàng chưa có sản phẩm để xuất.');
+      return;
+    }
+
+    const today = new Date().toISOString().slice(0, 10);
+    const { headers, rows } = getInventoryExcelPayload(inventory);
+    downloadExcelTable(
+      `Toan_bo_kho_hang_${today}.xls`,
+      'Toàn bộ kho hàng',
+      headers,
+      rows,
+      [0, 1]
+    );
+    setShowExportMenu(false);
+  };
+
+  const escapeHtml = (value: unknown) =>
+    String(value ?? '').replace(/[&<>"']/g, char => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;'
+    }[char] || char));
+
+  const formatCurrency = (value?: number) => `${(value || 0).toLocaleString('vi-VN')}đ`;
+
+  const getPdfScopeItems = () => {
+    if (pdfExportScope === 'FILTERED') return filteredInventory;
+    if (pdfExportScope === 'LOW_STOCK') return inventory.filter(item => item.availableQuantity <= (item.minStock || 0));
+    return inventory;
+  };
+
+  const handleExportInventoryPdf = async () => {
+    const enabledFields = INVENTORY_PDF_FIELDS.filter(field => selectedPdfFields[field.key]);
+    if (enabledFields.length === 0) {
+      alert('Vui lòng chọn ít nhất một thông tin để xuất PDF.');
+      return;
+    }
+
+    const items = getPdfScopeItems();
+    if (items.length === 0) {
+      alert('Không có sản phẩm phù hợp để xuất PDF.');
+      return;
+    }
+
+    const hasField = (field: InventoryPdfFieldKey) => selectedPdfFields[field];
+    const scopeLabel = pdfExportScope === 'LOW_STOCK'
+      ? 'Hàng sắp hết'
+      : pdfExportScope === 'FILTERED'
+        ? 'Theo bộ lọc hiện tại'
+        : 'Toàn bộ kho';
+    const today = new Date();
+    const printedAt = today.toLocaleString('vi-VN');
+    const filenameDate = today.toISOString().slice(0, 10);
+
+    const buildDetailRows = (item: InventoryItem) => {
+      const rows: string[] = [];
+      const addRow = (label: string, value: unknown, extraClass = '') => {
+        const displayValue = value === undefined || value === null || value === '' ? '-' : value;
+        rows.push(`
+          <div class="detail-row ${extraClass}">
+            <div class="detail-label">${escapeHtml(label)}</div>
+            <div class="detail-value">${escapeHtml(displayValue)}</div>
+          </div>
+        `);
+      };
+
+      if (hasField('id')) addRow('Mã sản phẩm', item.id);
+      if (hasField('barcode')) addRow('Barcode', item.barcode || '-');
+      if (hasField('category')) addRow('Danh mục', item.category);
+      if (hasField('description')) addRow('Mô tả', item.description || '-');
+      if (hasField('lifecycle')) addRow('Loại hàng', item.lifecycle === 'CONSUMABLE' ? 'Tiêu hao' : 'Khấu hao');
+      if (hasField('location')) addRow('Vị trí kho', item.location || '-');
+      if (hasField('quantities')) {
+        addRow(
+          'Số lượng',
+          `Tổng ${item.totalQuantity || 0} | Sẵn ${item.availableQuantity || 0} | Đang dùng ${item.inUseQuantity || 0} | Bảo trì ${item.maintenanceQuantity || 0} | Hỏng ${item.brokenQuantity || 0} | Mất ${item.lostQuantity || 0}`
+        );
+      }
+      if (hasField('busQuantity')) {
+        addRow('Trên xe EBUS', typeof item.busQuantity === 'number' ? item.busQuantity : item.availableQuantity || 0);
+      }
+      if (hasField('stockStatus')) {
+        const reorderQuantity = Math.max(0, (item.minStock || 0) - (item.availableQuantity || 0));
+        addRow('Trạng thái kho', item.availableQuantity <= (item.minStock || 0) ? `Sắp hết - cần bổ sung ${reorderQuantity}` : 'Đủ tồn');
+      }
+      if (hasField('minStock')) addRow('Ngưỡng cảnh báo', item.minStock || 0);
+      if (hasField('rentalPrice')) addRow('Giá thuê', formatCurrency(item.rentalPrice));
+      if (hasField('usage')) {
+        const maxUsage = item.maxUsage ? item.maxUsage * Math.max(1, item.totalQuantity || 1) : '';
+        addRow('Số lần sử dụng', maxUsage ? `${item.usageCount || 0} / ${maxUsage}` : item.usageCount || 0);
+      }
+      if (hasField('purchaseLink')) addRow('Link mua hàng / NCC', item.purchaseLink || '-');
+      if (hasField('productionNote')) addRow('Ghi chú kỹ thuật / sản xuất', item.productionNote || '-');
+      if (hasField('plannedPurchase')) {
+        addRow('Dự kiến mua', item.plannedPurchase ? `${item.plannedQuantity || 0}${item.plannedEta ? ` - ${item.plannedEta}` : ''}` : '-');
+      }
+      return rows.join('');
+    };
+
+    const cards = items.map(item => {
+      const isLowStock = item.availableQuantity <= (item.minStock || 0);
+      const imageBlock = hasField('image')
+        ? `<div class="thumb">${item.imageUrl ? `<img src="${escapeHtml(item.imageUrl)}" crossorigin="anonymous" referrerpolicy="no-referrer" />` : '<span>Không có ảnh</span>'}</div>`
+        : '';
+      const titleBlock = hasField('name')
+        ? `<h2>${escapeHtml(item.name)}</h2>`
+        : '';
+      const badges = [
+        hasField('category') ? `<span>${escapeHtml(item.category || 'Chưa phân loại')}</span>` : '',
+        hasField('stockStatus') ? (isLowStock ? '<span class="danger">Sắp hết</span>' : '<span class="ok">Đủ tồn</span>') : ''
+      ].filter(Boolean).join('');
+      const badgesBlock = badges ? `<div class="badges">${badges}</div>` : '';
+      const headBlock = imageBlock || titleBlock || badgesBlock
+        ? `
+          <div class="item-head">
+            ${imageBlock}
+            <div class="item-title">
+              ${titleBlock}
+              ${badgesBlock}
+            </div>
+          </div>
+        `
+        : '';
+      return `
+        <section class="item-card">
+          ${headBlock}
+          <div class="details">${buildDetailRows(item)}</div>
+        </section>
+      `;
+    }).join('');
+    const summaryItems = [
+      `<div><span class="eyebrow">Tổng mã</span><b>${items.length}</b></div>`,
+      hasField('quantities') ? `<div><span class="eyebrow">Sẵn kho</span><b>${items.reduce((sum, item) => sum + (item.availableQuantity || 0), 0)}</b></div>` : '',
+      hasField('quantities') ? `<div><span class="eyebrow">Đang dùng</span><b>${items.reduce((sum, item) => sum + (item.inUseQuantity || 0), 0)}</b></div>` : '',
+      hasField('stockStatus') ? `<div><span class="eyebrow">Sắp hết</span><b>${items.filter(item => item.availableQuantity <= (item.minStock || 0)).length}</b></div>` : ''
+    ].filter(Boolean).join('');
+    const summaryBlock = summaryItems ? `<div class="summary">${summaryItems}</div>` : '';
+
+    const root = document.createElement('div');
+    root.innerHTML = `
+      <div class="inventory-pdf">
+        <style>
+          .inventory-pdf { color: #0f172a; font-family: Arial, sans-serif; padding: 22px; background: #ffffff; }
+          .report-head { border-bottom: 2px solid #e2e8f0; margin-bottom: 18px; padding-bottom: 14px; }
+          .eyebrow { color: #64748b; font-size: 10px; font-weight: 800; letter-spacing: 1.4px; text-transform: uppercase; }
+          h1 { font-size: 24px; line-height: 1.2; margin: 6px 0 6px; text-transform: uppercase; }
+          .meta { color: #475569; font-size: 12px; line-height: 1.6; }
+          .summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 12px 0 18px; }
+          .summary div { border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px; background: #f8fafc; }
+          .summary b { display: block; font-size: 18px; margin-top: 2px; }
+          .item-card { break-inside: avoid; page-break-inside: avoid; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px; margin-bottom: 12px; }
+          .item-head { display: flex; gap: 12px; align-items: flex-start; margin-bottom: 10px; }
+          .thumb { width: 92px; height: 72px; flex: 0 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; background: #f8fafc; display: flex; align-items: center; justify-content: center; overflow: hidden; color: #94a3b8; font-size: 10px; font-weight: 700; text-align: center; }
+          .thumb img { width: 100%; height: 100%; object-fit: cover; }
+          .item-title { min-width: 0; flex: 1; }
+          h2 { font-size: 16px; line-height: 1.25; margin: 0 0 8px; }
+          .badges { display: flex; flex-wrap: wrap; gap: 6px; }
+          .badges span { background: #eef2ff; border-radius: 999px; color: #3730a3; font-size: 10px; font-weight: 800; padding: 4px 8px; text-transform: uppercase; }
+          .badges .danger { background: #fee2e2; color: #b91c1c; }
+          .badges .ok { background: #dcfce7; color: #15803d; }
+          .details { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; }
+          .detail-row { border-top: 1px solid #f1f5f9; padding-top: 6px; min-width: 0; }
+          .detail-label { color: #64748b; font-size: 9px; font-weight: 800; letter-spacing: .8px; text-transform: uppercase; }
+          .detail-value { color: #0f172a; font-size: 11px; line-height: 1.45; margin-top: 2px; overflow-wrap: anywhere; }
+        </style>
+        <header class="report-head">
+          <div class="eyebrow">Module kho hàng</div>
+          <h1>Báo cáo sản phẩm kho</h1>
+          <div class="meta">Phạm vi: ${escapeHtml(scopeLabel)} | Số sản phẩm: ${items.length} | Thời gian xuất: ${escapeHtml(printedAt)}</div>
+        </header>
+        ${summaryBlock}
+        ${cards}
+      </div>
+    `;
+
+    root.style.position = 'fixed';
+    root.style.left = '-10000px';
+    root.style.top = '0';
+    root.style.width = '210mm';
+    document.body.appendChild(root);
+
+    try {
+      setIsExportingPdf(true);
+      const html2pdf = await loadPdfLib();
+      await html2pdf().set({
+        margin: [8, 8, 8, 8],
+        filename: `Bao_cao_kho_hang_${filenameDate}.pdf`,
+        image: { type: 'jpeg', quality: 0.96 },
+        html2canvas: { scale: 2, useCORS: true, allowTaint: false, logging: false },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        pagebreak: { mode: ['css', 'legacy'] }
+      }).from(root).save();
+      setShowPdfExportModal(false);
+    } catch (err) {
+      console.error('Export inventory PDF error', err);
+      alert('Không thể xuất PDF kho hàng. Vui lòng thử lại hoặc kiểm tra link ảnh.');
+    } finally {
+      root.remove();
+      setIsExportingPdf(false);
+    }
   };
 
   const getStatusMaxQty = (item: InventoryItem | null, type: string) => {
@@ -937,14 +1207,46 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
             <button onClick={() => handleOpenPrintModal()} className="flex-1 sm:flex-none bg-white text-slate-700 border border-slate-200 px-4 py-2.5 rounded-xl hover:bg-slate-100 transition flex items-center justify-center gap-2 text-[11px] font-black uppercase tracking-widest shadow-md">
               <Printer size={16} /> In mã
             </button>
+            <div className="relative flex-1 sm:flex-none">
+              <button
+                type="button"
+                onClick={() => setShowExportMenu(prev => !prev)}
+                disabled={inventory.length === 0}
+                title="Chọn loại file Excel cần xuất"
+                className="w-full bg-emerald-600 text-white px-4 py-2.5 rounded-xl hover:bg-emerald-700 transition flex items-center justify-center gap-2 text-[11px] font-black uppercase tracking-widest shadow-md disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed disabled:shadow-none"
+              >
+                <Download size={16} /> Xuất Excel <ChevronDown size={14} />
+              </button>
+              {showExportMenu && (
+                <div className="absolute right-0 mt-2 w-64 bg-white border border-slate-100 rounded-xl shadow-xl z-[80] overflow-hidden p-1">
+                  <button
+                    type="button"
+                    onClick={handleExportPurchaseList}
+                    disabled={purchaseExportItems.length === 0}
+                    className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-orange-50 disabled:hover:bg-white disabled:text-slate-300 text-xs font-bold text-slate-700"
+                  >
+                    Xuất hàng sắp hết
+                    <span className="block text-[10px] text-slate-400 font-semibold">{purchaseExportItems.length} mã theo bộ lọc hiện tại</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleExportFullInventory}
+                    className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-emerald-50 text-xs font-bold text-slate-700"
+                  >
+                    Xuất toàn bộ kho
+                    <span className="block text-[10px] text-slate-400 font-semibold">{inventory.length} mã sản phẩm</span>
+                  </button>
+                </div>
+              )}
+            </div>
             <button
               type="button"
-              onClick={handleExportPurchaseList}
-              disabled={purchaseExportItems.length === 0}
-              title="Xuất danh sách mã sắp hết hàng cho đội mua sắm"
-              className="flex-1 sm:flex-none bg-emerald-600 text-white px-4 py-2.5 rounded-xl hover:bg-emerald-700 transition flex items-center justify-center gap-2 text-[11px] font-black uppercase tracking-widest shadow-md disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed disabled:shadow-none"
+              onClick={() => setShowPdfExportModal(true)}
+              disabled={inventory.length === 0}
+              title="Xuất PDF thông tin sản phẩm kho"
+              className="flex-1 sm:flex-none bg-indigo-600 text-white px-4 py-2.5 rounded-xl hover:bg-indigo-700 transition flex items-center justify-center gap-2 text-[11px] font-black uppercase tracking-widest shadow-md disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed disabled:shadow-none"
             >
-              <Download size={16} /> Xuất Excel
+              <FileText size={16} /> Xuất PDF
             </button>
             {canCreateReceipt && (
               <button
@@ -1187,6 +1489,116 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
       </div>
 
       {/* --- MODALS SECTION --- */}
+
+      {/* 0. Modal Xuất PDF kho hàng */}
+      {showPdfExportModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[115] flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-3xl shadow-2xl overflow-hidden">
+            <div className="p-6 border-b bg-slate-50 flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[10px] font-black text-indigo-500 uppercase tracking-widest">Xuất PDF kho hàng</p>
+                <h3 className="text-2xl font-black text-slate-800">Chọn thông tin sản phẩm cần xuất</h3>
+                <p className="text-sm text-slate-500">Chỉ những mục được tick mới xuất ra file PDF. Ảnh sản phẩm sẽ được đưa vào báo cáo nếu link ảnh cho phép tải.</p>
+              </div>
+              <button onClick={() => setShowPdfExportModal(false)} className="p-2 rounded-xl hover:bg-slate-200">
+                <X size={22}/>
+              </button>
+            </div>
+
+            <div className="p-6 space-y-5 max-h-[72vh] overflow-y-auto">
+              <div>
+                <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Phạm vi xuất</label>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                  {[
+                    { key: 'ALL' as InventoryPdfScope, label: 'Toàn bộ kho', count: inventory.length },
+                    { key: 'FILTERED' as InventoryPdfScope, label: 'Theo bộ lọc hiện tại', count: filteredInventory.length },
+                    { key: 'LOW_STOCK' as InventoryPdfScope, label: 'Hàng sắp hết', count: inventory.filter(item => item.availableQuantity <= (item.minStock || 0)).length }
+                  ].map(option => (
+                    <button
+                      key={option.key}
+                      type="button"
+                      onClick={() => setPdfExportScope(option.key)}
+                      className={`rounded-xl border-2 px-4 py-3 text-left transition ${
+                        pdfExportScope === option.key
+                          ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
+                          : 'border-slate-100 bg-white text-slate-600 hover:border-slate-200'
+                      }`}
+                    >
+                      <span className="block text-xs font-black uppercase tracking-widest">{option.label}</span>
+                      <span className="text-[11px] font-semibold text-slate-400">{option.count} sản phẩm</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
+                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest">Thông tin cần xuất</label>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedPdfFields(INVENTORY_PDF_FIELDS.reduce((acc, field) => ({ ...acc, [field.key]: true }), {} as Record<InventoryPdfFieldKey, boolean>))}
+                      className="px-3 py-1.5 rounded-lg bg-slate-100 text-[10px] font-black uppercase tracking-widest text-slate-600 hover:bg-slate-200"
+                    >
+                      Chọn tất cả
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedPdfFields(INVENTORY_PDF_FIELDS.reduce((acc, field) => ({ ...acc, [field.key]: false }), {} as Record<InventoryPdfFieldKey, boolean>))}
+                      className="px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:bg-slate-50"
+                    >
+                      Bỏ chọn
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                  {INVENTORY_PDF_FIELDS.map(field => (
+                    <label
+                      key={field.key}
+                      className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 cursor-pointer transition ${
+                        selectedPdfFields[field.key]
+                          ? 'border-indigo-200 bg-indigo-50 text-indigo-700'
+                          : 'border-slate-100 bg-white text-slate-500 hover:border-slate-200'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        className="w-4 h-4 accent-indigo-600"
+                        checked={selectedPdfFields[field.key]}
+                        onChange={e => setSelectedPdfFields(prev => ({ ...prev, [field.key]: e.target.checked }))}
+                      />
+                      <span className="text-xs font-black uppercase tracking-widest leading-tight">{field.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="p-6 border-t bg-slate-50 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+              <p className="text-xs text-slate-500">
+                PDF sẽ dùng khổ A4, mỗi sản phẩm là một khối thông tin có ảnh nếu mục hình ảnh được chọn.
+              </p>
+              <div className="flex items-center justify-end gap-3">
+                <button
+                  onClick={() => setShowPdfExportModal(false)}
+                  className="px-5 py-3 text-slate-500 font-black uppercase tracking-widest text-xs hover:bg-slate-200 rounded-xl"
+                  disabled={isExportingPdf}
+                >
+                  Hủy
+                </button>
+                <button
+                  onClick={() => void handleExportInventoryPdf()}
+                  disabled={isExportingPdf}
+                  className="px-7 py-3 bg-indigo-600 text-white rounded-xl font-black uppercase tracking-widest text-xs shadow-lg shadow-indigo-200 hover:bg-indigo-700 disabled:bg-slate-300 disabled:shadow-none"
+                >
+                  {isExportingPdf ? 'Đang xuất...' : 'Xuất PDF'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 1. Modal Thêm/Sửa Thiết Bị */}
       {showImportModal && (
