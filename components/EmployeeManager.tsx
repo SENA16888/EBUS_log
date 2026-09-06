@@ -1,6 +1,44 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Employee, Event, EventStatus, EventStaffAllocation, EventVenueType, PayrollAdjustment } from '../types';
-import { Search, Plus, X, Pencil, Trash2, Phone, Mail, User, DollarSign, Calendar, Printer, ChevronDown, ChevronUp } from 'lucide-react';
+import { Search, Plus, X, Pencil, Trash2, Phone, Mail, DollarSign, Calendar, Printer, ChevronDown, ChevronUp, FileText } from 'lucide-react';
+
+type EmployeePdfFieldKey =
+  | 'id'
+  | 'name'
+  | 'role'
+  | 'phone'
+  | 'email'
+  | 'baseRate'
+  | 'status'
+  | 'participationCount'
+  | 'upcomingSchedule'
+  | 'lastSchedule';
+
+type EmployeePdfScope = 'ALL' | 'FILTERED' | 'ACTIVE' | 'INACTIVE';
+
+const EMPLOYEE_PDF_FIELDS: { key: EmployeePdfFieldKey; label: string }[] = [
+  { key: 'id', label: 'Mã nhân sự' },
+  { key: 'name', label: 'Tên' },
+  { key: 'role', label: 'Vị trí / chuyên môn' },
+  { key: 'phone', label: 'SĐT' },
+  { key: 'email', label: 'Email' },
+  { key: 'baseRate', label: 'Lương gợi ý' },
+  { key: 'status', label: 'Tình trạng làm việc' },
+  { key: 'participationCount', label: 'Số sự kiện đã tham gia' },
+  { key: 'upcomingSchedule', label: 'Lịch sắp tới' },
+  { key: 'lastSchedule', label: 'Lịch gần nhất' }
+];
+
+const loadEmployeePdfRenderLibs = async () => {
+  const [canvasMod, pdfMod]: any[] = await Promise.all([
+    import('html2canvas'),
+    import('jspdf')
+  ]);
+  return {
+    html2canvas: canvasMod?.default || canvasMod,
+    jsPDF: pdfMod?.jsPDF || pdfMod?.default || pdfMod
+  };
+};
 
 interface EmployeeManagerProps {
   employees: Employee[];
@@ -65,6 +103,12 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
 
   const [searchTerm, setSearchTerm] = useState('');
   const [showModal, setShowModal] = useState(false);
+  const [showEmployeePdfModal, setShowEmployeePdfModal] = useState(false);
+  const [employeePdfScope, setEmployeePdfScope] = useState<EmployeePdfScope>('ALL');
+  const [isExportingEmployeePdf, setIsExportingEmployeePdf] = useState(false);
+  const [selectedEmployeePdfFields, setSelectedEmployeePdfFields] = useState<Record<EmployeePdfFieldKey, boolean>>(
+    () => EMPLOYEE_PDF_FIELDS.reduce((acc, field) => ({ ...acc, [field.key]: true }), {} as Record<EmployeePdfFieldKey, boolean>)
+  );
   const [editingId, setEditingId] = useState<string | null>(null);
   const [payrollMonth, setPayrollMonth] = useState(() => new Date().toISOString().slice(0, 7));
   const [payrollVenue, setPayrollVenue] = useState<PayrollVenueFilter>('ALL');
@@ -188,6 +232,200 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
       return acc;
     }, {} as Record<string, { participationCount: number; upcoming: StaffEventInfo[]; history: StaffEventInfo[] }>);
   }, [employees, events, todayStr]);
+
+  const escapeHtml = (value: unknown) =>
+    String(value ?? '').replace(/[&<>"']/g, char => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;'
+    }[char] || char));
+
+  const formatCurrency = (value?: number) => `${(value || 0).toLocaleString('vi-VN')}đ`;
+
+  const getEmployeePdfScopeItems = () => {
+    if (employeePdfScope === 'FILTERED') return filteredEmployees;
+    if (employeePdfScope === 'ACTIVE') return visibleEmployees.filter(emp => !emp.inactive);
+    if (employeePdfScope === 'INACTIVE') return visibleEmployees.filter(emp => emp.inactive);
+    return visibleEmployees;
+  };
+
+  const getScheduleSummary = (info?: StaffEventInfo) => {
+    if (!info) return '-';
+    const sessions = getStaffSessions(info.staff);
+    const sessionText = sessions.length ? sessions.map(sess => sessionLabel[sess] || sess).join(', ') : '';
+    return [
+      formatDate(info.date),
+      info.event.name,
+      sessionText ? `Ca: ${sessionText}` : '',
+      info.staff.task || ''
+    ].filter(Boolean).join(' - ');
+  };
+
+  const getEmployeePdfValue = (emp: Employee, fieldKey: EmployeePdfFieldKey) => {
+    const stats = employeeEventStats[emp.id] || { participationCount: 0, upcoming: [], history: [] };
+    const lastHistory = stats.history[stats.history.length - 1];
+
+    switch (fieldKey) {
+      case 'id':
+        return emp.id;
+      case 'name':
+        return emp.name;
+      case 'role':
+        return emp.role || 'Chưa có vị trí';
+      case 'phone':
+        return emp.phone || '-';
+      case 'email':
+        return emp.email || '-';
+      case 'baseRate':
+        return emp.baseRate ? formatCurrency(emp.baseRate) : '-';
+      case 'status':
+        return emp.inactive ? 'Đã nghỉ' : 'Đang làm';
+      case 'participationCount':
+        return stats.participationCount;
+      case 'upcomingSchedule':
+        return getScheduleSummary(stats.upcoming[0]);
+      case 'lastSchedule':
+        return getScheduleSummary(lastHistory);
+      default:
+        return '-';
+    }
+  };
+
+  const handleExportEmployeePdf = async () => {
+    const enabledFields = EMPLOYEE_PDF_FIELDS.filter(field => selectedEmployeePdfFields[field.key]);
+    if (enabledFields.length === 0) {
+      alert('Vui lòng chọn ít nhất một thông tin để xuất PDF.');
+      return;
+    }
+
+    const items = getEmployeePdfScopeItems();
+    if (items.length === 0) {
+      alert('Không có nhân sự phù hợp để xuất PDF.');
+      return;
+    }
+
+    const scopeLabel = employeePdfScope === 'FILTERED'
+      ? 'Theo tìm kiếm hiện tại'
+      : employeePdfScope === 'ACTIVE'
+        ? 'Đang làm'
+        : employeePdfScope === 'INACTIVE'
+          ? 'Đã nghỉ'
+          : 'Toàn bộ nhân sự';
+    const today = new Date();
+    const printedAt = today.toLocaleString('vi-VN');
+    const filenameDate = today.toISOString().slice(0, 10);
+    const rowsPerPage = enabledFields.length <= 5 ? 18 : enabledFields.length <= 8 ? 14 : 10;
+    const rowPages = Array.from({ length: Math.ceil(items.length / rowsPerPage) }, (_, index) =>
+      items.slice(index * rowsPerPage, (index + 1) * rowsPerPage)
+    );
+    const headersHtml = [
+      '<th class="index-col">STT</th>',
+      ...enabledFields.map(field => `<th>${escapeHtml(field.label)}</th>`)
+    ].join('');
+    const reportCss = `
+      .employee-pdf-page { box-sizing: border-box; width: 1123px; min-height: 794px; color: #0f172a; font-family: Arial, sans-serif; padding: 28px; background: #ffffff; }
+      .report-head { border-bottom: 2px solid #e2e8f0; margin-bottom: 16px; padding-bottom: 12px; }
+      .eyebrow { color: #64748b; font-size: 10px; font-weight: 800; letter-spacing: 1.2px; text-transform: uppercase; }
+      h1 { font-size: 24px; line-height: 1.2; margin: 5px 0; text-transform: uppercase; }
+      .meta { color: #475569; font-size: 12px; line-height: 1.55; }
+      .summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 12px 0 16px; }
+      .summary div { border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px; background: #f8fafc; }
+      .summary span { display: block; color: #64748b; font-size: 9px; font-weight: 800; letter-spacing: .8px; text-transform: uppercase; }
+      .summary b { display: block; font-size: 18px; margin-top: 2px; }
+      .page-mini-head { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e2e8f0; margin-bottom: 12px; padding-bottom: 8px; color: #64748b; font-size: 10px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; }
+      table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+      th, td { border: 1px solid #e2e8f0; padding: 7px; font-size: 10px; line-height: 1.35; vertical-align: top; overflow-wrap: anywhere; }
+      th { background: #f1f5f9; color: #334155; font-weight: 800; text-align: left; text-transform: uppercase; }
+      tbody tr:nth-child(even) td { background: #f8fafc; }
+      .index-col { width: 34px; text-align: center; }
+      .status-active { color: #047857; font-weight: 800; }
+      .status-inactive { color: #64748b; font-weight: 800; }
+    `;
+    const buildRowsHtml = (pageRows: Employee[], pageIndex: number) => pageRows.map((emp, rowIndex) => {
+      const absoluteIndex = pageIndex * rowsPerPage + rowIndex + 1;
+      const cells = enabledFields.map(field => {
+        const value = getEmployeePdfValue(emp, field.key);
+        const statusClass = field.key === 'status' ? (emp.inactive ? ' class="status-inactive"' : ' class="status-active"') : '';
+        return `<td${statusClass}>${escapeHtml(value)}</td>`;
+      }).join('');
+      return `<tr><td class="index-col">${absoluteIndex}</td>${cells}</tr>`;
+    }).join('');
+    const summaryHtml = `
+      <div class="summary">
+        <div><span>Tổng nhân sự</span><b>${items.length}</b></div>
+        <div><span>Đang làm</span><b>${items.filter(emp => !emp.inactive).length}</b></div>
+        <div><span>Đã nghỉ</span><b>${items.filter(emp => emp.inactive).length}</b></div>
+        <div><span>Cột xuất</span><b>${enabledFields.length}</b></div>
+      </div>
+    `;
+    const buildPageHtml = (pageRows: Employee[], pageIndex: number) => `
+      <div class="employee-pdf-page">
+        <style>${reportCss}</style>
+        ${pageIndex === 0
+          ? `<header class="report-head">
+              <div class="eyebrow">Module nhân sự</div>
+              <h1>Danh sách nhân sự</h1>
+              <div class="meta">Phạm vi: ${escapeHtml(scopeLabel)} | Số nhân sự: ${items.length} | Thời gian xuất: ${escapeHtml(printedAt)}</div>
+            </header>
+            ${summaryHtml}`
+          : `<div class="page-mini-head"><span>Danh sách nhân sự</span><span>Trang ${pageIndex + 1}</span></div>`
+        }
+        <table>
+          <thead><tr>${headersHtml}</tr></thead>
+          <tbody>${buildRowsHtml(pageRows, pageIndex)}</tbody>
+        </table>
+      </div>
+    `;
+
+    const root = document.createElement('div');
+    root.style.position = 'absolute';
+    root.style.left = '0';
+    root.style.top = `${window.scrollY}px`;
+    root.style.width = '1123px';
+    root.style.background = '#ffffff';
+    root.style.pointerEvents = 'none';
+    root.style.zIndex = '-1';
+    document.body.appendChild(root);
+
+    try {
+      setIsExportingEmployeePdf(true);
+      const { html2canvas, jsPDF } = await loadEmployeePdfRenderLibs();
+      const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'landscape' });
+
+      for (let index = 0; index < rowPages.length; index += 1) {
+        root.innerHTML = buildPageHtml(rowPages[index], index);
+        await new Promise(resolve => window.requestAnimationFrame(() => resolve(null)));
+        const pageNode = root.firstElementChild as HTMLElement;
+        const canvas = await html2canvas(pageNode, {
+          scale: 1.5,
+          useCORS: true,
+          allowTaint: false,
+          backgroundColor: '#ffffff',
+          logging: false,
+          width: 1123,
+          height: Math.max(794, pageNode.scrollHeight),
+          windowWidth: 1123,
+          windowHeight: Math.max(794, pageNode.scrollHeight)
+        });
+        const imageData = canvas.toDataURL('image/jpeg', 0.9);
+        if (index > 0) pdf.addPage();
+        pdf.addImage(imageData, 'JPEG', 0, 0, 297, 210);
+        canvas.width = 0;
+        canvas.height = 0;
+      }
+
+      pdf.save(`Danh_sach_nhan_su_${filenameDate}.pdf`);
+      setShowEmployeePdfModal(false);
+    } catch (err) {
+      console.error('Export employee PDF error', err);
+      alert('Không thể xuất PDF danh sách nhân sự. Vui lòng thử lại.');
+    } finally {
+      root.remove();
+      setIsExportingEmployeePdf(false);
+    }
+  };
   const payrollAdjustmentMap = useMemo(() => {
     const map = new Map<string, PayrollAdjustment>();
     payrollAdjustments.forEach(adj => {
@@ -436,14 +674,24 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
     <div className="space-y-5">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
         <h2 className="text-xl font-semibold text-gray-800">{selfServiceOnly ? 'Bảng Lương Của Tôi' : 'Danh Mục Nhân Sự'}</h2>
-        {canEdit && (
-          <button 
-            onClick={handleOpenAdd}
-            className="bg-blue-600 text-white px-3 py-2 rounded-md hover:bg-blue-700 transition flex items-center gap-2 text-sm font-medium shadow-sm"
-          >
-            <Plus size={14} /> Thêm Nhân Viên
-          </button>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {!selfServiceOnly && (
+            <button
+              onClick={() => setShowEmployeePdfModal(true)}
+              className="bg-slate-900 text-white px-3 py-2 rounded-md hover:bg-slate-950 transition flex items-center gap-2 text-sm font-medium shadow-sm"
+            >
+              <FileText size={14} /> Xuất PDF
+            </button>
+          )}
+          {canEdit && (
+            <button
+              onClick={handleOpenAdd}
+              className="bg-blue-600 text-white px-3 py-2 rounded-md hover:bg-blue-700 transition flex items-center gap-2 text-sm font-medium shadow-sm"
+            >
+              <Plus size={14} /> Thêm Nhân Viên
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="bg-white border border-slate-100 rounded-xl shadow-sm p-4">
@@ -793,6 +1041,121 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
          <div className="text-center py-20 text-gray-500">
            Không tìm thấy nhân viên nào.
          </div>
+      )}
+
+      {/* Modal Xuất PDF danh sách nhân sự */}
+      {showEmployeePdfModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[115] flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-3xl shadow-2xl overflow-hidden">
+            <div className="p-6 border-b bg-slate-50 flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[10px] font-black text-blue-500 uppercase tracking-widest">Xuất PDF nhân sự</p>
+                <h3 className="text-2xl font-black text-slate-800">Chọn thông tin nhân sự cần xuất</h3>
+                <p className="text-sm text-slate-500">Chỉ những mục được tick mới xuất ra file PDF dạng bảng.</p>
+              </div>
+              <button
+                onClick={() => setShowEmployeePdfModal(false)}
+                className="p-2 rounded-xl hover:bg-slate-200"
+                disabled={isExportingEmployeePdf}
+              >
+                <X size={22}/>
+              </button>
+            </div>
+
+            <div className="p-6 space-y-5 max-h-[72vh] overflow-y-auto">
+              <div>
+                <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Phạm vi xuất</label>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+                  {[
+                    { key: 'ALL' as EmployeePdfScope, label: 'Toàn bộ', count: visibleEmployees.length },
+                    { key: 'FILTERED' as EmployeePdfScope, label: 'Theo tìm kiếm', count: filteredEmployees.length },
+                    { key: 'ACTIVE' as EmployeePdfScope, label: 'Đang làm', count: visibleEmployees.filter(emp => !emp.inactive).length },
+                    { key: 'INACTIVE' as EmployeePdfScope, label: 'Đã nghỉ', count: visibleEmployees.filter(emp => emp.inactive).length }
+                  ].map(option => (
+                    <button
+                      key={option.key}
+                      type="button"
+                      onClick={() => setEmployeePdfScope(option.key)}
+                      className={`rounded-xl border-2 px-4 py-3 text-left transition ${
+                        employeePdfScope === option.key
+                          ? 'border-blue-500 bg-blue-50 text-blue-700'
+                          : 'border-slate-100 bg-white text-slate-600 hover:border-slate-200'
+                      }`}
+                    >
+                      <span className="block text-xs font-black uppercase tracking-widest">{option.label}</span>
+                      <span className="text-[11px] font-semibold text-slate-400">{option.count} nhân sự</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
+                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest">Thông tin cần xuất</label>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedEmployeePdfFields(EMPLOYEE_PDF_FIELDS.reduce((acc, field) => ({ ...acc, [field.key]: true }), {} as Record<EmployeePdfFieldKey, boolean>))}
+                      className="px-3 py-1.5 rounded-lg bg-slate-100 text-[10px] font-black uppercase tracking-widest text-slate-600 hover:bg-slate-200"
+                    >
+                      Chọn tất cả
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedEmployeePdfFields(EMPLOYEE_PDF_FIELDS.reduce((acc, field) => ({ ...acc, [field.key]: false }), {} as Record<EmployeePdfFieldKey, boolean>))}
+                      className="px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:bg-slate-50"
+                    >
+                      Bỏ chọn
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                  {EMPLOYEE_PDF_FIELDS.map(field => (
+                    <label
+                      key={field.key}
+                      className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 cursor-pointer transition ${
+                        selectedEmployeePdfFields[field.key]
+                          ? 'border-blue-200 bg-blue-50 text-blue-700'
+                          : 'border-slate-100 bg-white text-slate-500 hover:border-slate-200'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        className="w-4 h-4 accent-blue-600"
+                        checked={selectedEmployeePdfFields[field.key]}
+                        onChange={e => setSelectedEmployeePdfFields(prev => ({ ...prev, [field.key]: e.target.checked }))}
+                      />
+                      <span className="text-xs font-black uppercase tracking-widest leading-tight">{field.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="p-6 border-t bg-slate-50 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+              <p className="text-xs text-slate-500">
+                PDF dùng khổ A4 ngang để danh sách nhân sự hiển thị theo dạng bảng.
+              </p>
+              <div className="flex items-center justify-end gap-3">
+                <button
+                  onClick={() => setShowEmployeePdfModal(false)}
+                  className="px-5 py-3 text-slate-500 font-black uppercase tracking-widest text-xs hover:bg-slate-200 rounded-xl"
+                  disabled={isExportingEmployeePdf}
+                >
+                  Hủy
+                </button>
+                <button
+                  onClick={() => void handleExportEmployeePdf()}
+                  disabled={isExportingEmployeePdf}
+                  className="px-7 py-3 bg-blue-600 text-white rounded-xl font-black uppercase tracking-widest text-xs shadow-lg shadow-blue-200 hover:bg-blue-700 disabled:bg-slate-300 disabled:shadow-none"
+                >
+                  {isExportingEmployeePdf ? 'Đang xuất...' : 'Xuất PDF'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Modal */}

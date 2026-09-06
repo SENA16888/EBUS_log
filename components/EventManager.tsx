@@ -1165,6 +1165,57 @@ const formatDateWithDay = (dateStr?: string | null) => {
   return `${parsed.toLocaleDateString('vi-VN')} (${day})`;
 };
 
+const parseLocalDate = (dateStr?: string | null) => {
+  if (!dateStr) return null;
+  const [year, month, day] = dateStr.slice(0, 10).split('-').map(Number);
+  if (!year || !month || !day) return null;
+  const parsed = new Date(year, month - 1, day);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const isDateInMonth = (dateStr: string | undefined, year: number, month: number) => {
+  const parsed = parseLocalDate(dateStr);
+  return !!parsed && parsed.getFullYear() === year && parsed.getMonth() === month;
+};
+
+const isEventInMonth = (event: Event, year: number, month: number) => {
+  const schedule = getEventSchedule(event);
+  if (schedule.some(item => isDateInMonth(item.date, year, month))) return true;
+  return isDateInMonth(event.startDate, year, month) || isDateInMonth(event.endDate, year, month);
+};
+
+const getEventLineDateLabel = (event: Event) => {
+  const schedule = getEventSchedule(event);
+  const start = schedule[0]?.date || event.startDate || event.endDate || '';
+  const end = schedule[schedule.length - 1]?.date || event.endDate || event.startDate || '';
+  const startDate = parseLocalDate(start);
+  const endDate = parseLocalDate(end);
+
+  if (!startDate) {
+    return { day: '--', meta: 'Chưa có lịch', full: '' };
+  }
+
+  const sameDay = !endDate || start === end;
+  const sameMonth = endDate && startDate.getMonth() === endDate.getMonth() && startDate.getFullYear() === endDate.getFullYear();
+  const day = sameDay
+    ? String(startDate.getDate()).padStart(2, '0')
+    : sameMonth
+      ? `${String(startDate.getDate()).padStart(2, '0')}-${String(endDate.getDate()).padStart(2, '0')}`
+      : `${String(startDate.getDate()).padStart(2, '0')}/${String(startDate.getMonth() + 1).padStart(2, '0')}`;
+  const meta = startDate.toLocaleDateString('vi-VN', { weekday: 'short', month: 'short', year: 'numeric' });
+  const full = sameDay ? formatDateWithDay(start) : `${formatDateWithDay(start)} - ${formatDateWithDay(end)}`;
+
+  return { day, meta, full };
+};
+
+const getEventRepresentativeImage = (event: Event, inventory: InventoryItem[]) => {
+  if (event.layout?.floorplanImage) return event.layout.floorplanImage;
+  const programImage = event.contentPrograms?.find(program => program.layout?.floorplanImage)?.layout?.floorplanImage;
+  if (programImage) return programImage;
+  const eventItemIds = new Set((event.items || []).map(item => item.itemId));
+  return inventory.find(item => eventItemIds.has(item.id) && item.imageUrl)?.imageUrl || '';
+};
+
 const generateEventCode = (dateStr?: string) => {
   const baseDate = dateStr || new Date().toISOString().slice(0, 10);
   const cleanDate = baseDate.replace(/-/g, '');
@@ -1653,6 +1704,16 @@ export const EventManager: React.FC<EventManagerProps> = ({
     }
     return { upcoming: groups, past: pastGroups };
   }, [events, todayKey]);
+  const calendarLineEvents = useMemo(
+    () => events
+      .filter(event => isEventInMonth(event, calendarView.year, calendarView.month))
+      .sort((a, b) => {
+        const da = getEventPrimaryDate(a) || '';
+        const db = getEventPrimaryDate(b) || '';
+        return da.localeCompare(db) || a.name.localeCompare(b.name, 'vi', { sensitivity: 'base' });
+      }),
+    [calendarView.month, calendarView.year, events]
+  );
   const timelineEntries = useMemo<EventTimelineEntry[]>(() => {
     if (!selectedEvent?.timeline) return [];
     return [...selectedEvent.timeline].sort((a, b) => (a.datetime || '').localeCompare(b.datetime || ''));
@@ -2951,6 +3012,104 @@ export const EventManager: React.FC<EventManagerProps> = ({
     0
   );
 
+  const renderEventLineCard = (event: Event, options: { compact?: boolean; faded?: boolean } = {}) => {
+    const compact = Boolean(options.compact);
+    const faded = Boolean(options.faded);
+    const schedule = getEventSchedule(event);
+    const uniqueSessions = Array.from(new Set(schedule.flatMap(item => item.sessions)));
+    const venue = getEventVenue(event);
+    const venueTone = getEventVenueTone(venue);
+    const studentCount = getEventStudentCount(event);
+    const registeredByCurrentUser = isCurrentUserRegisteredForEvent(event);
+    const dateLabel = getEventLineDateLabel(event);
+    const imageUrl = getEventRepresentativeImage(event, inventory);
+    const isSelected = selectedEventId === event.id;
+
+    const imageBlock = (
+      <div className={`relative shrink-0 overflow-hidden bg-slate-100 ${compact ? 'h-24 w-28 rounded-lg' : 'h-36 rounded-t-xl'}`}>
+        {imageUrl ? (
+          <img src={imageUrl} alt={event.name} className="h-full w-full object-cover" />
+        ) : (
+          <div className={`flex h-full w-full items-center justify-center ${venue === 'EH' ? 'bg-teal-50' : 'bg-blue-50'}`}>
+            <Calendar size={compact ? 28 : 40} className={venueTone.text} />
+          </div>
+        )}
+        <div className="absolute inset-0 bg-gradient-to-t from-slate-950/45 via-transparent to-transparent" />
+        <span className={`absolute right-2 top-2 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-black shadow-sm backdrop-blur ${venueTone.chip}`}>
+          <span className={`h-1.5 w-1.5 rounded-full ${venueTone.dot}`}></span>
+          {getEventVenueShortLabel(venue)}
+        </span>
+      </div>
+    );
+
+    return (
+      <button
+        type="button"
+        onClick={() => openEventDetail(event.id)}
+        className={`group text-left transition ${
+          compact
+            ? `w-full rounded-xl border bg-white p-2 shadow-sm hover:border-blue-200 hover:shadow-md ${isSelected ? 'border-blue-500 ring-2 ring-blue-100' : 'border-slate-100'} ${faded ? 'opacity-65 grayscale hover:opacity-90 hover:grayscale-0' : ''}`
+            : `w-[260px] shrink-0 overflow-hidden rounded-xl border bg-white shadow-sm hover:-translate-y-1 hover:border-blue-200 hover:shadow-lg ${isSelected ? 'border-blue-500 ring-2 ring-blue-100' : 'border-slate-200'} ${faded ? 'opacity-70 grayscale hover:opacity-95 hover:grayscale-0' : ''}`
+        }`}
+      >
+        {compact ? (
+          <div className="flex gap-3">
+            {imageBlock}
+            <div className="min-w-0 flex-1 py-1 pr-1">
+              <p className="text-3xl font-black leading-none text-slate-900">{dateLabel.day}</p>
+              <p className="mt-1 truncate text-[11px] font-bold uppercase text-slate-400">{dateLabel.meta}</p>
+              <h4 className="mt-2 line-clamp-2 text-sm font-black leading-snug text-slate-800">{event.name}</h4>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {studentCount && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-bold text-indigo-700">
+                    <Users size={10}/> {studentCount.toLocaleString('vi-VN')} HS
+                  </span>
+                )}
+                {uniqueSessions.slice(0, 2).map(session => (
+                  <span key={session} className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600">
+                    {SESSION_LABELS[session]}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <>
+            {imageBlock}
+            <div className="p-4">
+              <p className="text-4xl font-black leading-none text-slate-900">{dateLabel.day}</p>
+              <p className="mt-1 text-[11px] font-bold uppercase text-slate-400">{dateLabel.meta}</p>
+              <h4 className="mt-3 line-clamp-2 min-h-[44px] text-base font-black leading-snug text-slate-800">{event.name}</h4>
+              <p className="mt-2 line-clamp-1 text-xs font-semibold text-slate-500">{event.client || event.location || dateLabel.full}</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {studentCount && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-bold text-indigo-700">
+                    <Users size={10}/> {studentCount.toLocaleString('vi-VN')} HS
+                  </span>
+                )}
+                {uniqueSessions.map(session => (
+                  <span key={session} className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600">
+                    {SESSION_LABELS[session]}
+                  </span>
+                ))}
+                {registeredByCurrentUser && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-blue-600 px-2 py-0.5 text-[10px] font-black text-white">
+                    <UserCheck size={10}/> Đã đăng ký
+                  </span>
+                )}
+                {event.quotationId && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-bold text-green-700">
+                    <LinkIcon size={10}/> Báo giá
+                  </span>
+                )}
+              </div>
+            </div>
+          </>
+        )}
+      </button>
+    );
+  };
+
   return (
     <div className="flex flex-col lg:flex-row gap-6 lg:h-[calc(100vh-100px)]">
       {eventScreenMode === 'HOME' && (
@@ -2974,72 +3133,14 @@ export const EventManager: React.FC<EventManagerProps> = ({
                 {groupedEventsByMonth.upcoming.map(group => (
                   <div key={group.key} className="space-y-2">
                     <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest">{group.label}</p>
-                    {group.events.map(event => (
-                      <button
-                        key={event.id}
-                        type="button"
-                        onClick={() => openEventDetail(event.id)}
-                        className={`w-full p-4 rounded-xl border-2 text-left transition ${selectedEventId === event.id ? 'border-blue-500 bg-blue-50 shadow-sm' : 'border-transparent bg-white border-slate-100 hover:border-slate-200'}`}
-                      >
-                        {(() => {
-                          const schedule = getEventSchedule(event);
-                          const uniqueSessions = Array.from(new Set(schedule.flatMap(item => item.sessions)));
-                          const start = schedule[0]?.date || event.startDate;
-                          const end = schedule[schedule.length - 1]?.date || event.endDate;
-                          const venue = getEventVenue(event);
-                          const venueTone = getEventVenueTone(venue);
-                          const studentCount = getEventStudentCount(event);
-                          const registeredByCurrentUser = isCurrentUserRegisteredForEvent(event);
-                          return (
-                            <>
-                              <div className="flex items-start justify-between gap-2">
-                                <h4 className="font-bold text-gray-800 leading-snug">{event.name}</h4>
-                                <span className={`shrink-0 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-black ${venueTone.chip}`}>
-                                  <span className={`h-1.5 w-1.5 rounded-full ${venueTone.dot}`}></span>
-                                  {getEventVenueShortLabel(venue)}
-                                </span>
-                              </div>
-                              <p className="text-xs text-gray-500 flex items-center gap-1 mt-1">
-                                <Calendar size={12}/> {start}{end && end !== start ? ` → ${end}` : ''}
-                              </p>
-                              <div className="mt-2 flex items-center gap-2 flex-wrap">
-                                {studentCount && (
-                                  <div className="inline-flex items-center gap-1 text-[10px] font-bold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full">
-                                    <Users size={10}/> {studentCount.toLocaleString('vi-VN')} HS
-                                  </div>
-                                )}
-                                {uniqueSessions.map(session => (
-                                  <div key={session} className="inline-flex items-center gap-1 text-[10px] font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full">
-                                    {SESSION_LABELS[session]}
-                                  </div>
-                                ))}
-                                {registeredByCurrentUser && (
-                                  <div className="inline-flex items-center gap-1 text-[10px] font-black bg-blue-600 text-white px-2 py-0.5 rounded-full">
-                                    <UserCheck size={10}/> Đã đăng ký
-                                  </div>
-                                )}
-                                {event.quotationId && <div className="inline-flex items-center gap-1 text-[10px] font-bold bg-green-100 text-green-700 px-2 py-0.5 rounded-full"><LinkIcon size={10}/> Đã gắn báo giá</div>}
-                                {event.advancePaidConfirmed && !event.advanceSkipped && (
-                                  <div className="inline-flex items-center gap-1 text-[10px] font-bold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">
-                                    <CheckCircle size={10}/> Đã tạm ứng
-                                  </div>
-                                )}
-                                {event.advanceRefundedConfirmed && (
-                                  <div className="inline-flex items-center gap-1 text-[10px] font-bold bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
-                                    <RefreshCw size={10}/> Đã hoàn ứng
-                                  </div>
-                                )}
-                                {event.paymentCompleted && (
-                                  <div className="inline-flex items-center gap-1 text-[10px] font-bold bg-slate-900 text-white px-2 py-0.5 rounded-full">
-                                    <DollarSign size={10}/> Đã thanh toán
-                                  </div>
-                                )}
-                              </div>
-                            </>
-                          );
-                        })()}
-                      </button>
-                    ))}
+                    <div className="relative ml-3 space-y-2 border-l border-dashed border-blue-200 pl-4">
+                      {group.events.map(event => (
+                        <div key={event.id} className="relative">
+                          <span className="absolute -left-[21px] top-1/2 h-3 w-3 -translate-y-1/2 rounded-full border-2 border-white bg-blue-500 shadow"></span>
+                          {renderEventLineCard(event, { compact: true })}
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -3050,59 +3151,14 @@ export const EventManager: React.FC<EventManagerProps> = ({
                 {groupedEventsByMonth.past.map(group => (
                   <div key={group.key} className="space-y-2">
                     <p className="text-[11px] font-black text-slate-300 uppercase tracking-widest">{group.label}</p>
-                    {group.events.map(event => (
-                      <button
-                        key={event.id}
-                        type="button"
-                        onClick={() => openEventDetail(event.id)}
-                        className={`w-full p-4 rounded-xl border text-left transition opacity-60 grayscale hover:opacity-85 hover:grayscale-0 ${selectedEventId === event.id ? 'border-blue-300 bg-blue-50 shadow-sm opacity-90 grayscale-0' : 'border-slate-100 bg-slate-50 hover:border-slate-200'}`}
-                      >
-                        {(() => {
-                          const schedule = getEventSchedule(event);
-                          const uniqueSessions = Array.from(new Set(schedule.flatMap(item => item.sessions)));
-                          const start = schedule[0]?.date || event.startDate;
-                          const end = schedule[schedule.length - 1]?.date || event.endDate;
-                          const venue = getEventVenue(event);
-                          const venueTone = getEventVenueTone(venue);
-                          const studentCount = getEventStudentCount(event);
-                          const registeredByCurrentUser = isCurrentUserRegisteredForEvent(event);
-                          return (
-                            <>
-                              <div className="flex items-start justify-between gap-2">
-                                <h4 className="font-bold text-gray-700 leading-snug">{event.name}</h4>
-                                <span className={`shrink-0 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-black ${venueTone.chip}`}>
-                                  <span className={`h-1.5 w-1.5 rounded-full ${venueTone.dot}`}></span>
-                                  {getEventVenueShortLabel(venue)}
-                                </span>
-                              </div>
-                              <p className="text-xs text-gray-500 flex items-center gap-1 mt-1">
-                                <Calendar size={12}/> {start}{end && end !== start ? ` → ${end}` : ''}
-                              </p>
-                              <div className="mt-2 flex items-center gap-2 flex-wrap">
-                                {studentCount && (
-                                  <div className="inline-flex items-center gap-1 text-[10px] font-bold bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full">
-                                    <Users size={10}/> {studentCount.toLocaleString('vi-VN')} HS
-                                  </div>
-                                )}
-                                {uniqueSessions.map(session => (
-                                  <div key={session} className="inline-flex items-center gap-1 text-[10px] font-bold bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full">
-                                    {SESSION_LABELS[session]}
-                                  </div>
-                                ))}
-                                <div className="inline-flex items-center gap-1 text-[10px] font-bold bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full">
-                                  Đã tổ chức
-                                </div>
-                                {registeredByCurrentUser && (
-                                  <div className="inline-flex items-center gap-1 text-[10px] font-black bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
-                                    <UserCheck size={10}/> Đã đăng ký
-                                  </div>
-                                )}
-                              </div>
-                            </>
-                          );
-                        })()}
-                      </button>
-                    ))}
+                    <div className="relative ml-3 space-y-2 border-l border-dashed border-slate-200 pl-4">
+                      {group.events.map(event => (
+                        <div key={event.id} className="relative">
+                          <span className="absolute -left-[21px] top-1/2 h-3 w-3 -translate-y-1/2 rounded-full border-2 border-white bg-slate-400 shadow"></span>
+                          {renderEventLineCard(event, { compact: true, faded: true })}
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -3117,8 +3173,8 @@ export const EventManager: React.FC<EventManagerProps> = ({
             <div className="p-4 md:p-6 border-b border-slate-100 bg-slate-50/40">
               <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                 <div>
-                  <h2 className="text-2xl font-black text-slate-800">Danh sách & lịch sự kiện</h2>
-                  <p className="text-sm text-slate-500">Chọn một sự kiện để mở workspace Chuẩn bị/Hậu cần hoặc Tổ chức/Nội dung cho EBUS và EH.</p>
+                  <h2 className="text-2xl font-black text-slate-800">Danh sách sự kiện dạng line</h2>
+                  <p className="text-sm text-slate-500">Chọn một sự kiện trên dòng thời gian để mở workspace Chuẩn bị/Hậu cần hoặc Tổ chức/Nội dung cho EBUS và EH.</p>
                 </div>
                 <div className="flex items-center gap-2">
                   <button onClick={() => handleCalendarMonthChange(-1)} className="px-3 py-2 bg-slate-100 rounded-lg hover:bg-slate-200 transition">
@@ -3135,6 +3191,35 @@ export const EventManager: React.FC<EventManagerProps> = ({
             </div>
             <div className="flex-1 overflow-visible lg:overflow-y-auto p-4 md:p-6 bg-slate-50/30">
               <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+                <div className="border-b border-slate-100 px-5 py-4">
+                  <h3 className="text-lg font-bold text-slate-800">Dòng sự kiện</h3>
+                  <p className="text-sm text-slate-500">{calendarMonthLabel}</p>
+                </div>
+                <div className="p-4 md:p-6">
+                  {calendarLineEvents.length === 0 ? (
+                    <div className="flex min-h-[260px] items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 text-sm font-semibold text-slate-400">
+                      Chưa có sự kiện trong tháng này.
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto pb-4">
+                      <div className="relative flex min-w-max items-start gap-7 px-4 py-10">
+                        <div className="absolute left-8 right-8 top-[86px] h-1 rounded-full bg-slate-200"></div>
+                        {calendarLineEvents.map((event, index) => {
+                          const faded = isEventPast(event, todayKey);
+                          const venueTone = getEventVenueTone(getEventVenue(event));
+                          return (
+                            <div key={event.id} className={`relative z-10 ${index % 2 === 1 ? 'mt-14' : ''}`}>
+                              <div className={`mx-auto mb-4 h-5 w-5 rounded-full border-4 border-white shadow ${venueTone.dot}`}></div>
+                              {renderEventLineCard(event, { faded })}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="hidden rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
                 <div className="border-b border-slate-100 px-5 py-4">
                   <h3 className="text-lg font-bold text-slate-800">Lịch sự kiện</h3>
                   <p className="text-sm text-slate-500">{calendarMonthLabel}</p>
