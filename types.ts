@@ -602,6 +602,7 @@ export interface Event {
   client: string;
   location: string;
   organizationVenue?: EventVenueType;
+  thumbnailUrl?: string;
   studentCount?: number;
   startDate: string;
   endDate: string;

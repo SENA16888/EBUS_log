@@ -1209,6 +1209,7 @@ const getEventLineDateLabel = (event: Event) => {
 };
 
 const getEventRepresentativeImage = (event: Event, inventory: InventoryItem[]) => {
+  if (event.thumbnailUrl) return event.thumbnailUrl;
   if (event.layout?.floorplanImage) return event.layout.floorplanImage;
   const programImage = event.contentPrograms?.find(program => program.layout?.floorplanImage)?.layout?.floorplanImage;
   if (programImage) return programImage;
@@ -1304,6 +1305,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
     name: '',
     client: '',
     location: '',
+    thumbnailUrl: '',
     studentCount: '',
     organizationVenue: 'EH' as EventVenueType
   });
@@ -1878,6 +1880,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
       client: newEventData.client,
       location: newEventData.location,
       organizationVenue: newEventData.organizationVenue,
+      thumbnailUrl: newEventData.thumbnailUrl.trim(),
       studentCount: normalizedStudentCount,
       startDate,
       endDate,
@@ -1915,7 +1918,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
     };
     onCreateEvent(newEvent);
     setShowCreateEventModal(false);
-    setNewEventData({ name: '', client: '', location: '', studentCount: '', organizationVenue: 'EH' });
+    setNewEventData({ name: '', client: '', location: '', thumbnailUrl: '', studentCount: '', organizationVenue: 'EH' });
     setNewEventSchedule([]);
     setNewScheduleDate('');
     setSelectedEventId(newEvent.id);
@@ -4908,6 +4911,29 @@ export const EventManager: React.FC<EventManagerProps> = ({
                             disabled={!canEditProfile}
                           />
                         </div>
+                        <div className="md:col-span-2">
+                          <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Link ảnh thumbnail sự kiện</label>
+                          <input
+                            type="url"
+                            className="w-full border rounded-xl p-3 text-sm"
+                            placeholder="https://..."
+                            value={selectedEvent.thumbnailUrl || ''}
+                            onChange={e => onUpdateEvent?.(selectedEvent.id, { thumbnailUrl: e.target.value })}
+                            disabled={!canEditProfile || !onUpdateEvent}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Preview thumbnail</label>
+                          <div className="h-12 overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
+                            {selectedEvent.thumbnailUrl ? (
+                              <img src={selectedEvent.thumbnailUrl} alt={selectedEvent.name} className="h-full w-full object-cover" />
+                            ) : (
+                              <div className="flex h-full items-center justify-center text-[11px] font-bold text-slate-400">
+                                Chưa có ảnh
+                              </div>
+                            )}
+                          </div>
+                        </div>
                         <div>
                           <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Loại sự kiện</label>
                           <select 
@@ -5817,6 +5843,13 @@ export const EventManager: React.FC<EventManagerProps> = ({
               <input type="text" className="w-full border border-slate-300 rounded-xl p-3" value={newEventData.name} onChange={e => setNewEventData({...newEventData, name: e.target.value})} placeholder="Tên sự kiện" />
               <input type="text" className="w-full border border-slate-300 rounded-xl p-3" value={newEventData.client} onChange={e => setNewEventData({...newEventData, client: e.target.value})} placeholder="Khách hàng" />
               <input type="text" className="w-full border border-slate-300 rounded-xl p-3" value={newEventData.location} onChange={e => setNewEventData({...newEventData, location: e.target.value})} placeholder="Địa điểm" />
+              <input
+                type="url"
+                className="w-full border border-slate-300 rounded-xl p-3"
+                value={newEventData.thumbnailUrl}
+                onChange={e => setNewEventData({ ...newEventData, thumbnailUrl: e.target.value })}
+                placeholder="Link ảnh thumbnail sự kiện"
+              />
               <input
                 type="number"
                 min="0"
