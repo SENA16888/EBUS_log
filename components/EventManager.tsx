@@ -1431,6 +1431,9 @@ export const EventManager: React.FC<EventManagerProps> = ({
   const [expenseAmount, setExpenseAmount] = useState('');
   const [expenseVatLink, setExpenseVatLink] = useState('');
   const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
+  const [otherRevenueDesc, setOtherRevenueDesc] = useState('');
+  const [otherRevenueAmount, setOtherRevenueAmount] = useState('');
+  const [editingOtherRevenueId, setEditingOtherRevenueId] = useState<string | null>(null);
   const [advanceTitle, setAdvanceTitle] = useState('');
   const [advanceNote, setAdvanceNote] = useState('');
   const [advanceAmount, setAdvanceAmount] = useState('');
@@ -2303,6 +2306,20 @@ export const EventManager: React.FC<EventManagerProps> = ({
     setExpenseCat('TRANSPORT_GOODS');
   };
 
+  const handleSaveOtherRevenue = () => {
+    if (!selectedEvent || !onUpdateEvent) return;
+    const amount = Number(otherRevenueAmount);
+    if (!Number.isFinite(amount) || amount <= 0) return alert('Vui lòng nhập số tiền doanh thu hợp lệ!');
+    const revenues = selectedEvent.otherRevenues || [];
+    const entry = { id: editingOtherRevenueId || `REV-${Date.now()}`, description: otherRevenueDesc.trim() || 'Doanh thu khác', amount };
+    onUpdateEvent(selectedEvent.id, { otherRevenues: editingOtherRevenueId ? revenues.map(item => item.id === editingOtherRevenueId ? entry : item) : [...revenues, entry] });
+    setEditingOtherRevenueId(null); setOtherRevenueDesc(''); setOtherRevenueAmount('');
+  };
+  const handleRemoveOtherRevenue = (id: string) => {
+    if (!selectedEvent || !onUpdateEvent) return;
+    onUpdateEvent(selectedEvent.id, { otherRevenues: (selectedEvent.otherRevenues || []).filter(item => item.id !== id) });
+  };
+
   const handleAddAdvanceRequestSubmit = () => {
     if (!selectedEventId || !onAddAdvanceRequest) return;
     if (!advanceTitle.trim()) {
@@ -2912,8 +2929,9 @@ export const EventManager: React.FC<EventManagerProps> = ({
     .reduce((sum, order) => sum + (order.items || []).reduce((itemSum: number, item: any) => itemSum + (item.quantity || 0), 0), 0);
   const saleOrdersRevenue = saleOrderRevenueTotal;
   const saleGoodsValue = saleOrdersRevenue;
+  const otherRevenueTotal = (selectedEvent?.otherRevenues || []).reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
   const quotationRevenue = linkedQuotation?.totalAmount || 0;
-  const revenue = quotationRevenue + saleOrdersRevenue;
+  const revenue = quotationRevenue + saleOrdersRevenue + otherRevenueTotal;
   const grossProfit = revenue - totalCosts;
   const profitMargin = revenue > 0 ? (grossProfit / revenue) * 100 : 0;
   const eventProfileSummary = useMemo(() => {
@@ -5638,6 +5656,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
                         <p className="text-[11px] text-slate-400">
                           {quotationRevenue > 0 && <span className="mr-3">{linkedQuotation?.source === 'CONTRACT' ? 'Hợp đồng' : 'Báo giá'}: {quotationRevenue.toLocaleString()}đ</span>}
                           {saleOrdersRevenue > 0 && <span>Đơn bán: {saleOrdersRevenue.toLocaleString()}đ</span>}
+                          {otherRevenueTotal > 0 && <span className="block">Doanh thu khác: {otherRevenueTotal.toLocaleString()}đ</span>}
                           {quotationRevenue === 0 && saleOrdersRevenue === 0 && <span>Chưa có doanh thu</span>}
                           {saleOrderReturnedUnits > 0 && <span className="block mt-1">Hàng trả về kho: {saleOrderReturnedUnits.toLocaleString()} sản phẩm, không trừ doanh thu</span>}
                         </p>
@@ -5661,6 +5680,25 @@ export const EventManager: React.FC<EventManagerProps> = ({
                          </span>
                        </div>
                     </div>
+                  </div>
+
+                  <div className="bg-white p-6 rounded-2xl border border-emerald-200 shadow-sm space-y-4">
+                    <h4 className="font-bold text-gray-800 text-xs uppercase flex items-center gap-2 border-b pb-3"><Wallet className="text-emerald-600" size={16} /> Doanh thu khác</h4>
+                    <p className="text-xs text-slate-500">Dùng cho khoản thu ngoài hợp đồng hoặc đơn bán, như vé lên xe hay khoản thu khác.</p>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      <input className="md:col-span-2 w-full border rounded-xl p-3 text-sm" placeholder="Nội dung thu (ví dụ: vé lên xe)" value={otherRevenueDesc} onChange={e => setOtherRevenueDesc(e.target.value)} />
+                      <input type="number" min="0" className="w-full border rounded-xl p-3 text-sm font-bold text-emerald-700" placeholder="Số tiền (VNĐ)" value={otherRevenueAmount} onChange={e => setOtherRevenueAmount(e.target.value)} />
+                    </div>
+                    <div className="flex gap-2">
+                      {editingOtherRevenueId && <button type="button" className="px-4 border rounded-xl text-sm" onClick={() => { setEditingOtherRevenueId(null); setOtherRevenueDesc(''); setOtherRevenueAmount(''); }}>Hủy sửa</button>}
+                      <button type="button" onClick={handleSaveOtherRevenue} className="flex-1 bg-emerald-600 text-white py-3 rounded-xl text-sm font-bold">{editingOtherRevenueId ? 'Cập nhật khoản thu' : 'Lưu khoản thu'}</button>
+                    </div>
+                    {(selectedEvent.otherRevenues?.length || 0) > 0 && <div className="space-y-2">
+                      {selectedEvent.otherRevenues?.map(item => <div key={item.id} className="flex justify-between items-center bg-emerald-50 p-3 rounded-xl">
+                        <div><p className="font-bold text-sm text-slate-700">{item.description}</p><p className="text-sm font-bold text-emerald-700">{item.amount.toLocaleString()}đ</p></div>
+                        <div className="flex gap-3"><button type="button" className="text-slate-400 hover:text-blue-600" title="Sửa khoản thu" onClick={() => { setEditingOtherRevenueId(item.id); setOtherRevenueDesc(item.description); setOtherRevenueAmount(String(item.amount)); }}><Pencil size={16} /></button><button type="button" className="text-slate-400 hover:text-red-500" title="Xóa khoản thu" onClick={() => handleRemoveOtherRevenue(item.id)}><Trash2 size={16} /></button></div>
+                      </div>)}
+                    </div>}
                   </div>
 
                   {/* Operational Expenses Form */}

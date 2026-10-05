@@ -350,6 +350,12 @@ export interface EventExpense {
   vatInvoiceLink?: string;
 }
 
+export interface EventOtherRevenue {
+  id: string;
+  description: string;
+  amount: number;
+}
+
 export type EventTypeId = 'CAMBRIDGE_DAY' | 'SCIENCE_DAY' | 'BOOK_FAIR' | 'LIBRARY' | 'COMMUNITY';
 
 export interface EventContact {
@@ -614,6 +620,7 @@ export interface Event {
   staff?: EventStaffAllocation[];
   staffRegistrations?: EventStaffRegistration[];
   expenses?: EventExpense[];
+  otherRevenues?: EventOtherRevenue[];
   advanceRequests?: EventAdvanceRequest[];
   advancePaidAmount?: number;
   advancePaidDate?: string;
