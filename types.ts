@@ -1019,10 +1019,21 @@ export interface MakerAnnouncement {
 }
 
 export interface EducationEquipmentLink {
-  type: 'ITEM' | 'PACKAGE';
+  type: 'ITEM' | 'PACKAGE' | 'LINK';
   id: string;
   quantity: number;
   note?: string;
+  name?: string;
+  url?: string;
+}
+
+export interface EducationStep {
+  id: string;
+  title: string;
+  text?: string;
+  imageUrl?: string;
+  linkUrl?: string;
+  linkLabel?: string;
 }
 
 export interface EducationLessonLink {
@@ -1041,6 +1052,10 @@ export interface EducationTheme {
   guideScript: string;
   learningObjectives: string[];
   updatedAt?: string;
+  imageUrl?: string;
+  steps?: EducationStep[];
+  duration?: string;
+  difficulty?: string;
 }
 
 export interface EducationActivity {
@@ -1052,6 +1067,7 @@ export interface EducationActivity {
   themes: EducationTheme[];
   createdAt: string;
   updatedAt?: string;
+  coverImageUrl?: string;
 }
 
 export type InteractiveDeviceType = 'BROADCAST_CENTER' | 'PROJECTOR' | 'DISPLAY' | 'SOUND_SYSTEM';

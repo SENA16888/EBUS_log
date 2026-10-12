@@ -15,6 +15,7 @@ import {
   ClipboardCheck,
   Clock3,
   Cpu,
+  ExternalLink,
   FileText,
   GripVertical,
   Library,
@@ -1888,6 +1889,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
   const viewingEducationActivity = viewingEducationItem?.activity;
   const viewingEducationTheme = viewingEducationItem?.theme;
   const getEducationEquipmentName = (link: EducationTheme['equipment'][number]) => {
+    if (link.type === 'LINK') return link.name || link.url || 'Vật dụng bên ngoài';
     if (link.type === 'PACKAGE') return packages.find(pkg => pkg.id === link.id)?.name || link.id;
     return inventory.find(item => item.id === link.id)?.name || link.id;
   };
@@ -3184,7 +3186,8 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
                         {viewingEducationTheme.equipment.map((link, index) => (
                           <div key={`${link.type}-${link.id}-${index}`} className="rounded-lg border border-slate-100 bg-slate-50 p-3">
                             <p className="font-black text-slate-800">{getEducationEquipmentName(link)}</p>
-                            <p className="text-xs font-bold text-slate-500">{link.type === 'PACKAGE' ? 'Gói thiết bị' : 'Thiết bị lẻ'} • SL {link.quantity || 1}</p>
+                            <p className="text-xs font-bold text-slate-500">{link.type === 'LINK' ? 'Liên kết' : link.type === 'PACKAGE' ? 'Gói thiết bị' : 'Thiết bị lẻ'} • SL {link.quantity || 1}</p>
+                            {link.type === 'LINK' && link.url && <a href={link.url} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-1 text-xs font-bold text-indigo-700">Mở liên kết <ExternalLink size={12} /></a>}
                             {link.note && <p className="mt-1 text-xs text-slate-500">{link.note}</p>}
                           </div>
                         ))}

@@ -1,28 +1,12 @@
 import React, { useMemo, useState } from 'react';
 import {
-  BookOpenCheck,
-  Box,
-  CheckCircle2,
-  GraduationCap,
-  Layers,
-  LibraryBig,
-  Link as LinkIcon,
-  PackagePlus,
-  Plus,
-  Save,
-  Sparkles,
-  Trash2,
-  Wand2
+  ArrowLeft, ArrowRight, BookOpenCheck, Box, ChevronDown, ChevronRight, CirclePlay,
+  Clock3, ExternalLink, Eye, FileDown, GraduationCap, ImagePlus, Layers, LibraryBig,
+  Link as LinkIcon, PackagePlus, Plus, Search, Settings2, Sparkles, Trash2, Users, X
 } from 'lucide-react';
 import {
-  ComboPackage,
-  EducationActivity,
-  EducationEquipmentLink,
-  EducationLessonLink,
-  EducationTheme,
-  InventoryItem,
-  LearningLesson,
-  LearningTrack
+  ComboPackage, EducationActivity, EducationEquipmentLink, EducationLessonLink,
+  EducationStep, EducationTheme, InventoryItem, LearningLesson, LearningTrack
 } from '../types';
 
 interface EducationContentManagerProps {
@@ -35,432 +19,183 @@ interface EducationContentManagerProps {
   onOpenLesson: (link: EducationLessonLink) => void;
 }
 
-type LessonOption = {
-  trackId: string;
-  trackTitle: string;
-  lesson: LearningLesson;
-};
-
-const makeId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-
-const buildThemeContent = (activityName: string, themeName: string) => {
-  const normalized = themeName.toLowerCase();
-  if (normalized.includes('đá') || normalized.includes('bóng') || normalized.includes('football')) {
-    return {
-      usageGuide: 'Sạc pin, kiểm tra mặt sàn phẳng, đặt bóng xốp ở khoảng cách an toàn, đánh dấu vùng đứng của học sinh trước khi robot thực hiện động tác.',
-      pedagogyContent: `Với chủ đề ${themeName}, ${activityName} giúp học sinh quan sát cân bằng, trọng tâm, lực tác động và hướng chuyển động. HDV nên cho học sinh dự đoán trước khi robot sút, sau đó so sánh dự đoán với kết quả thật.`,
-      guideScript: 'Theo các bạn, khi robot đổi góc chân thì bóng sẽ đi xa hơn hay lệch hướng? Mỗi nhóm chọn một giả thuyết, sau đó mình cùng quan sát cú sút của robot.',
-      learningObjectives: ['Dự đoán kết quả trước khi thử', 'Nhận biết cân bằng và trọng tâm', 'Liên hệ lực tác động với chuyển động']
-    };
-  }
-  if (normalized.includes('múa') || normalized.includes('hát') || normalized.includes('dance')) {
-    return {
-      usageGuide: 'Test loa, nhạc nền và chuỗi động tác trước giờ đón đoàn. Chừa vùng trống quanh robot và chuẩn bị phương án tắt nhạc nhanh khi cần.',
-      pedagogyContent: `Với chủ đề ${themeName}, ${activityName} minh họa thuật toán tuần tự, nhịp điệu và lập trình hành vi. Học sinh nhìn thấy robot thực hiện từng lệnh theo thứ tự, không phải tự ngẫu hứng.`,
-      guideScript: 'Robot đang biểu diễn theo một chuỗi lệnh. Nếu đổi thứ tự ba động tác đầu tiên, tiết mục sẽ khác như thế nào? Các bạn thử mô tả lại thuật toán của bài múa này.',
-      learningObjectives: ['Hiểu chuỗi lệnh tuần tự', 'Nhận biết pattern và nhịp', 'Diễn đạt thuật toán bằng ngôn ngữ đơn giản']
-    };
-  }
-  if (normalized.includes('boxing') || normalized.includes('võ') || normalized.includes('đấm')) {
-    return {
-      usageGuide: 'Chỉ chạy chế độ demo, kiểm tra nút dừng, đặt vạch cách ly và không để học sinh đứng trong vùng tay robot.',
-      pedagogyContent: `Với chủ đề ${themeName}, ${activityName} tập trung vào mô phỏng chuyển động, điều khiển servo và luật an toàn khi tương tác với máy. Hoạt động nên được dẫn như một quan sát khoa học, không phải thi đấu đối kháng.`,
-      guideScript: 'Boxing của robot là mô phỏng chuyển động. Điều quan trọng là robot nhận lệnh, giữ thăng bằng và dừng đúng lúc khi có tín hiệu an toàn.',
-      learningObjectives: ['Hiểu mô phỏng chuyển động', 'Nhận biết tín hiệu điều khiển', 'Tuân thủ vùng an toàn với robot']
-    };
-  }
-  return {
-    usageGuide: `Chuẩn bị ${activityName}, kiểm tra thiết bị, phân vùng học sinh và chạy thử chủ đề ${themeName} trước khi đón đoàn.`,
-    pedagogyContent: `Chủ đề ${themeName} cần được dẫn theo cấu trúc: gợi mở câu hỏi, cho học sinh dự đoán, trình diễn/thực hành, rồi chốt lại kiến thức bằng ví dụ gần gũi.`,
-    guideScript: `Hôm nay mình sẽ khám phá ${themeName} qua ${activityName}. Trước khi xem kết quả, mỗi nhóm hãy đưa ra một dự đoán và giải thích vì sao.`,
-    learningObjectives: ['Quan sát có mục tiêu', 'Đưa ra dự đoán', 'Rút ra kết luận sau trải nghiệm']
-  };
-};
-
-const createTheme = (activityName: string, name = 'Chủ đề mới'): EducationTheme => {
-  const content = buildThemeContent(activityName, name);
-  return {
-    id: makeId('edu-theme'),
-    name,
-    description: '',
-    equipment: [],
-    lessonLinks: [],
-    ...content,
-    updatedAt: new Date().toISOString()
-  };
-};
-
-const createActivity = (): EducationActivity => ({
-  id: makeId('edu'),
-  name: 'Hoạt động mới',
-  category: 'STEM',
-  ageGroup: 'Tiểu học',
-  summary: 'Mô tả ngắn hoạt động giáo dục.',
-  createdAt: new Date().toISOString(),
-  updatedAt: new Date().toISOString(),
-  themes: [createTheme('Hoạt động mới', 'Chủ đề mẫu')]
+type LessonOption = { trackId: string; trackTitle: string; lesson: LearningLesson };
+const uid = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+const blankTheme = (name = 'Dự án mới'): EducationTheme => ({
+  id: uid('project'), name, description: '', equipment: [], lessonLinks: [], usageGuide: '',
+  pedagogyContent: '', guideScript: '', learningObjectives: [], steps: [], updatedAt: new Date().toISOString()
+});
+const blankAlbum = (): EducationActivity => ({
+  id: uid('album'), name: 'Album mới', category: 'STEM', ageGroup: '', summary: '',
+  themes: [blankTheme()], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
 });
 
-const getLessonLabel = (lessons: LessonOption[], link: EducationLessonLink) => {
-  const found = lessons.find(option => option.trackId === link.trackId && option.lesson.id === link.lessonId);
-  return found ? `${found.lesson.title} • ${found.trackTitle}` : `${link.lessonId} • ${link.trackId}`;
-};
+const imageFallback = (title: string) => `https://placehold.co/1000x650/e9e7df/55544f?text=${encodeURIComponent(title || 'Educational project')}`;
 
 export const EducationContentManager: React.FC<EducationContentManagerProps> = ({
-  activities,
-  inventory,
-  packages,
-  learningTracks,
-  canEdit = true,
-  onUpdateActivities,
-  onOpenLesson
+  activities, inventory, packages, learningTracks, canEdit = true, onUpdateActivities, onOpenLesson
 }) => {
-  const [selectedActivityId, setSelectedActivityId] = useState(activities[0]?.id || '');
-  const selectedActivity = activities.find(activity => activity.id === selectedActivityId) || activities[0] || null;
-  const [selectedThemeId, setSelectedThemeId] = useState(selectedActivity?.themes?.[0]?.id || '');
-
-  const lessonOptions = useMemo<LessonOption[]>(() =>
-    learningTracks.flatMap(track => track.lessons.map(lesson => ({ trackId: track.id, trackTitle: track.title, lesson }))),
-    [learningTracks]
+  const [adminPreview, setAdminPreview] = useState(false);
+  const [selectedAlbumId, setSelectedAlbumId] = useState(activities[0]?.id || '');
+  const [selectedProjectId, setSelectedProjectId] = useState(activities[0]?.themes?.[0]?.id || '');
+  const [activeCategory, setActiveCategory] = useState('Tất cả');
+  const [search, setSearch] = useState('');
+  const [openedProject, setOpenedProject] = useState<{ albumId: string; projectId: string } | null>(null);
+  const isAdmin = canEdit && !adminPreview;
+  const selectedAlbum = activities.find(a => a.id === selectedAlbumId) || activities[0] || null;
+  const selectedProject = selectedAlbum?.themes.find(t => t.id === selectedProjectId) || selectedAlbum?.themes[0] || null;
+  const lessonOptions = useMemo<LessonOption[]>(() => learningTracks.flatMap(track => track.lessons.map(lesson => ({ trackId: track.id, trackTitle: track.title, lesson }))), [learningTracks]);
+  const educationPackages = useMemo(() => packages.filter(pkg => (pkg.packageType || 'EDUCATION') === 'EDUCATION'), [packages]);
+  const categories = ['Tất cả', ...Array.from(new Set(activities.map(a => a.category).filter((v): v is string => !!v)))];
+  const allProjects = activities.flatMap(album => album.themes.map(project => ({ album, project })));
+  const visibleProjects = allProjects.filter(({ album, project }) =>
+    (activeCategory === 'Tất cả' || album.category === activeCategory) &&
+    `${project.name} ${project.description || ''} ${album.name}`.toLocaleLowerCase().includes(search.toLocaleLowerCase())
   );
-  const educationPackages = useMemo(
-    () => packages.filter(pkg => (pkg.packageType || 'EDUCATION') === 'EDUCATION'),
-    [packages]
-  );
+  const detail = openedProject ? allProjects.find(({ album, project }) => album.id === openedProject.albumId && project.id === openedProject.projectId) : null;
 
-  const activeTheme = selectedActivity?.themes.find(theme => theme.id === selectedThemeId)
-    || selectedActivity?.themes[0]
-    || null;
-
-  const saveActivities = (next: EducationActivity[]) => {
-    if (!canEdit) return;
-    onUpdateActivities(next.map(activity => ({
-      ...activity,
-      updatedAt: activity.id === selectedActivity?.id ? new Date().toISOString() : activity.updatedAt
-    })));
+  const commit = (next: EducationActivity[]) => onUpdateActivities(next.map(album => ({ ...album, updatedAt: new Date().toISOString() })));
+  const updateAlbum = (patch: Partial<EducationActivity>) => {
+    if (!selectedAlbum) return;
+    commit(activities.map(a => a.id === selectedAlbum.id ? { ...a, ...patch } : a));
   };
-
-  const updateActivity = (patch: Partial<EducationActivity>) => {
-    if (!selectedActivity) return;
-    saveActivities(activities.map(activity => activity.id === selectedActivity.id ? { ...activity, ...patch } : activity));
+  const updateProject = (patch: Partial<EducationTheme>) => {
+    if (!selectedAlbum || !selectedProject) return;
+    commit(activities.map(a => a.id === selectedAlbum.id ? { ...a, themes: a.themes.map(t => t.id === selectedProject.id ? { ...t, ...patch, updatedAt: new Date().toISOString() } : t) } : a));
   };
-
-  const updateTheme = (themeId: string, patch: Partial<EducationTheme>) => {
-    if (!selectedActivity) return;
-    saveActivities(activities.map(activity => {
-      if (activity.id !== selectedActivity.id) return activity;
-      return {
-        ...activity,
-        themes: activity.themes.map(theme => theme.id === themeId ? { ...theme, ...patch, updatedAt: new Date().toISOString() } : theme)
-      };
-    }));
+  const selectAlbum = (album: EducationActivity) => { setSelectedAlbumId(album.id); setSelectedProjectId(album.themes[0]?.id || ''); };
+  const addAlbum = () => { const album = blankAlbum(); onUpdateActivities([...activities, album]); selectAlbum(album); };
+  const addProject = () => {
+    if (!selectedAlbum) return;
+    const project = blankTheme();
+    commit(activities.map(a => a.id === selectedAlbum.id ? { ...a, themes: [...a.themes, project] } : a));
+    setSelectedProjectId(project.id);
   };
-
-  const addActivity = () => {
-    const next = createActivity();
-    onUpdateActivities([...activities, next]);
-    setSelectedActivityId(next.id);
-    setSelectedThemeId(next.themes[0]?.id || '');
+  const deleteAlbum = () => {
+    if (!selectedAlbum) return;
+    const next = activities.filter(a => a.id !== selectedAlbum.id);
+    onUpdateActivities(next);
+    setSelectedAlbumId(next[0]?.id || ''); setSelectedProjectId(next[0]?.themes[0]?.id || '');
   };
-
-  const addTheme = () => {
-    if (!selectedActivity) return;
-    const theme = createTheme(selectedActivity.name, 'Chủ đề mới');
-    saveActivities(activities.map(activity => activity.id === selectedActivity.id ? { ...activity, themes: [...activity.themes, theme] } : activity));
-    setSelectedThemeId(theme.id);
+  const deleteProject = () => {
+    if (!selectedAlbum || !selectedProject || selectedAlbum.themes.length < 2) return;
+    const nextProjects = selectedAlbum.themes.filter(t => t.id !== selectedProject.id);
+    commit(activities.map(a => a.id === selectedAlbum.id ? { ...a, themes: nextProjects } : a));
+    setSelectedProjectId(nextProjects[0]?.id || '');
   };
-
-  const removeTheme = (themeId: string) => {
-    if (!selectedActivity || selectedActivity.themes.length <= 1) return;
-    const nextThemes = selectedActivity.themes.filter(theme => theme.id !== themeId);
-    saveActivities(activities.map(activity => activity.id === selectedActivity.id ? { ...activity, themes: nextThemes } : activity));
-    setSelectedThemeId(nextThemes[0]?.id || '');
+  const addSupply = (type: EducationEquipmentLink['type']) => {
+    if (!selectedProject) return;
+    const item = type === 'ITEM' ? inventory[0] : type === 'PACKAGE' ? educationPackages[0] : null;
+    updateProject({ equipment: [...selectedProject.equipment, { type, id: item?.id || '', quantity: 1, ...(type === 'LINK' ? { name: '' } : {}) }] });
   };
+  const changeSupply = (index: number, patch: Partial<EducationEquipmentLink>) => updateProject({ equipment: (selectedProject?.equipment || []).map((item, i) => i === index ? { ...item, ...patch } : item) });
+  const addStep = () => updateProject({ steps: [...(selectedProject?.steps || []), { id: uid('step'), title: `Bước ${(selectedProject?.steps?.length || 0) + 1}`, text: '' }] });
+  const updateStep = (index: number, patch: Partial<EducationStep>) => updateProject({ steps: (selectedProject?.steps || []).map((step, i) => i === index ? { ...step, ...patch } : step) });
+  const removeStep = (index: number) => updateProject({ steps: (selectedProject?.steps || []).filter((_step, i) => i !== index) });
 
-  const regenerateTheme = () => {
-    if (!selectedActivity || !activeTheme) return;
-    const content = buildThemeContent(selectedActivity.name, activeTheme.name);
-    updateTheme(activeTheme.id, content);
-  };
+  if (isAdmin) return <AdminView {...{
+    activities, selectedAlbum, selectedProject, selectedAlbumId, selectedProjectId, inventory, packages: educationPackages,
+    lessonOptions, selectAlbum, setSelectedProjectId, updateAlbum, updateProject, addAlbum, addProject,
+    deleteAlbum, deleteProject, addSupply, changeSupply, addStep, updateStep, removeStep, onOpenLesson,
+    canEdit, setAdminPreview
+  }} />;
 
-  const addEquipment = (type: EducationEquipmentLink['type']) => {
-    if (!activeTheme) return;
-    const source = type === 'ITEM' ? inventory[0] : educationPackages[0];
-    if (!source) return;
-    updateTheme(activeTheme.id, {
-      equipment: [...activeTheme.equipment, { type, id: source.id, quantity: 1 }]
-    });
-  };
-
-  const updateEquipment = (index: number, patch: Partial<EducationEquipmentLink>) => {
-    if (!activeTheme) return;
-    updateTheme(activeTheme.id, {
-      equipment: activeTheme.equipment.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item)
-    });
-  };
-
-  const removeEquipment = (index: number) => {
-    if (!activeTheme) return;
-    updateTheme(activeTheme.id, {
-      equipment: activeTheme.equipment.filter((_item, itemIndex) => itemIndex !== index)
-    });
-  };
-
-  const addLessonLink = () => {
-    if (!activeTheme || lessonOptions.length === 0) return;
-    const first = lessonOptions[0];
-    updateTheme(activeTheme.id, {
-      lessonLinks: [...activeTheme.lessonLinks, { trackId: first.trackId, lessonId: first.lesson.id }]
-    });
-  };
-
-  const updateLessonLink = (index: number, value: string) => {
-    if (!activeTheme) return;
-    const [trackId, lessonId] = value.split('::');
-    updateTheme(activeTheme.id, {
-      lessonLinks: activeTheme.lessonLinks.map((link, linkIndex) => linkIndex === index ? { trackId, lessonId } : link)
-    });
-  };
-
-  const removeLessonLink = (index: number) => {
-    if (!activeTheme) return;
-    updateTheme(activeTheme.id, {
-      lessonLinks: activeTheme.lessonLinks.filter((_link, linkIndex) => linkIndex !== index)
-    });
-  };
-
-  const getEquipmentName = (link: EducationEquipmentLink) => {
-    if (link.type === 'PACKAGE') return packages.find(pkg => pkg.id === link.id)?.name || link.id;
-    return inventory.find(item => item.id === link.id)?.name || link.id;
-  };
-
-  if (!selectedActivity || !activeTheme) {
-    return (
-      <div className="min-h-[60vh] flex items-center justify-center bg-white border border-slate-200 rounded-lg">
-        <div className="text-center">
-          <LibraryBig className="mx-auto text-slate-300" size={48} />
-          <h2 className="mt-4 text-xl font-black text-slate-800">Thư viện nội dung giáo dục</h2>
-          <p className="mt-2 text-sm text-slate-500">Chưa có hoạt động nào. Hãy tạo hoạt động đầu tiên.</p>
-          <button onClick={addActivity} disabled={!canEdit} className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-teal-600 text-white text-sm font-bold disabled:bg-slate-300">
-            <Plus size={16} />
-            Tạo hoạt động
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-4">
-      <section className="bg-white border border-slate-200 rounded-lg p-4">
-        <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wide text-indigo-700">
-              <LibraryBig size={16} />
-              Educational Content OS
-            </div>
-            <h1 className="mt-2 text-2xl font-black text-slate-900">Nội dung giáo dục theo hoạt động và chủ đề</h1>
-            <p className="mt-1 text-sm text-slate-500">Một hoạt động có nhiều chủ đề, mỗi chủ đề có giáo cụ, bài học Elearning, nội dung sư phạm và kịch bản dẫn đoàn riêng.</p>
-          </div>
-          <button onClick={addActivity} disabled={!canEdit} className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-bold disabled:bg-slate-300">
-            <Plus size={16} />
-            Hoạt động mới
-          </button>
-        </div>
-      </section>
-
-      <div className="grid grid-cols-1 xl:grid-cols-[300px_1fr] gap-4">
-        <aside className="bg-white border border-slate-200 rounded-lg p-3">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="font-black text-slate-800">Hoạt động</h2>
-            <GraduationCap size={18} className="text-slate-400" />
-          </div>
-          <div className="space-y-2">
-            {activities.map(activity => {
-              const active = activity.id === selectedActivity.id;
-              return (
-                <button
-                  key={activity.id}
-                  onClick={() => {
-                    setSelectedActivityId(activity.id);
-                    setSelectedThemeId(activity.themes[0]?.id || '');
-                  }}
-                  className={`w-full text-left rounded-lg border p-3 transition ${active ? 'border-indigo-400 bg-indigo-50' : 'border-slate-100 hover:border-slate-300'}`}
-                >
-                  <p className="font-black text-slate-800">{activity.name}</p>
-                  <p className="mt-1 text-xs text-slate-500">{activity.themes.length} chủ đề • {activity.ageGroup || 'Chưa gán độ tuổi'}</p>
-                </button>
-              );
-            })}
-          </div>
-        </aside>
-
-        <main className="space-y-4">
-          <section className="bg-white border border-slate-200 rounded-lg p-4">
-            <div className="grid grid-cols-1 lg:grid-cols-4 gap-3">
-              <Field label="Tên hoạt động">
-                <input value={selectedActivity.name} disabled={!canEdit} onChange={e => updateActivity({ name: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm font-bold" />
-              </Field>
-              <Field label="Nhóm nội dung">
-                <input value={selectedActivity.category || ''} disabled={!canEdit} onChange={e => updateActivity({ category: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm" />
-              </Field>
-              <Field label="Độ tuổi/khối">
-                <input value={selectedActivity.ageGroup || ''} disabled={!canEdit} onChange={e => updateActivity({ ageGroup: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm" />
-              </Field>
-              <div className="flex items-end">
-                <button onClick={() => onUpdateActivities(activities)} disabled={!canEdit} className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-slate-200 text-slate-700 text-sm font-bold disabled:text-slate-300">
-                  <Save size={16} />
-                  Lưu thư viện
-                </button>
-              </div>
-            </div>
-            <textarea value={selectedActivity.summary || ''} disabled={!canEdit} onChange={e => updateActivity({ summary: e.target.value })} className="mt-3 w-full min-h-[70px] border rounded-lg p-3 text-sm" />
-          </section>
-
-          <section className="bg-white border border-slate-200 rounded-lg p-3">
-            <div className="flex flex-wrap items-center gap-2">
-              {selectedActivity.themes.map(theme => (
-                <button
-                  key={theme.id}
-                  onClick={() => setSelectedThemeId(theme.id)}
-                  className={`px-3 py-2 rounded-lg text-sm font-bold border ${theme.id === activeTheme.id ? 'bg-indigo-600 text-white border-indigo-600' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}
-                >
-                  {theme.name}
-                </button>
-              ))}
-              <button onClick={addTheme} disabled={!canEdit} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 text-sm font-bold text-indigo-700 disabled:text-slate-300">
-                <Plus size={16} />
-                Chủ đề
-              </button>
-            </div>
-          </section>
-
-          <div className="grid grid-cols-1 xl:grid-cols-[1fr_380px] gap-4">
-            <section className="bg-white border border-slate-200 rounded-lg p-4">
-              <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
-                <div>
-                  <h2 className="font-black text-slate-900 flex items-center gap-2"><Sparkles size={18} />Chủ đề đang chọn</h2>
-                  <p className="text-sm text-slate-500 mt-1">Đổi chủ đề là nội dung sư phạm và kịch bản bên dưới đổi theo.</p>
-                </div>
-                <div className="flex gap-2">
-                  <button onClick={regenerateTheme} disabled={!canEdit} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-900 text-white text-sm font-bold disabled:bg-slate-300">
-                    <Wand2 size={16} />
-                    Sinh nội dung
-                  </button>
-                  <button onClick={() => removeTheme(activeTheme.id)} disabled={!canEdit || selectedActivity.themes.length <= 1} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-rose-100 text-rose-700 text-sm font-bold disabled:text-slate-300">
-                    <Trash2 size={16} />
-                    Xóa
-                  </button>
-                </div>
-              </div>
-
-              <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
-                <Field label="Tên chủ đề">
-                  <input value={activeTheme.name} disabled={!canEdit} onChange={e => updateTheme(activeTheme.id, { name: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm font-bold" />
-                </Field>
-                <Field label="Mô tả ngắn">
-                  <input value={activeTheme.description || ''} disabled={!canEdit} onChange={e => updateTheme(activeTheme.id, { description: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm" />
-                </Field>
-              </div>
-
-              <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
-                <TextArea title="Hướng dẫn sử dụng" value={activeTheme.usageGuide} disabled={!canEdit} onChange={value => updateTheme(activeTheme.id, { usageGuide: value })} />
-                <TextArea title="Nội dung giáo dục" value={activeTheme.pedagogyContent} disabled={!canEdit} onChange={value => updateTheme(activeTheme.id, { pedagogyContent: value })} />
-                <TextArea title="Kịch bản dẫn đoàn" value={activeTheme.guideScript} disabled={!canEdit} onChange={value => updateTheme(activeTheme.id, { guideScript: value })} />
-                <div>
-                  <p className="text-xs font-black uppercase text-slate-500">Mục tiêu học tập</p>
-                  <textarea
-                    value={activeTheme.learningObjectives.join('\n')}
-                    disabled={!canEdit}
-                    onChange={e => updateTheme(activeTheme.id, { learningObjectives: e.target.value.split('\n').map(line => line.trim()).filter(Boolean) })}
-                    className="mt-1 w-full min-h-[160px] border rounded-lg p-3 text-sm"
-                  />
-                </div>
-              </div>
-            </section>
-
-            <aside className="space-y-4">
-              <section className="bg-white border border-slate-200 rounded-lg p-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="font-black text-slate-900 flex items-center gap-2"><PackagePlus size={18} />Giáo cụ đi kèm</h3>
-                  <div className="flex gap-1">
-                    <button title="Thêm thiết bị lẻ" onClick={() => addEquipment('ITEM')} disabled={!canEdit || inventory.length === 0} className="p-2 rounded-lg border border-slate-200 text-slate-600 disabled:text-slate-300"><Box size={16} /></button>
-                    <button title="Thêm gói học liệu" onClick={() => addEquipment('PACKAGE')} disabled={!canEdit || educationPackages.length === 0} className="p-2 rounded-lg border border-slate-200 text-slate-600 disabled:text-slate-300"><Layers size={16} /></button>
-                  </div>
-                </div>
-                <div className="mt-3 space-y-2">
-                  {activeTheme.equipment.map((link, index) => (
-                    <div key={`${link.type}-${index}`} className="border border-slate-100 rounded-lg p-3">
-                      <div className="flex items-center gap-2">
-                        <select value={link.id} disabled={!canEdit} onChange={e => updateEquipment(index, { id: e.target.value })} className="flex-1 border rounded-lg px-2 py-2 text-sm">
-                          {(link.type === 'PACKAGE' ? educationPackages : inventory).map(source => <option key={source.id} value={source.id}>{source.name}</option>)}
-                        </select>
-                        <input type="number" min={1} value={link.quantity} disabled={!canEdit} onChange={e => updateEquipment(index, { quantity: Number(e.target.value) || 1 })} className="w-16 border rounded-lg px-2 py-2 text-sm" />
-                        <button onClick={() => removeEquipment(index)} disabled={!canEdit} className="text-slate-300 hover:text-rose-600 disabled:hover:text-slate-300"><Trash2 size={16} /></button>
-                      </div>
-                      <p className="mt-2 text-xs text-slate-500">{link.type === 'PACKAGE' ? 'Gói thiết bị' : 'Thiết bị lẻ'} • {getEquipmentName(link)}</p>
-                    </div>
-                  ))}
-                  {activeTheme.equipment.length === 0 && <p className="text-sm text-slate-500">Chưa gắn giáo cụ cho chủ đề này.</p>}
-                </div>
-              </section>
-
-              <section className="bg-white border border-slate-200 rounded-lg p-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="font-black text-slate-900 flex items-center gap-2"><BookOpenCheck size={18} />Bài học Elearning</h3>
-                  <button onClick={addLessonLink} disabled={!canEdit || lessonOptions.length === 0} className="p-2 rounded-lg border border-slate-200 text-slate-600 disabled:text-slate-300" title="Gắn bài học">
-                    <LinkIcon size={16} />
-                  </button>
-                </div>
-                <div className="mt-3 space-y-2">
-                  {activeTheme.lessonLinks.map((link, index) => (
-                    <div key={`${link.trackId}-${link.lessonId}-${index}`} className="border border-slate-100 rounded-lg p-3">
-                      <select value={`${link.trackId}::${link.lessonId}`} disabled={!canEdit} onChange={e => updateLessonLink(index, e.target.value)} className="w-full border rounded-lg px-2 py-2 text-sm">
-                        {lessonOptions.map(option => <option key={`${option.trackId}::${option.lesson.id}`} value={`${option.trackId}::${option.lesson.id}`}>{option.lesson.title} • {option.trackTitle}</option>)}
-                      </select>
-                      <div className="mt-2 flex items-center justify-between gap-2">
-                        <p className="text-xs text-slate-500 truncate">{getLessonLabel(lessonOptions, link)}</p>
-                        <div className="flex gap-1">
-                          <button onClick={() => onOpenLesson(link)} className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-indigo-50 text-indigo-700 text-xs font-bold">
-                            <GraduationCap size={14} />
-                            Mở
-                          </button>
-                          <button onClick={() => removeLessonLink(index)} disabled={!canEdit} className="text-slate-300 hover:text-rose-600 disabled:hover:text-slate-300"><Trash2 size={15} /></button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                  {activeTheme.lessonLinks.length === 0 && <p className="text-sm text-slate-500">Chưa gắn bài học Elearning.</p>}
-                </div>
-              </section>
-
-              <section className="bg-indigo-50 border border-indigo-100 rounded-lg p-4">
-                <h3 className="font-black text-indigo-950 flex items-center gap-2"><CheckCircle2 size={18} />Tóm tắt chủ đề</h3>
-                <div className="mt-3 text-sm text-indigo-950 space-y-2">
-                  <p><span className="font-bold">Hoạt động:</span> {selectedActivity.name}</p>
-                  <p><span className="font-bold">Chủ đề:</span> {activeTheme.name}</p>
-                  <p><span className="font-bold">Giáo cụ:</span> {activeTheme.equipment.length} mục</p>
-                  <p><span className="font-bold">Bài học:</span> {activeTheme.lessonLinks.length} bài</p>
-                </div>
-              </section>
-            </aside>
-          </div>
-        </main>
-      </div>
-    </div>
-  );
+  return <PublicView {...{
+    activities, categories, activeCategory, setActiveCategory, search, setSearch, visibleProjects,
+    openedProject, setOpenedProject, detail, canEdit, setAdminPreview, inventory, packages: educationPackages
+  }} />;
 };
 
-const Field: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
-  <label className="block">
-    <span className="text-xs font-black uppercase text-slate-500">{label}</span>
-    <div className="mt-1">{children}</div>
-  </label>
-);
+function PublicView({ activities, categories, activeCategory, setActiveCategory, search, setSearch, visibleProjects, openedProject, setOpenedProject, detail, canEdit, setAdminPreview, inventory, packages }: any) {
+  if (openedProject && detail) {
+    const { album, project } = detail;
+    return <div className="edu-page">
+      <PublicHeader canEdit={canEdit} setAdminPreview={setAdminPreview} />
+      <main className="edu-shell edu-detail">
+        <button className="edu-back" onClick={() => setOpenedProject(null)}><ArrowLeft size={16} /> Tất cả dự án</button>
+        <div className="edu-hero-image"><img src={project.imageUrl || album.coverImageUrl || imageFallback(project.name)} alt={project.name} /></div>
+        <div className="edu-project-heading">
+          <div><span className="edu-eyebrow">{album.category || 'DỰ ÁN'} <span>·</span> {album.name}</span><h1>{project.name}</h1><p>{project.description || album.summary}</p></div>
+          <div className="edu-meta"><span><Clock3 size={15} /> {project.duration || 'Tự học theo nhịp độ riêng'}</span><span><GraduationCap size={15} /> {album.ageGroup || 'Mọi lứa tuổi'}</span></div>
+        </div>
+        <div className="edu-detail-grid">
+          <article className="edu-article">
+            <section className="edu-prose"><h2>Giới thiệu dự án</h2><p>{project.description || album.summary || 'Khám phá dự án và thực hiện từng bước.'}</p></section>
+            {!!project.equipment?.length && <section className="edu-supplies"><h2><PackagePlus size={19} /> Supplies</h2><p className="edu-muted">Chuẩn bị những vật dụng sau trước khi bắt đầu.</p><div className="edu-supply-list">{project.equipment.map((s: EducationEquipmentLink, i: number) => {
+              const name = supplyName(s, inventory, packages);
+              return <div className="edu-supply" key={`${s.id}-${i}`}><span className="edu-check" /><span className="edu-supply-name">{name}</span><span className="edu-qty">× {s.quantity || 1}</span>{s.url && <a href={s.url} target="_blank" rel="noreferrer">Mở link <ExternalLink size={13} /></a>}</div>;
+            })}</div></section>}
+            {(project.steps || []).map((step: EducationStep, index: number) => <section className="edu-step" key={step.id}>
+              <div className="edu-step-number">{String(index + 1).padStart(2, '0')}</div><div className="edu-step-body"><span className="edu-eyebrow">BƯỚC {index + 1}</span><h2>{step.title || `Bước ${index + 1}`}</h2>{step.imageUrl && <img className="edu-step-image" src={step.imageUrl} alt={step.title} />}{step.text && <p>{step.text}</p>}{step.linkUrl && <a className="edu-download" href={step.linkUrl} target="_blank" rel="noreferrer"><FileDown size={17} />{step.linkLabel || 'Tải tài liệu'}<ExternalLink size={14} /></a>}</div>
+            </section>)}
+            {!project.steps?.length && <section className="edu-prose"><h2>Bắt đầu thực hiện</h2><p>{project.usageGuide || 'Các bước hướng dẫn sẽ được cập nhật sớm.'}</p></section>}
+          </article>
+          <aside className="edu-project-aside"><div className="edu-aside-card"><span className="edu-eyebrow">TRONG ALBUM</span><h3>{album.name}</h3><p>{album.summary}</p><button onClick={() => setOpenedProject(null)}>Khám phá dự án khác <ArrowRight size={15} /></button></div>{project.learningObjectives?.length > 0 && <div className="edu-aside-card"><h3>Bạn sẽ học được</h3>{project.learningObjectives.map((goal: string) => <p className="edu-goal" key={goal}>✓ {goal}</p>)}</div>}</aside>
+        </div>
+      </main>
+      <style>{PUBLIC_CSS}</style>
+    </div>;
+  }
 
-const TextArea: React.FC<{ title: string; value: string; disabled?: boolean; onChange: (value: string) => void }> = ({ title, value, disabled, onChange }) => (
-  <div>
-    <p className="text-xs font-black uppercase text-slate-500">{title}</p>
-    <textarea value={value} disabled={disabled} onChange={e => onChange(e.target.value)} className="mt-1 w-full min-h-[160px] border rounded-lg p-3 text-sm" />
-  </div>
-);
+  return <div className="edu-page">
+    <PublicHeader canEdit={canEdit} setAdminPreview={setAdminPreview} />
+    <main className="edu-shell">
+      <section className="edu-welcome"><div><span className="edu-eyebrow">THƯ VIỆN THỰC HÀNH</span><h1>Học bằng cách <em>tự tay làm.</em></h1><p>Khám phá hướng dẫn, chuẩn bị vật liệu và bắt đầu dự án tiếp theo của bạn.</p></div><div className="edu-welcome-mark"><LibraryBig size={38} /><span>{allProjectCount(activities)}<small>dự án</small></span></div></section>
+      <div className="edu-browse"><div className="edu-category-tabs">{categories.map((category: string) => <button key={category} className={activeCategory === category ? 'active' : ''} onClick={() => setActiveCategory(category)}>{category}</button>)}</div><label className="edu-search"><Search size={17} /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Tìm dự án..." />{search && <button onClick={() => setSearch('')}><X size={14} /></button>}</label></div>
+      <div className="edu-count-row"><span>{visibleProjects.length} dự án</span><button onClick={() => setActiveCategory('Tất cả')}>Mới nhất <ChevronDown size={15} /></button></div>
+      {visibleProjects.length === 0 ? <div className="edu-empty"><Search size={28} /><h2>Chưa tìm thấy dự án</h2><p>Thử từ khóa khác hoặc chọn một danh mục khác.</p></div> : <div className="edu-project-grid">{visibleProjects.map(({ album, project }: any) => <button key={`${album.id}-${project.id}`} className="edu-card" onClick={() => setOpenedProject({ albumId: album.id, projectId: project.id })}>
+        <div className="edu-card-image"><img src={project.imageUrl || album.coverImageUrl || imageFallback(project.name)} alt="" /><span className="edu-card-category">{album.category || 'STEM'}</span><span className="edu-card-play"><CirclePlay size={31} /></span></div>
+        <div className="edu-card-copy"><span className="edu-card-album">{album.name}</span><h2>{project.name}</h2><p>{project.description || album.summary || 'Mở hướng dẫn dự án từng bước.'}</p><div className="edu-card-foot"><span><Clock3 size={13} /> {project.duration || 'Dự án thực hành'}</span><span>Xem dự án <ArrowRight size={14} /></span></div></div>
+      </button>)}</div>}
+      {activities.length > 0 && <section className="edu-album-strip"><div><span className="edu-eyebrow">BỘ SƯU TẬP</span><h2>Khám phá theo album</h2></div><div className="edu-album-chips">{activities.map(album => <button key={album.id} onClick={() => { setActiveCategory(album.category || 'Tất cả'); setSearch(album.name); }}><Layers size={15} />{album.name}<ChevronRight size={14} /></button>)}</div></section>}
+      <footer className="edu-footer">Educational Content OS <span>·</span> Học tập qua trải nghiệm</footer>
+    </main><style>{PUBLIC_CSS}</style>
+  </div>;
+}
+
+function PublicHeader({ canEdit, setAdminPreview }: any) {
+  return <header className="edu-header"><div className="edu-header-inner"><a className="edu-brand" href="#" onClick={e => e.preventDefault()}><span className="edu-brand-mark"><LibraryBig size={19} /></span><span>EDU<span className="edu-brand-light">LAB</span><small>PROJECT LIBRARY</small></span></a><nav><a className="selected">Dự án</a><a href="#collections">Album</a><a href="#about">Hướng dẫn</a></nav><div className="edu-header-actions"><span><Users size={15} /> Dành cho nhân viên</span>{canEdit && <button onClick={() => setAdminPreview(false)}><Settings2 size={15} /> Quản trị</button>}</div></div></header>;
+}
+
+function AdminView(props: any) {
+  const { activities, selectedAlbum, selectedProject, selectedAlbumId, selectedProjectId, inventory, packages, lessonOptions, selectAlbum, setSelectedProjectId, updateAlbum, updateProject, addAlbum, addProject, deleteAlbum, deleteProject, addSupply, changeSupply, addStep, updateStep, removeStep, onOpenLesson, setAdminPreview } = props;
+  const [section, setSection] = useState<'album' | 'project'>('project');
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  return <div className="edu-admin">
+    <header className="edu-admin-header"><div className="edu-admin-brand"><span className="edu-brand-mark"><LibraryBig size={19} /></span><div><b>Educational Content OS</b><small>QUẢN TRỊ THƯ VIỆN</small></div></div><div className="edu-admin-head-actions"><span className="edu-saved"><i /> Đang đồng bộ</span><button className="edu-preview-btn" onClick={() => setAdminPreview(true)}><Eye size={16} /> Xem như nhân viên</button></div></header>
+    <div className="edu-admin-layout"><aside className="edu-admin-sidebar"><div className="edu-side-title"><div><span className="edu-eyebrow">THƯ VIỆN CỦA BẠN</span><h2>Album nội dung</h2></div><button className="edu-icon-btn" onClick={addAlbum} title="Tạo album"><Plus size={17} /></button></div><div className="edu-admin-albums">{activities.map((album: EducationActivity) => <button key={album.id} className={`edu-admin-album ${album.id === selectedAlbumId ? 'active' : ''}`} onClick={() => { selectAlbum(album); setSection('project'); }}><span className="edu-album-thumb">{album.coverImageUrl ? <img src={album.coverImageUrl} alt="" /> : <Layers size={17} />}</span><span className="edu-album-title"><b>{album.name}</b><small>{album.themes.length} dự án · {album.category || 'Chưa phân loại'}</small></span><ChevronRight size={15} /></button>)}</div><button className="edu-new-album" onClick={addAlbum}><Plus size={16} /> Tạo album mới</button><div className="edu-side-help"><Sparkles size={16} /><p><b>Mẹo nhỏ</b><br />Ảnh bìa đẹp giúp nhân viên tìm dự án nhanh hơn.</p></div></aside>
+      <main className="edu-admin-main">{!selectedAlbum || !selectedProject ? <div className="edu-admin-empty"><LibraryBig size={35} /><h2>Bắt đầu với album đầu tiên</h2><button onClick={addAlbum}><Plus size={16} /> Tạo album</button></div> : <>
+        <div className="edu-admin-topline"><div><span className="edu-breadcrumb">Thư viện <ChevronRight size={13} /> {selectedAlbum.name}</span><h1>{section === 'album' ? 'Cài đặt album' : 'Biên tập dự án'}</h1></div><button className="edu-save-label"><span /> Tự động lưu</button></div>
+        <div className="edu-editor-tabs"><button className={section === 'album' ? 'active' : ''} onClick={() => setSection('album')}><Layers size={15} /> Thông tin album</button><button className={section === 'project' ? 'active' : ''} onClick={() => setSection('project')}><CirclePlay size={15} /> Dự án & nội dung</button></div>
+        {section === 'album' ? <div className="edu-editor-card"><div className="edu-editor-card-head"><div><span className="edu-eyebrow">ALBUM</span><h2>Thông tin chung</h2><p>Một album gom các dự án cùng chủ đề để nhân viên dễ tìm.</p></div><button className="edu-danger" onClick={deleteAlbum}><Trash2 size={15} /> Xóa album</button></div><div className="edu-form-grid"><Field label="Tên album"><input value={selectedAlbum.name} onChange={e => updateAlbum({ name: e.target.value })} placeholder="Ví dụ: Góc sáng tạo STEM" /></Field><Field label="Danh mục"><input value={selectedAlbum.category || ''} onChange={e => updateAlbum({ category: e.target.value })} placeholder="STEM, Thủ công, Khoa học..." /></Field><Field label="Đối tượng"><input value={selectedAlbum.ageGroup || ''} onChange={e => updateAlbum({ ageGroup: e.target.value })} placeholder="Tiểu học, THCS..." /></Field><Field label="Ảnh bìa (URL)"><input value={selectedAlbum.coverImageUrl || ''} onChange={e => updateAlbum({ coverImageUrl: e.target.value })} placeholder="Dán đường dẫn ảnh" /></Field><Field label="Mô tả album" wide><textarea value={selectedAlbum.summary || ''} onChange={e => updateAlbum({ summary: e.target.value })} placeholder="Giới thiệu ngắn về bộ sưu tập này" /></Field></div>{selectedAlbum.coverImageUrl && <img className="edu-cover-preview" src={selectedAlbum.coverImageUrl} alt="Xem trước ảnh bìa" />}</div> : <>
+          <div className="edu-project-selector"><div className="edu-project-selector-label"><span className="edu-eyebrow">DỰ ÁN TRONG ALBUM</span><span>{selectedAlbum.themes.length} mục</span></div><div className="edu-project-pills">{selectedAlbum.themes.map((p: EducationTheme) => <button key={p.id} className={p.id === selectedProjectId ? 'active' : ''} onClick={() => setSelectedProjectId(p.id)}>{p.name || 'Dự án chưa đặt tên'}</button>)}<button className="edu-add-pill" onClick={addProject}><Plus size={15} /> Thêm dự án</button></div></div>
+          <div className="edu-editor-card"><div className="edu-editor-card-head"><div><span className="edu-eyebrow">THÔNG TIN DỰ ÁN</span><h2>Nội dung chung</h2></div><button className="edu-danger" disabled={selectedAlbum.themes.length < 2} onClick={deleteProject}><Trash2 size={15} /> Xóa dự án</button></div><div className="edu-form-grid"><Field label="Tên dự án"><input value={selectedProject.name} onChange={e => updateProject({ name: e.target.value })} placeholder="Tên hướng dẫn" /></Field><Field label="Thời lượng"><input value={selectedProject.duration || ''} onChange={e => updateProject({ duration: e.target.value })} placeholder="Ví dụ: 30 phút" /></Field><Field label="Ảnh dự án (URL)"><input value={selectedProject.imageUrl || ''} onChange={e => updateProject({ imageUrl: e.target.value })} placeholder="Dán đường dẫn ảnh đại diện" /></Field><Field label="Mức độ"><select value={selectedProject.difficulty || ''} onChange={e => updateProject({ difficulty: e.target.value })}><option value="">Chọn mức độ</option><option>Dễ</option><option>Trung bình</option><option>Nâng cao</option></select></Field><Field label="Mô tả ngắn" wide><textarea value={selectedProject.description || ''} onChange={e => updateProject({ description: e.target.value })} placeholder="Dự án này giúp người học làm được gì?" /></Field></div>{selectedProject.imageUrl && <img className="edu-cover-preview" src={selectedProject.imageUrl} alt="Xem trước ảnh dự án" />}</div>
+          <div className="edu-editor-card"><div className="edu-editor-card-head"><div><span className="edu-eyebrow">CHUẨN BỊ</span><h2><PackagePlus size={19} /> Supplies</h2><p>Chọn từ kho, gói thiết bị hoặc thêm vật dụng kèm đường dẫn.</p></div><div className="edu-add-buttons"><button onClick={() => addSupply('ITEM')} disabled={!inventory.length}><Box size={15} /> Từ kho</button><button onClick={() => addSupply('PACKAGE')} disabled={!packages.length}><Layers size={15} /> Gói kho</button><button className="dark" onClick={() => addSupply('LINK')}><LinkIcon size={15} /> Thêm link</button></div></div><div className="edu-supplies-editor">{selectedProject.equipment.map((s: EducationEquipmentLink, i: number) => <div className="edu-supply-editor-row" key={`${s.id}-${i}`}><span className="edu-supply-order">{String(i + 1).padStart(2, '0')}</span>{s.type === 'LINK' ? <><input value={s.name || ''} onChange={e => changeSupply(i, { name: e.target.value })} placeholder="Tên vật dụng hoặc tài liệu" /><input value={s.url || ''} onChange={e => changeSupply(i, { url: e.target.value })} placeholder="https://..." /></> : <select value={s.id} onChange={e => changeSupply(i, { id: e.target.value })}>{(s.type === 'PACKAGE' ? packages : inventory).map((item: any) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>}<label className="edu-quantity">SL <input type="number" min="1" value={s.quantity} onChange={e => changeSupply(i, { quantity: Math.max(1, Number(e.target.value)) })} /></label><button className="edu-remove" onClick={() => updateProject({ equipment: selectedProject.equipment.filter((_x: any, ix: number) => ix !== i) })}><Trash2 size={15} /></button></div>)}{!selectedProject.equipment.length && <div className="edu-inline-empty">Chưa có supplies. Thêm từ kho hoặc dán link vật dụng bên ngoài.</div>}</div></div>
+          <div className="edu-editor-card"><div className="edu-editor-card-head"><div><span className="edu-eyebrow">HƯỚNG DẪN TỪNG BƯỚC</span><h2><CirclePlay size={19} /> Các bước thực hiện</h2><p>Mỗi bước hỗ trợ ảnh minh họa, hướng dẫn ngắn và link tải tài liệu.</p></div><button className="edu-add-step" onClick={addStep}><Plus size={16} /> Thêm bước</button></div><div className="edu-steps-editor">{(selectedProject.steps || []).map((step: EducationStep, i: number) => <div className="edu-step-editor" key={step.id}><div className="edu-step-editor-title"><span>{String(i + 1).padStart(2, '0')}</span><input value={step.title} onChange={e => updateStep(i, { title: e.target.value })} placeholder={`Bước ${i + 1}`} /><button className="edu-remove" onClick={() => removeStep(i)}><Trash2 size={15} /></button></div><div className="edu-step-form"><Field label="Nội dung"><textarea value={step.text || ''} onChange={e => updateStep(i, { text: e.target.value })} placeholder="Mô tả ngắn thao tác cần làm" /></Field><Field label="Ảnh minh họa (URL)"><input value={step.imageUrl || ''} onChange={e => updateStep(i, { imageUrl: e.target.value })} placeholder="Dán đường dẫn ảnh" /></Field><Field label="Link tài liệu"><input value={step.linkUrl || ''} onChange={e => updateStep(i, { linkUrl: e.target.value })} placeholder="Link tải mẫu, file, tài liệu..." /></Field><Field label="Tên nút tải"><input value={step.linkLabel || ''} onChange={e => updateStep(i, { linkLabel: e.target.value })} placeholder="Tải file mẫu" /></Field></div></div>)}{!selectedProject.steps?.length && <div className="edu-step-placeholder"><ImagePlus size={22} /><span>Thêm các bước đơn giản bằng ảnh, nội dung và liên kết tài liệu.</span></div>}</div></div>
+          <div className="edu-advanced-toggle"><button onClick={() => setShowAdvanced(!showAdvanced)}><ChevronDown size={15} className={showAdvanced ? 'rotate' : ''} /> Nội dung sư phạm và Elearning hiện có</button></div>{showAdvanced && <div className="edu-editor-card"><div className="edu-form-grid"><Field label="Hướng dẫn sử dụng" wide><textarea value={selectedProject.usageGuide || ''} onChange={e => updateProject({ usageGuide: e.target.value })} /></Field><Field label="Nội dung giáo dục" wide><textarea value={selectedProject.pedagogyContent || ''} onChange={e => updateProject({ pedagogyContent: e.target.value })} /></Field><Field label="Kịch bản dẫn đoàn" wide><textarea value={selectedProject.guideScript || ''} onChange={e => updateProject({ guideScript: e.target.value })} /></Field><Field label="Mục tiêu học tập (mỗi dòng một mục)" wide><textarea value={(selectedProject.learningObjectives || []).join('\n')} onChange={e => updateProject({ learningObjectives: e.target.value.split('\n').map((v: string) => v.trim()).filter(Boolean) })} /></Field></div><div className="edu-lesson-links"><h3><BookOpenCheck size={16} /> Bài học Elearning liên kết</h3>{selectedProject.lessonLinks.map((link: EducationLessonLink, i: number) => <div className="edu-lesson-row" key={`${link.trackId}-${link.lessonId}-${i}`}><select value={`${link.trackId}::${link.lessonId}`} onChange={e => { const [trackId, lessonId] = e.target.value.split('::'); updateProject({ lessonLinks: selectedProject.lessonLinks.map((x: any, ix: number) => ix === i ? { trackId, lessonId } : x) }); }}>{lessonOptions.map((o: LessonOption) => <option key={`${o.trackId}::${o.lesson.id}`} value={`${o.trackId}::${o.lesson.id}`}>{o.lesson.title} · {o.trackTitle}</option>)}</select><button onClick={() => onOpenLesson(link)}>Mở bài học</button><button className="edu-remove" onClick={() => updateProject({ lessonLinks: selectedProject.lessonLinks.filter((_x: any, ix: number) => ix !== i) })}><Trash2 size={15} /></button></div>)}<button className="edu-add-link" onClick={() => { const first = lessonOptions[0]; if (first) updateProject({ lessonLinks: [...selectedProject.lessonLinks, { trackId: first.trackId, lessonId: first.lesson.id }] }); }} disabled={!lessonOptions.length}><Plus size={14} /> Gắn bài học</button></div></div>}
+        </>}
+        <div className="edu-admin-bottom"><span>Nội dung được lưu tự động vào thư viện.</span><button onClick={() => setAdminPreview(true)}><Eye size={15} /> Xem trang nhân viên <ArrowRight size={15} /></button></div>
+      </>}</main></div><style>{ADMIN_CSS}</style>
+  </div>;
+}
+
+function Field({ label, children, wide = false }: { label: string; children: React.ReactNode; wide?: boolean }) {
+  return <label className={`edu-field ${wide ? 'wide' : ''}`}><span>{label}</span>{children}</label>;
+}
+
+function supplyName(s: EducationEquipmentLink, inventory: InventoryItem[], packages: ComboPackage[]) {
+  if (s.type === 'LINK') return s.name || s.url || 'Vật dụng bên ngoài';
+  if (s.type === 'PACKAGE') return packages.find(p => p.id === s.id)?.name || s.id;
+  return inventory.find(i => i.id === s.id)?.name || s.id;
+}
+function allProjectCount(albums: EducationActivity[]) { return albums.reduce((sum, album) => sum + album.themes.length, 0); }
+
+const PUBLIC_CSS = `
+.edu-page{--ink:#252a27;--muted:#727972;--line:#e6e8e2;--green:#2b674f;--paper:#fbfbf8;background:#fbfbf8;color:var(--ink);min-height:72vh;font-family:Inter,ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif}.edu-page *{box-sizing:border-box}.edu-shell{max-width:1280px;margin:auto;padding:0 34px 42px}.edu-header{height:66px;background:#fff;border-bottom:1px solid #e8e9e4}.edu-header-inner{height:100%;max-width:1360px;margin:auto;padding:0 34px;display:flex;align-items:center;gap:54px}.edu-brand{display:flex;align-items:center;gap:9px;text-decoration:none;color:#25362e;font-size:13px;font-weight:800;letter-spacing:.06em;line-height:1.05}.edu-brand-mark{width:34px;height:34px;display:grid;place-items:center;background:#e9f0e8;color:#315b42;border-radius:10px}.edu-brand-light{font-weight:500;color:#78917f}.edu-brand small{display:block;margin-top:4px;font-size:8px;letter-spacing:.15em;color:#8d968e}.edu-header nav{display:flex;height:100%;gap:30px;align-items:center;flex:1}.edu-header nav a{height:100%;display:grid;place-items:center;text-decoration:none;color:#737a74;font-size:13px;cursor:pointer}.edu-header nav a.selected{color:#263d30;border-bottom:2px solid #557a5d;font-weight:700}.edu-header-actions{display:flex;align-items:center;gap:18px;color:#778078;font-size:12px}.edu-header-actions span{display:flex;align-items:center;gap:7px}.edu-header-actions button{display:flex;align-items:center;gap:7px;border:1px solid #dfe4dc;border-radius:7px;background:white;padding:9px 13px;color:#365643;font-weight:700;cursor:pointer}.edu-welcome{padding:41px 0 30px;display:flex;align-items:flex-end;justify-content:space-between}.edu-eyebrow{color:#68806b;font-size:10px;font-weight:800;letter-spacing:.14em}.edu-welcome h1{margin:9px 0 7px;font:500 clamp(28px,3.3vw,40px)/1.12 Georgia,serif;letter-spacing:-.035em;color:#26322a}.edu-welcome h1 em{color:#67826b}.edu-welcome p{margin:0;color:#727972;font-size:14px}.edu-welcome-mark{height:66px;width:190px;border-left:1px solid #e0e4dc;display:flex;align-items:center;justify-content:flex-end;gap:12px;color:#55755b}.edu-welcome-mark span{font:24px Georgia;color:#34493a}.edu-welcome-mark small{display:block;font:11px ui-sans-serif;color:#879087}.edu-browse{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #e5e7e1;gap:20px}.edu-category-tabs{display:flex;gap:24px;overflow:auto}.edu-category-tabs button{background:none;border:0;border-bottom:2px solid transparent;padding:15px 0 13px;color:#737971;white-space:nowrap;font-size:13px;cursor:pointer}.edu-category-tabs button.active{color:#315b42;border-color:#668b69;font-weight:700}.edu-search{display:flex;align-items:center;gap:8px;width:220px;padding:9px 11px;border:1px solid #e1e4dd;border-radius:7px;background:#fff;color:#849087}.edu-search input{min-width:0;width:100%;outline:0;border:0;font-size:12px;color:#26322a}.edu-search button{background:none;border:0;color:#778078;cursor:pointer}.edu-count-row{display:flex;justify-content:space-between;align-items:center;padding:17px 0;color:#8a9189;font-size:12px}.edu-count-row button{display:flex;align-items:center;gap:6px;background:none;border:0;color:#58635a;font-size:12px;cursor:pointer}.edu-project-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:20px}.edu-card{padding:0;text-align:left;border:1px solid #e1e4de;background:#fff;border-radius:9px;overflow:hidden;cursor:pointer;transition:transform .18s,box-shadow .18s}.edu-card:hover{transform:translateY(-3px);box-shadow:0 9px 22px #263a2412}.edu-card-image{height:188px;position:relative;overflow:hidden;background:#e7e8e2}.edu-card-image img{width:100%;height:100%;object-fit:cover;transition:transform .3s}.edu-card:hover img{transform:scale(1.035)}.edu-card-category{position:absolute;left:12px;top:12px;background:#fffffff0;border-radius:3px;padding:5px 8px;color:#4b6851;font-size:9px;text-transform:uppercase;letter-spacing:.08em;font-weight:800}.edu-card-play{position:absolute;right:12px;bottom:12px;color:white;filter:drop-shadow(0 2px 3px #1118);opacity:0;transition:opacity .2s}.edu-card:hover .edu-card-play{opacity:1}.edu-card-copy{padding:14px 15px 13px}.edu-card-album{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:#839084;font-weight:700}.edu-card-copy h2{font:600 17px/1.22 Georgia,serif;margin:6px 0;color:#29342c;min-height:42px}.edu-card-copy p{height:35px;overflow:hidden;margin:0;color:#818780;font-size:11px;line-height:1.55}.edu-card-foot{display:flex;justify-content:space-between;align-items:center;border-top:1px solid #edf0ea;margin-top:13px;padding-top:11px;color:#818981;font-size:10px}.edu-card-foot span{display:flex;align-items:center;gap:5px}.edu-card-foot span:last-child{color:#527158;font-weight:700}.edu-album-strip{margin-top:48px;padding:23px 0;border-top:1px solid #e4e7e0;border-bottom:1px solid #e4e7e0;display:flex;align-items:center;justify-content:space-between;gap:20px}.edu-album-strip h2{font:500 23px Georgia;margin:5px 0 0}.edu-album-chips{display:flex;gap:9px;flex-wrap:wrap;justify-content:flex-end}.edu-album-chips button{display:flex;align-items:center;gap:8px;border:1px solid #e1e5dd;background:white;color:#566657;border-radius:7px;padding:10px 12px;font-size:11px;cursor:pointer}.edu-footer{padding:27px 0;color:#939990;font-size:10px;text-align:center;letter-spacing:.03em}.edu-footer span{padding:0 6px}.edu-empty{padding:70px 20px;text-align:center;color:#8b928a}.edu-empty h2{font:22px Georgia;color:#39463b}.edu-empty p{font-size:13px}.edu-detail{padding-top:25px}.edu-back{border:0;background:none;color:#627667;display:flex;align-items:center;gap:7px;padding:9px 0 17px;font-size:12px;cursor:pointer}.edu-hero-image{height:min(44vw,480px);min-height:260px;border-radius:10px;overflow:hidden;background:#e7e9e3}.edu-hero-image img{width:100%;height:100%;object-fit:cover}.edu-project-heading{display:flex;justify-content:space-between;align-items:flex-end;gap:20px;padding:25px 0 27px;border-bottom:1px solid #e4e7e0}.edu-project-heading h1{font:500 clamp(30px,4vw,43px)/1.1 Georgia,serif;margin:8px 0}.edu-project-heading p{max-width:700px;color:#737a72;margin:0;font-size:14px;line-height:1.6}.edu-meta{display:flex;gap:17px;color:#718075;font-size:11px;white-space:nowrap;padding-bottom:5px}.edu-meta span{display:flex;align-items:center;gap:6px}.edu-detail-grid{display:grid;grid-template-columns:minmax(0,800px) 250px;gap:55px;padding:27px 0}.edu-article{min-width:0}.edu-prose,.edu-supplies{padding:0 0 24px;border-bottom:1px solid #e8eae5;margin-bottom:25px}.edu-prose h2,.edu-supplies h2,.edu-step h2{font:500 23px Georgia;margin:0 0 10px;color:#303a32}.edu-prose p,.edu-step-body>p{font-size:14px;line-height:1.8;color:#656e65;white-space:pre-line}.edu-supplies h2{display:flex;align-items:center;gap:9px}.edu-muted{margin:0 0 14px;color:#8b928a;font-size:12px}.edu-supply-list{border-top:1px solid #e9ebe6}.edu-supply{min-height:44px;border-bottom:1px solid #e9ebe6;display:flex;align-items:center;gap:11px;color:#535d55;font-size:12px}.edu-check{width:15px;height:15px;border:1px solid #cdd6cb;border-radius:4px}.edu-supply-name{flex:1}.edu-qty{color:#91988f}.edu-supply a{display:flex;align-items:center;gap:4px;text-decoration:none;color:#4f7556;font-size:11px}.edu-step{display:grid;grid-template-columns:38px 1fr;gap:17px;padding:3px 0 29px;margin-bottom:26px;border-bottom:1px solid #e8eae5}.edu-step-number{width:35px;height:35px;border-radius:50%;display:grid;place-items:center;background:#eaf0e7;color:#507256;font:14px Georgia}.edu-step-body h2{margin:6px 0 13px}.edu-step-body>p{margin:0 0 15px}.edu-step-image{width:100%;max-height:450px;object-fit:cover;border-radius:8px;margin:4px 0 12px}.edu-download{display:inline-flex;align-items:center;gap:9px;text-decoration:none;background:#eef3eb;border:1px solid #dce6d8;border-radius:6px;padding:11px 14px;color:#426949;font-size:12px;font-weight:700}.edu-project-aside{padding-top:4px}.edu-aside-card{padding:18px;border:1px solid #e5e8e1;background:#fff;border-radius:8px;margin-bottom:13px}.edu-aside-card h3{font:600 17px Georgia;margin:9px 0}.edu-aside-card p{font-size:11px;line-height:1.6;color:#777f76}.edu-aside-card button{margin-top:9px;padding:0;border:0;background:none;color:#4f7456;display:flex;align-items:center;gap:7px;font-size:11px;font-weight:700;cursor:pointer}.edu-aside-card .edu-goal{margin:10px 0;color:#5d6d5e}
+@media(max-width:1050px){.edu-project-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.edu-header-inner{gap:28px}.edu-detail-grid{gap:25px;grid-template-columns:minmax(0,1fr) 220px}}@media(max-width:760px){.edu-shell{padding:0 18px 30px}.edu-header-inner{padding:0 18px;gap:15px}.edu-header nav{gap:15px}.edu-header nav a:nth-child(n+2){display:none}.edu-header-actions>span{display:none}.edu-welcome{padding-top:30px}.edu-welcome-mark{display:none}.edu-browse{align-items:flex-start;flex-direction:column-reverse;padding-bottom:7px;gap:8px}.edu-search{width:100%}.edu-category-tabs{width:100%;gap:18px}.edu-project-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.edu-card-image{height:145px}.edu-card-copy{padding:11px}.edu-card-copy h2{font-size:15px}.edu-card-copy p{font-size:10px}.edu-album-strip{align-items:flex-start;flex-direction:column}.edu-album-chips{justify-content:flex-start}.edu-project-heading{align-items:flex-start;flex-direction:column}.edu-meta{white-space:normal;flex-wrap:wrap}.edu-detail-grid{grid-template-columns:1fr}.edu-project-aside{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.edu-aside-card{margin:0}.edu-hero-image{min-height:220px}.edu-card-foot span:last-child{display:none}}@media(max-width:430px){.edu-project-grid{grid-template-columns:1fr}.edu-card-image{height:205px}.edu-header-inner{gap:9px}.edu-brand{font-size:11px}.edu-header nav{gap:8px}.edu-header-actions button{padding:8px}.edu-project-aside{grid-template-columns:1fr}}
+`;
+
+const ADMIN_CSS = `
+.edu-admin{--ink:#202823;--muted:#79827b;--line:#e6eae5;--green:#2d6246;min-height:75vh;background:#f6f7f4;color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif}.edu-admin *{box-sizing:border-box}.edu-admin-header{height:62px;background:white;border-bottom:1px solid #e6eae5;display:flex;align-items:center;justify-content:space-between;padding:0 28px}.edu-admin-brand{display:flex;align-items:center;gap:10px}.edu-admin-brand>div>b{display:block;font-size:13px}.edu-admin-brand small{font-size:9px;letter-spacing:.12em;color:#879188}.edu-admin-head-actions{display:flex;gap:15px;align-items:center}.edu-saved{font-size:11px;color:#778179;display:flex;align-items:center;gap:7px}.edu-saved i,.edu-save-label span{width:7px;height:7px;border-radius:50%;background:#77a477}.edu-preview-btn{display:flex;align-items:center;gap:7px;border:1px solid #dce3da;background:#fff;border-radius:6px;padding:9px 12px;color:#416347;font-size:11px;font-weight:700;cursor:pointer}.edu-admin-layout{max-width:1450px;margin:auto;display:grid;grid-template-columns:270px minmax(0,1fr);min-height:calc(75vh - 62px)}.edu-admin-sidebar{background:#fff;border-right:1px solid #e8ebe5;padding:25px 17px}.edu-side-title{display:flex;align-items:center;justify-content:space-between;padding:0 4px 17px}.edu-side-title h2{font:600 18px Georgia;margin:5px 0 0}.edu-icon-btn{width:30px;height:30px;border:1px solid #dfe6dd;background:white;border-radius:6px;color:#426849;display:grid;place-items:center;cursor:pointer}.edu-admin-albums{display:grid;gap:5px}.edu-admin-album{display:flex;align-items:center;gap:10px;width:100%;padding:9px 7px;border:1px solid transparent;background:none;border-radius:7px;text-align:left;color:#707970;cursor:pointer}.edu-admin-album.active{background:#f0f5ef;border-color:#e1e9df;color:#355a3c}.edu-album-thumb{width:36px;height:36px;border-radius:5px;background:#edf0e9;display:grid;place-items:center;overflow:hidden;color:#788d78}.edu-album-thumb img{width:100%;height:100%;object-fit:cover}.edu-album-title{flex:1;min-width:0}.edu-album-title b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px}.edu-album-title small{display:block;margin-top:4px;color:#929990;font-size:9px}.edu-admin-album>svg{color:#9ba29b}.edu-new-album{margin-top:14px;width:100%;height:37px;border:1px dashed #cdd8cb;border-radius:6px;background:#fbfcfa;color:#4e7152;display:flex;align-items:center;justify-content:center;gap:7px;font-size:11px;font-weight:700;cursor:pointer}.edu-side-help{margin:35px 5px 0;padding:12px;border-radius:7px;background:#f7f8f3;color:#71816f;display:flex;gap:9px}.edu-side-help p{font-size:10px;line-height:1.5;margin:0}.edu-side-help b{font-size:11px;color:#435e46}.edu-admin-main{padding:29px clamp(20px,4vw,55px) 30px;max-width:1150px;width:100%;margin:0 auto}.edu-admin-topline{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:22px}.edu-breadcrumb{display:flex;align-items:center;gap:5px;color:#89928a;font-size:10px}.edu-admin-topline h1{font:500 28px Georgia;margin:7px 0 0;color:#26332a}.edu-save-label{border:0;background:none;color:#7e897f;display:flex;align-items:center;gap:7px;font-size:10px}.edu-editor-tabs{display:flex;gap:19px;border-bottom:1px solid #dfe5dd;margin-bottom:18px}.edu-editor-tabs button{display:flex;align-items:center;gap:7px;padding:0 2px 11px;border:0;border-bottom:2px solid transparent;background:none;color:#7b857c;font-size:11px;cursor:pointer}.edu-editor-tabs button.active{color:#3e6345;border-color:#6c936e;font-weight:700}.edu-editor-card{background:#fff;border:1px solid #e6eae4;border-radius:9px;margin-bottom:14px;padding:21px 23px;box-shadow:0 2px 4px #28372804}.edu-editor-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:17px}.edu-editor-card-head h2{display:flex;align-items:center;gap:8px;font:600 20px Georgia;margin:5px 0;color:#2c382e}.edu-editor-card-head>div>p{font-size:11px;color:#8a928a;margin:5px 0 0}.edu-danger{display:flex;align-items:center;gap:6px;background:white;border:1px solid #f0dfdb;border-radius:5px;padding:7px 9px;color:#a26256;font-size:10px;cursor:pointer}.edu-danger:disabled{opacity:.4}.edu-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.edu-field{display:flex;flex-direction:column;gap:6px;min-width:0}.edu-field.wide{grid-column:1/-1}.edu-field>span{color:#667268;font-size:10px;font-weight:700}.edu-field input,.edu-field textarea,.edu-field select,.edu-supply-editor-row input,.edu-supply-editor-row select,.edu-lesson-row select{width:100%;border:1px solid #e1e6df;border-radius:5px;background:#fff;padding:9px 10px;color:#38443a;font:inherit;font-size:11px;outline:none}.edu-field input:focus,.edu-field textarea:focus,.edu-field select:focus,.edu-supply-editor-row input:focus{border-color:#91ad91;box-shadow:0 0 0 2px #dfeadd}.edu-field textarea{min-height:69px;resize:vertical}.edu-field select{background:#fff}.edu-cover-preview{margin-top:15px;width:min(100%,460px);max-height:190px;object-fit:cover;border-radius:6px}.edu-project-selector{border:1px solid #e6eae4;border-radius:8px;background:#fff;padding:13px 16px;margin-bottom:14px}.edu-project-selector-label{display:flex;justify-content:space-between;align-items:center;color:#969e96;font-size:10px;margin-bottom:10px}.edu-project-pills{display:flex;gap:7px;flex-wrap:wrap}.edu-project-pills button{padding:7px 10px;border:1px solid #e4e8e2;border-radius:5px;background:white;color:#69736a;font-size:10px;cursor:pointer}.edu-project-pills button.active{border-color:#c7d9c6;background:#eff5ed;color:#3f6745;font-weight:700}.edu-project-pills button.edu-add-pill{display:flex;align-items:center;gap:4px;border-style:dashed;color:#4e7655}.edu-add-buttons{display:flex;gap:6px;flex-wrap:wrap}.edu-add-buttons button,.edu-add-step{display:flex;align-items:center;gap:6px;background:#fff;border:1px solid #dfe6de;border-radius:5px;padding:8px 9px;color:#527155;font-size:10px;cursor:pointer}.edu-add-buttons button.dark{background:#385c40;border-color:#385c40;color:white}.edu-add-buttons button:disabled{opacity:.4;cursor:not-allowed}.edu-supplies-editor{border-top:1px solid #edf0eb}.edu-supply-editor-row{display:grid;grid-template-columns:30px minmax(90px,1fr) minmax(110px,1.4fr) 84px 26px;gap:8px;align-items:center;padding:9px 0;border-bottom:1px solid #edf0eb}.edu-supply-editor-row:has(select){grid-template-columns:30px minmax(0,1fr) 84px 26px}.edu-supply-order{font:12px Georgia;color:#9da69c}.edu-supply-editor-row input,.edu-supply-editor-row select{font-size:10px;padding:8px}.edu-quantity{display:flex;align-items:center;gap:6px;color:#969e96;font-size:9px}.edu-quantity input{width:52px;padding:7px}.edu-remove{border:0;background:none;color:#a3aaa2;padding:5px;cursor:pointer}.edu-remove:hover{color:#bb6558}.edu-inline-empty{padding:19px 0;color:#929a91;font-size:11px}.edu-add-step{background:#42674a;color:white;border-color:#42674a;padding:9px 11px;font-weight:700}.edu-steps-editor{display:grid;gap:11px}.edu-step-editor{border:1px solid #e8ece6;border-radius:7px;padding:12px 14px;background:#fdfdfc}.edu-step-editor-title{display:flex;align-items:center;gap:9px;margin-bottom:12px}.edu-step-editor-title>span{display:grid;place-items:center;width:25px;height:25px;border-radius:50%;background:#edf3eb;color:#547458;font:11px Georgia}.edu-step-editor-title>input{flex:1;border:0;background:transparent;outline:0;color:#334036;font:600 14px Georgia}.edu-step-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px}.edu-step-form .edu-field textarea{min-height:67px}.edu-step-placeholder{display:flex;align-items:center;gap:11px;padding:15px 0;color:#8b958b;font-size:11px}.edu-advanced-toggle{margin:5px 0 13px}.edu-advanced-toggle button{display:flex;align-items:center;gap:6px;border:0;background:none;color:#778278;font-size:11px;cursor:pointer}.edu-advanced-toggle .rotate{transform:rotate(180deg)}.edu-lesson-links{border-top:1px solid #edf0eb;margin-top:15px;padding-top:13px}.edu-lesson-links h3{display:flex;align-items:center;gap:7px;font:600 14px Georgia;color:#3a493c}.edu-lesson-row{display:flex;align-items:center;gap:8px;margin:7px 0}.edu-lesson-row select{flex:1}.edu-lesson-row>button:not(.edu-remove){border:1px solid #e1e8df;background:#f6f9f5;color:#507155;border-radius:5px;padding:8px;font-size:10px;cursor:pointer}.edu-add-link{display:flex;align-items:center;gap:5px;border:0;background:none;color:#517956;font-size:10px;cursor:pointer;padding:7px 0}.edu-add-link:disabled{opacity:.4}.edu-admin-bottom{display:flex;align-items:center;justify-content:space-between;padding:10px 3px;color:#929b92;font-size:10px}.edu-admin-bottom button{display:flex;align-items:center;gap:7px;border:0;background:none;color:#4c7352;font-size:11px;font-weight:700;cursor:pointer}.edu-admin-empty{padding:100px 10px;text-align:center;color:#91a092}.edu-admin-empty h2{font:22px Georgia;color:#3e4b40}.edu-admin-empty button{display:inline-flex;align-items:center;gap:6px;background:#3f6948;border:0;border-radius:5px;padding:10px 14px;color:white;cursor:pointer}
+@media(max-width:800px){.edu-admin-layout{grid-template-columns:210px minmax(0,1fr)}.edu-admin-main{padding:22px 18px}.edu-editor-card{padding:17px}.edu-admin-sidebar{padding:18px 10px}.edu-supply-editor-row{grid-template-columns:25px 1fr 68px 25px}.edu-supply-editor-row>input:nth-of-type(2){grid-column:2/4}.edu-supply-editor-row:has(select){grid-template-columns:25px 1fr 68px 25px}}@media(max-width:600px){.edu-admin-header{padding:0 14px}.edu-admin-head-actions{gap:7px}.edu-saved{display:none}.edu-preview-btn{font-size:10px}.edu-admin-layout{display:block}.edu-admin-sidebar{border-right:0;border-bottom:1px solid #e8ebe5;padding:13px 14px}.edu-side-title{padding-bottom:9px}.edu-admin-albums{display:flex;overflow:auto}.edu-admin-album{min-width:175px}.edu-new-album{margin-top:8px}.edu-side-help{display:none}.edu-admin-main{padding:20px 13px}.edu-admin-topline h1{font-size:24px}.edu-form-grid,.edu-step-form{grid-template-columns:1fr}.edu-field.wide{grid-column:auto}.edu-editor-card-head{flex-direction:column}.edu-add-buttons{width:100%}.edu-supply-editor-row{grid-template-columns:24px minmax(0,1fr) 58px 22px}.edu-supply-editor-row:not(:has(select))>input:nth-of-type(2){grid-column:2/4}.edu-lesson-row{flex-wrap:wrap}.edu-lesson-row select{min-width:100%}.edu-admin-bottom{align-items:flex-start;gap:10px;flex-direction:column}}
+`;
