@@ -1,3 +1,4 @@
+import { getTypographyHead } from '../services/typography';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { InventoryItem, InventoryReceipt, InventoryReceiptItem } from '../types';
@@ -80,7 +81,7 @@ const BarcodePreview: React.FC<{ value?: string }> = ({ value }) => {
   return (
     <div className="flex flex-col items-center gap-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
       <svg ref={svgRef} className="w-full max-w-[180px]"></svg>
-      <span className="text-[11px] font-mono text-slate-600 tracking-widest">{value}</span>
+      <span className="text-[11px] font-sans text-slate-600 tracking-widest">{value}</span>
     </div>
   );
 };
@@ -529,7 +530,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
       cardHtmlList.slice(index * itemsPerPage, (index + 1) * itemsPerPage).join('')
     );
     const reportCss = `
-      .inventory-pdf-page { box-sizing: border-box; width: 794px; min-height: 1123px; color: #0f172a; font-family: Arial, sans-serif; padding: 30px; background: #ffffff; }
+      .inventory-pdf-page { box-sizing: border-box; width: 794px; min-height: 1123px; color: #0f172a; font-family:var(--app-font-family); padding: 30px; background: #ffffff; }
       .report-head { border-bottom: 2px solid #e2e8f0; margin-bottom: 18px; padding-bottom: 14px; }
       .eyebrow { color: #64748b; font-size: 10px; font-weight: 800; letter-spacing: 1.4px; text-transform: uppercase; }
       h1 { font-size: 24px; line-height: 1.2; margin: 6px 0 6px; text-transform: uppercase; }
@@ -588,6 +589,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
         root.innerHTML = buildPageHtml(cardPages[index], index);
         await new Promise(resolve => window.requestAnimationFrame(() => resolve(null)));
         const pageNode = root.firstElementChild as HTMLElement;
+        await document.fonts.ready;
         const canvas = await html2canvas(pageNode, {
           scale: 1.5,
           useCORS: true,
@@ -917,12 +919,13 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
     printWindow.document.write(`
       <html>
         <head>
+          ${getTypographyHead()}
           <title>In tem: ${titleName}</title>
           <style>
             /* Khổ 2 tem/row: 35x22mm mỗi tem. Trang rộng 74mm, 2 cột, khoảng cách hàng 3mm, cột 4mm. */
             @page { size: 74mm auto; margin: 1mm; }
             * { box-sizing: border-box; }
-            body { margin: 0; padding: 0; font-family: Arial, sans-serif; background: #f8fafc; }
+            body { margin: 0; padding: 0; font-family:var(--app-font-family); background: #f8fafc; }
             .sheet {
               width: 74mm;
               display: grid;
@@ -958,7 +961,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
               object-fit: contain;
             }
             .label__code {
-              font-family: monospace;
+              font-family:var(--app-font-family);
               font-size: 8px;
               letter-spacing: 0.12em;
               text-align: center;
@@ -997,7 +1000,9 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
                 img.onerror = () => res(null);
               })));
             };
-            waitImages().then(() => {
+            window.addEventListener('load', async () => {
+              await waitImages();
+              await document.fonts.ready;
               const s = document.getElementById('status');
               if (s) s.style.display = 'none';
               window.print();
@@ -1479,7 +1484,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
                     <div className="bg-white border border-slate-200 rounded-xl p-2 flex items-center justify-between gap-3">
                       <div>
                         <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Mã barcode</p>
-                        <p className="text-sm font-mono text-slate-700">{item.barcode}</p>
+                        <p className="text-sm font-sans text-slate-700">{item.barcode}</p>
                       </div>
                       <BarcodePreview value={item.barcode} />
                     </div>
@@ -1730,7 +1735,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
                   <div className="flex gap-2">
                     <input
                       type="text"
-                      className="w-full border-2 border-slate-100 rounded-2xl p-4 text-sm font-mono tracking-widest disabled:bg-slate-50 disabled:text-slate-400"
+                      className="w-full border-2 border-slate-100 rounded-2xl p-4 text-sm font-sans tracking-widest disabled:bg-slate-50 disabled:text-slate-400"
                       placeholder="Để trống hệ thống tự tạo"
                       value={newItemData.barcode}
                       onChange={e => setNewItemData({ ...newItemData, barcode: e.target.value })}
@@ -2025,7 +2030,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
                           value={line.barcode}
                           onChange={e => handleReceiptItemChange(line.tempId, { barcode: e.target.value })}
                           placeholder="Để trống để hệ thống tạo"
-                          className="w-full border-2 border-slate-100 rounded-xl p-3 text-sm font-mono tracking-widest bg-white"
+                          className="w-full border-2 border-slate-100 rounded-xl p-3 text-sm font-sans tracking-widest bg-white"
                           disabled={line.mode === 'EXISTING'}
                         />
                       </div>
@@ -2228,7 +2233,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
                         return (
                           <tr key={sel.itemId} className="border-t border-slate-100">
                             <td className="py-2 px-3 font-bold text-slate-800">{item.name}</td>
-                            <td className="py-2 px-3 font-mono text-xs text-slate-500">{item.barcode || 'Chưa có mã'}</td>
+                            <td className="py-2 px-3 font-sans text-xs text-slate-500">{item.barcode || 'Chưa có mã'}</td>
                             <td className="py-2 px-3 text-center font-black text-blue-600">{sel.quantity}</td>
                             <td className="py-2 px-3 text-right">
                               <button onClick={() => setPrintSelections(prev => prev.filter(p => p.itemId !== sel.itemId))} className="text-red-500 text-xs font-bold hover:underline">Xóa</button>
@@ -2253,7 +2258,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({
                           {inventory.find(i => i.id === printSelections[0].itemId)?.name}
                         </p>
                         <img src={printPreviewUrl} alt="barcode preview" className="w-full h-[50px] object-contain" />
-                        <p className="text-[10px] font-mono text-slate-500 tracking-[0.12em] mt-1">
+                        <p className="text-[10px] font-sans text-slate-500 tracking-[0.12em] mt-1">
                           {inventory.find(i => i.id === printSelections[0].itemId)?.barcode}
                         </p>
                       </div>

@@ -1,3 +1,4 @@
+import { getTypographyHead, printWhenFontsReady } from '../services/typography';
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { Event, InventoryItem, EventStatus, ComboPackage, Employee, EventExpense, EventAdvanceRequest, EventStaffAllocation, Quotation, EventLayout, EventLayoutBlock, LayoutPackageSource, ChecklistDirection, ChecklistStatus, ChecklistSignature, EventPreparationEntry, EventInventoryIncidentType, EventTimelineEntry, EventTimelinePhase, EventProfile, EventVenueType, EducationActivity, LearningTrack, EventContentProgram } from '../types';
@@ -2715,12 +2716,13 @@ export const EventManager: React.FC<EventManagerProps> = ({
       <!doctype html>
       <html>
         <head>
+          ${getTypographyHead()}
           <title>Sơ đồ trạm - ${selectedEvent.name}</title>
           <style>
             @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
           </style>
         </head>
-        <body style="margin:0;padding:24px;background:#0b1224;font-family:Arial, sans-serif;color:#fff;">
+        <body style="margin:0;padding:24px;background:#0b1224;font-family:var(--app-font-family);color:#fff;">
           <h2 style="margin:0 0 12px;font-size:20px;font-weight:900;">Sơ đồ trạm • ${selectedEvent.name}</h2>
           <p style="margin:0 0 16px;font-size:12px;color:#cbd5e1;">Kéo thả các block đại diện cho khu vực và nhân sự.</p>
           <div style="position:relative;width:100%;aspect-ratio:${ratio};max-height:820px;border:1px dashed #cbd5e1;border-radius:16px;${backgroundStyle}overflow:hidden;">
@@ -2731,10 +2733,7 @@ export const EventManager: React.FC<EventManagerProps> = ({
     `);
     printWindow.document.close();
     printWindow.focus();
-    printWindow.onload = () => {
-      printWindow.print();
-      printWindow.close();
-    };
+    void printWhenFontsReady(printWindow).then(() => printWindow.close());
   };
 
   useEffect(() => {

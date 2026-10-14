@@ -1,3 +1,4 @@
+import { getTypographyHead, printWhenFontsReady } from '../services/typography';
 import React, { useMemo, useState } from 'react';
 import { ChevronDown, ChevronUp, Pencil, Printer, Trash2, X } from 'lucide-react';
 import { Event, SaleItem, SaleOrder } from '../types';
@@ -152,9 +153,10 @@ export const OrderManager: React.FC<OrderManagerProps> = ({
     printWindow.document.write(`
       <html>
         <head>
+          ${getTypographyHead()}
           <title>${title}</title>
           <style>
-            body { font-family: Arial, sans-serif; padding: 24px; color: #0f172a; }
+            body { font-family:var(--app-font-family); padding: 24px; color: #0f172a; }
             h1 { font-size: 18px; margin: 0 0 12px; }
             .meta { font-size: 12px; color: #64748b; margin-bottom: 16px; }
             table { width: 100%; border-collapse: collapse; font-size: 12px; }
@@ -172,7 +174,7 @@ export const OrderManager: React.FC<OrderManagerProps> = ({
     printWindow.document.close();
     printWindow.focus();
     if (autoPrint) {
-      printWindow.print();
+      void printWhenFontsReady(printWindow);
     }
   };
 
@@ -463,6 +465,8 @@ export const OrderManager: React.FC<OrderManagerProps> = ({
       const wrapper = document.createElement('div');
       wrapper.innerHTML = content.body;
       const filename = `${order.id}-${mode.toLowerCase()}.pdf`;
+      await document.fonts.ready;
+
       await html2pdf().set({
         filename,
         html2canvas: { scale: 2 },

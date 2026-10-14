@@ -850,8 +850,8 @@ const buildEquipmentSection = (event: Event, inventory: InventoryItem[]) => {
 const dossierStyles = `
   <style>
     * { box-sizing: border-box; }
-    .dossier-root { width: 100%; margin: 0; background: #fff; color: #111827; font-family: Arial, 'Helvetica Neue', Helvetica, 'Noto Sans', 'DejaVu Sans', sans-serif; font-size: 10px; line-height: 1.32; font-variant-ligatures: none; }
-    .dossier-root table, .dossier-root th, .dossier-root td, .dossier-root div, .dossier-root p, .dossier-root span, .dossier-root strong { font-family: Arial, 'Helvetica Neue', Helvetica, 'Noto Sans', 'DejaVu Sans', sans-serif; }
+    .dossier-root { width: 100%; margin: 0; background: #fff; color: #111827; font-family:var(--app-font-family); font-size: 10px; line-height: 1.32; font-variant-ligatures: none; }
+    .dossier-root table, .dossier-root th, .dossier-root td, .dossier-root div, .dossier-root p, .dossier-root span, .dossier-root strong { font-family:var(--app-font-family); }
     .pdf-section { position: relative; width: 100%; padding: 10px 12px 28px; background: #fff; page-break-after: always; break-after: page; }
     .pdf-section:last-child { page-break-after: auto; break-after: auto; }
     .appendix-section { min-height: 1020px; padding: 24px 28px 48px; }
@@ -997,6 +997,8 @@ export const exportEventDossier = async (
 
   const defaultFilename = buildEventDossierFilename(event);
   try {
+    await document.fonts.ready;
+
     await html2pdf().set({
       filename: options.filename || defaultFilename,
       margin: [6, 6, 8, 6],

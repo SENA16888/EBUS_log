@@ -5,7 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>EINSTEIN BUS _ AI - Quản lý Kho Sự Kiện</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,300..800;1,300..800&display=swap" rel="stylesheet">
+    <script>
+      tailwind.config = {
+        theme: {
+          fontFamily: {
+            sans: ['var(--app-font-family)'],
+            serif: ['var(--app-font-family)'],
+            mono: ['var(--app-font-family)']
+          }
+        }
+      };
+    </script>
+    <link rel="stylesheet" href="/typography.css" data-app-typography>
     <style>
       :root {
         font-size: 14px;
@@ -16,7 +27,7 @@
         }
       }
       body {
-        font-family: 'Inter', sans-serif;
+        font-family: var(--app-font-family);
         background-color: #f3f4f6;
       }
       /* Custom scrollbar for better aesthetics */

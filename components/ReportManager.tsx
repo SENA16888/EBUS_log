@@ -1,3 +1,4 @@
+import { getTypographyHead } from '../services/typography';
 import React, { useMemo, useState } from 'react';
 import {
   AlertTriangle,
@@ -837,9 +838,10 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
     printWindow.document.write(`
       <html>
         <head>
+          ${getTypographyHead()}
           <title>Báo cáo ${escapeHtml(report.periodLabel)}</title>
           <style>
-            body { font-family: Arial, sans-serif; color: #0f172a; padding: 24px; }
+            body { font-family:var(--app-font-family); color: #0f172a; padding: 24px; }
             h1 { margin: 0 0 4px; font-size: 24px; }
             h2 { margin: 24px 0 8px; font-size: 16px; }
             .meta { color: #64748b; font-size: 12px; margin-bottom: 18px; }
@@ -870,7 +872,7 @@ export const ReportManager: React.FC<ReportManagerProps> = ({ appState }) => {
           <table><thead><tr><th>Nhân sự</th><th>Vai trò</th><th>Số lượt</th><th>Lương gốc</th><th>Thưởng</th><th>Phạt đã trừ</th><th>Lương thực tính</th></tr></thead><tbody>${staffRows || '<tr><td colspan="7">Không có dữ liệu.</td></tr>'}</tbody></table>
           <h2>Hư hỏng/mất mát</h2>
           <table><thead><tr><th>Hàng hóa</th><th>Hư hỏng</th><th>Mất</th><th>Nguồn</th></tr></thead><tbody>${damageRows || '<tr><td colspan="4">Không có dữ liệu.</td></tr>'}</tbody></table>
-          <script>window.onload = () => window.print();</script>
+          <script>window.onload = async () => { await document.fonts.ready; window.print(); };</script>
         </body>
       </html>
     `);

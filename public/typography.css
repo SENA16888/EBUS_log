@@ -1,0 +1,27 @@
+@import url('./fonts/montserrat.css');
+
+:root {
+  --app-font-family: 'Montserrat', sans-serif;
+  font-family: var(--app-font-family);
+}
+
+body,
+button,
+input,
+optgroup,
+select,
+textarea,
+::file-selector-button,
+pre,
+code,
+kbd,
+samp,
+.font-sans {
+  font-family: var(--app-font-family);
+}
+
+/* Keep chart labels consistent with the rest of the interface. */
+svg text,
+svg tspan {
+  font-family: var(--app-font-family);
+}

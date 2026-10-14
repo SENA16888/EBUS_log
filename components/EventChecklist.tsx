@@ -291,7 +291,7 @@ export const EventChecklist: React.FC<EventChecklistProps> = ({
               <input
                 value={scanValue}
                 onChange={eventChange => setScanValue(eventChange.target.value)}
-                className="w-full pl-9 pr-3 py-2.5 border border-slate-200 rounded-lg font-mono text-sm"
+                className="w-full pl-9 pr-3 py-2.5 border border-slate-200 rounded-lg font-sans text-sm"
                 placeholder="Quét barcode để tìm nhanh"
               />
             </div>

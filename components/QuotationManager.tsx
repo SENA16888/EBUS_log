@@ -123,6 +123,8 @@ export const QuotationManager: React.FC<QuotationManagerProps> = ({
     setIsExportingPdf(true);
     try {
       const html2pdf = await loadPdfLib();
+      await document.fonts.ready;
+
       await html2pdf().set({
         margin: 10,
         filename: `${quote.id}.pdf`,

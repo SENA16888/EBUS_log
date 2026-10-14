@@ -43,7 +43,7 @@ export const exportEventChecklist = async (
   container.style.width = '210mm'; // A4 width
   container.style.padding = '20px';
   container.style.backgroundColor = 'white';
-  container.style.fontFamily = 'Arial, sans-serif';
+  container.style.fontFamily = 'var(--app-font-family)';
   container.style.fontSize = '12px';
   container.style.color = '#000';
   document.body.appendChild(container);
@@ -254,6 +254,8 @@ export const exportEventChecklist = async (
     container.appendChild(footerSection);
 
     // Convert HTML to Canvas
+    await document.fonts.ready;
+
     const canvas = await html2canvas(container, {
       scale: quality === 'high' ? 1.6 : quality === 'medium' ? 1.2 : 1,
       logging: false,

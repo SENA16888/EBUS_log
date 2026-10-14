@@ -1,3 +1,4 @@
+import { getTypographyHead } from '../services/typography';
 import React, { useEffect, useMemo, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import {
@@ -1781,9 +1782,10 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
     printWindow.document.write(`
       <html>
         <head>
+          ${getTypographyHead()}
           <title>Agenda nhóm - ${selectedEvent?.name || 'Einstein House'}</title>
           <style>
-            body { font-family: Inter, Arial, sans-serif; color: #0f172a; margin: 24px; }
+            body { font-family:var(--app-font-family); color: #0f172a; margin: 24px; }
             h1 { font-size: 22px; margin: 0 0 4px; }
             .subtitle { color: #64748b; font-size: 12px; margin-bottom: 18px; }
             .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
@@ -1803,7 +1805,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
           <h1>Agenda hoạt động theo nhóm</h1>
           <div class="subtitle">${selectedEvent?.name || ''} • ${selectedEvent?.client || ''} • ${formatDate(getPrimaryDate(selectedEvent!))}</div>
           <div class="grid">${rows}</div>
-          <script>window.onload = () => { window.print(); };</script>
+          <script>window.onload = async () => { await document.fonts.ready; window.print(); };</script>
         </body>
       </html>
     `);
@@ -3068,7 +3070,7 @@ export const EinsteinHouseOS: React.FC<EinsteinHouseOSProps> = ({
 
               <section className="bg-white border border-slate-200 rounded-lg p-4">
                 <h3 className="font-black text-slate-900 flex items-center gap-2"><FileText size={18} />Report Generator</h3>
-                <textarea readOnly value={reportSummary} className="mt-4 w-full min-h-[220px] border rounded-lg p-3 text-sm font-mono bg-slate-50" />
+                <textarea readOnly value={reportSummary} className="mt-4 w-full min-h-[220px] border rounded-lg p-3 text-sm font-sans bg-slate-50" />
                 <div className="mt-4 grid grid-cols-2 gap-2">
                   <Metric title="Station rating" value={operation.feedback.length ? `${(operation.feedback.reduce((s, f) => s + (f.score || 0), 0) / operation.feedback.length).toFixed(1)}★` : '-'} tone="amber" />
                   <Metric title="Chậm/trùng" value={overlapWarnings.size} tone="rose" />

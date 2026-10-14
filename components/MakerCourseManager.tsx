@@ -1,3 +1,4 @@
+import { getTypographyHead, printWhenFontsReady } from '../services/typography';
 import React, { useMemo, useState } from 'react';
 import {
   Award,
@@ -235,9 +236,10 @@ const printHtml = (title: string, body: string) => {
   win.document.write(`
     <html>
       <head>
+          ${getTypographyHead()}
         <title>${title}</title>
         <style>
-          body{font-family:Arial,sans-serif;margin:32px;color:#0f172a}
+          body{font-family:var(--app-font-family);margin:32px;color:#0f172a}
           h1,h2{margin:0 0 8px}
           .muted{color:#64748b}
           .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
@@ -251,7 +253,7 @@ const printHtml = (title: string, body: string) => {
   `);
   win.document.close();
   win.focus();
-  win.print();
+  void printWhenFontsReady(win);
 };
 
 export const MakerCourseManager: React.FC<MakerCourseManagerProps> = ({

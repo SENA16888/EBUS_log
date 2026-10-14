@@ -1,3 +1,4 @@
+import { getTypographyHead, printWhenFontsReady } from '../services/typography';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, Barcode, CheckCircle2, ClipboardCheck, Download, FileText, History, PackageCheck, Printer, RotateCcw, Save, Search, Truck, X, XCircle } from 'lucide-react';
 import { InventoryAuditBaseline, InventoryAuditItem, InventoryAuditScope, InventoryAuditSession, InventoryItem, InventoryVarianceReason } from '../types';
@@ -347,7 +348,7 @@ export const StocktakeManager: React.FC<StocktakeManagerProps> = ({
     return `
       <div class="audit-doc">
         <style>
-          .audit-doc { font-family: Arial, sans-serif; color: #0f172a; padding: 20px; background: #fff; }
+          .audit-doc { font-family:var(--app-font-family); color: #0f172a; padding: 20px; background: #fff; }
           .audit-doc h1 { margin: 0 0 6px; font-size: 24px; text-transform: uppercase; }
           .audit-doc h2 { margin: 22px 0 10px; font-size: 15px; text-transform: uppercase; }
           .audit-doc .top { display: flex; justify-content: space-between; gap: 20px; border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 14px; }
@@ -362,11 +363,11 @@ export const StocktakeManager: React.FC<StocktakeManagerProps> = ({
           .audit-doc .num { text-align: right; font-weight: 700; }
           .audit-doc .center { text-align: center; }
           .audit-doc .muted { color: #64748b; font-size: 9.5px; margin-top: 2px; }
-          .audit-doc .mono { color: #475569; font-family: monospace; font-size: 9.5px; margin-top: 2px; }
+          .audit-doc .mono { color: #475569; font-family:var(--app-font-family); font-size: 9.5px; margin-top: 2px; }
           .audit-doc .ok { color: #047857; }
           .audit-doc .surplus { color: #0369a1; }
           .audit-doc .shortage { color: #dc2626; }
-          .audit-doc .tag { display: inline-block; border: 1px solid #fed7aa; background: #fff7ed; color: #c2410c; padding: 5px 8px; border-radius: 8px; margin: 0 6px 6px 0; font-family: monospace; font-size: 10px; }
+          .audit-doc .tag { display: inline-block; border: 1px solid #fed7aa; background: #fff7ed; color: #c2410c; padding: 5px 8px; border-radius: 8px; margin: 0 6px 6px 0; font-family:var(--app-font-family); font-size: 10px; }
           .audit-doc .signatures { display: flex; justify-content: space-between; margin-top: 34px; page-break-inside: avoid; }
           .audit-doc .signature { width: 42%; text-align: center; font-size: 11px; }
           .audit-doc .signature .line { border-top: 1px solid #0f172a; margin-top: 58px; padding-top: 6px; color: #475569; }
@@ -450,19 +451,21 @@ export const StocktakeManager: React.FC<StocktakeManagerProps> = ({
     printWindow.document.write(`
       <html>
         <head>
+          ${getTypographyHead()}
           <title>${escapeHtml(audit.code)} - Kiểm kho</title>
         </head>
         <body>
-          <div class="no-print" style="position: sticky; top: 0; display: flex; justify-content: flex-end; gap: 8px; padding: 10px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; font-family: Arial, sans-serif;">
-            <button onclick="window.print()" style="padding: 8px 12px; border: 0; border-radius: 8px; background: #2563eb; color: white; font-weight: 700;">In / lưu PDF</button>
+          <div class="no-print" style="position: sticky; top: 0; display: flex; justify-content: flex-end; gap: 8px; padding: 10px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; font-family:var(--app-font-family);">
+            <button onclick="document.fonts.ready.then(() => window.print())" style="padding: 8px 12px; border: 0; border-radius: 8px; background: #2563eb; color: white; font-weight: 700;">In / lưu PDF</button>
             <button onclick="window.close()" style="padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 8px; background: white; font-weight: 700;">Đóng</button>
           </div>
           ${buildAuditHtml(audit)}
-          ${autoPrint ? '<script>setTimeout(() => window.print(), 350);</script>' : ''}
+
         </body>
       </html>
     `);
     printWindow.document.close();
+    if (autoPrint) void printWhenFontsReady(printWindow);
     printWindow.focus();
   };
 
@@ -478,6 +481,8 @@ export const StocktakeManager: React.FC<StocktakeManagerProps> = ({
 
     try {
       const html2pdf = await loadPdfLib();
+      await document.fonts.ready;
+
       await html2pdf().set({
         margin: 6,
         filename: `${audit.code}-kiem-kho.pdf`,
@@ -594,7 +599,7 @@ export const StocktakeManager: React.FC<StocktakeManagerProps> = ({
                   ref={scanInputRef}
                   value={scanCode}
                   onChange={event => setScanCode(event.target.value)}
-                  className="flex-1 min-w-0 border-2 border-slate-100 rounded-xl px-4 py-3 text-lg font-mono tracking-widest focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
+                  className="flex-1 min-w-0 border-2 border-slate-100 rounded-xl px-4 py-3 text-lg font-sans tracking-widest focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
                   placeholder="Quét mã rồi Enter"
                   disabled={!canEdit}
                 />
@@ -650,7 +655,7 @@ export const StocktakeManager: React.FC<StocktakeManagerProps> = ({
               <div className="space-y-3">
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                   <p className="text-sm font-black text-slate-800">{selectedItem.name}</p>
-                  <p className="text-[11px] font-mono text-slate-500">{selectedItem.barcode || selectedItem.id}</p>
+                  <p className="text-[11px] font-sans text-slate-500">{selectedItem.barcode || selectedItem.id}</p>
                   <div className="grid grid-cols-3 gap-2 mt-3 text-center">
                     <div className="bg-white rounded-lg p-2 border border-slate-100">
                       <p className="text-[10px] font-black text-slate-400 uppercase">Tổng</p>
@@ -816,7 +821,7 @@ export const StocktakeManager: React.FC<StocktakeManagerProps> = ({
                         <td className="px-3 py-3 min-w-[240px]">
                           <p className="font-bold text-slate-800">{row.name}</p>
                           <p className="text-[11px] text-slate-500">{row.category} • {row.location || 'Chưa định vị'}</p>
-                          <p className="text-[11px] font-mono text-slate-400">{row.barcode || row.itemId}</p>
+                          <p className="text-[11px] font-sans text-slate-400">{row.barcode || row.itemId}</p>
                         </td>
                         <td className="px-3 py-3 text-right font-bold text-slate-700">{formatNumber(row.snapshot.totalQuantity)}</td>
                         <td className="px-3 py-3 text-right font-bold text-blue-600">{formatNumber(row.snapshot.availableQuantity)}</td>
@@ -944,7 +949,7 @@ export const StocktakeManager: React.FC<StocktakeManagerProps> = ({
               ) : (
                 <div className="flex flex-wrap gap-2">
                   {unknownBarcodes.map(code => (
-                    <span key={code} className="px-3 py-2 rounded-xl bg-orange-50 border border-orange-100 text-orange-700 text-xs font-mono font-bold">
+                    <span key={code} className="px-3 py-2 rounded-xl bg-orange-50 border border-orange-100 text-orange-700 text-xs font-sans font-bold">
                       {code}
                     </span>
                   ))}
@@ -1045,7 +1050,7 @@ export const StocktakeManager: React.FC<StocktakeManagerProps> = ({
                           <td className="px-3 py-3 min-w-[240px]">
                             <p className="font-bold text-slate-800">{row.name}</p>
                             <p className="text-[11px] text-slate-500">{row.category} {row.location ? `• ${row.location}` : ''}</p>
-                            <p className="text-[11px] font-mono text-slate-400">{row.barcode || row.itemId}</p>
+                            <p className="text-[11px] font-sans text-slate-400">{row.barcode || row.itemId}</p>
                           </td>
                           <td className="px-3 py-3 text-center">
                             <span className={`px-2 py-1 rounded-lg text-[11px] font-black ${row.barcodeAttached ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
@@ -1080,7 +1085,7 @@ export const StocktakeManager: React.FC<StocktakeManagerProps> = ({
                 {viewingAudit.unknownBarcodes?.length ? (
                   <div className="flex flex-wrap gap-2">
                     {viewingAudit.unknownBarcodes.map(code => (
-                      <span key={code} className="px-3 py-2 rounded-xl bg-white border border-orange-100 text-orange-700 text-xs font-mono font-bold">
+                      <span key={code} className="px-3 py-2 rounded-xl bg-white border border-orange-100 text-orange-700 text-xs font-sans font-bold">
                         {code}
                       </span>
                     ))}

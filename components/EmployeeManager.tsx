@@ -1,3 +1,4 @@
+import { getTypographyHead, printWhenFontsReady } from '../services/typography';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Employee, Event, EventStatus, EventStaffAllocation, EventVenueType, PayrollAdjustment } from '../types';
 import { Search, Plus, X, Pencil, Trash2, Phone, Mail, DollarSign, Calendar, Printer, ChevronDown, ChevronUp, FileText } from 'lucide-react';
@@ -325,7 +326,7 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
       ...enabledFields.map(field => `<th>${escapeHtml(field.label)}</th>`)
     ].join('');
     const reportCss = `
-      .employee-pdf-page { box-sizing: border-box; width: 1123px; min-height: 794px; color: #0f172a; font-family: Arial, sans-serif; padding: 28px; background: #ffffff; }
+      .employee-pdf-page { box-sizing: border-box; width: 1123px; min-height: 794px; color: #0f172a; font-family:var(--app-font-family); padding: 28px; background: #ffffff; }
       .report-head { border-bottom: 2px solid #e2e8f0; margin-bottom: 16px; padding-bottom: 12px; }
       .eyebrow { color: #64748b; font-size: 10px; font-weight: 800; letter-spacing: 1.2px; text-transform: uppercase; }
       h1 { font-size: 24px; line-height: 1.2; margin: 5px 0; text-transform: uppercase; }
@@ -398,6 +399,7 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
         root.innerHTML = buildPageHtml(rowPages[index], index);
         await new Promise(resolve => window.requestAnimationFrame(() => resolve(null)));
         const pageNode = root.firstElementChild as HTMLElement;
+        await document.fonts.ready;
         const canvas = await html2canvas(pageNode, {
           scale: 1.5,
           useCORS: true,
@@ -614,9 +616,10 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
     printWindow.document.write(`
       <html>
         <head>
+          ${getTypographyHead()}
           <title>${title}</title>
           <style>
-            body { font-family: Arial, sans-serif; padding: 16px; color: #0f172a; }
+            body { font-family:var(--app-font-family); padding: 16px; color: #0f172a; }
             h2 { margin: 0 0 12px 0; }
             table { width: 100%; border-collapse: collapse; margin-top: 8px; }
             th, td { border: 1px solid #e2e8f0; padding: 8px; font-size: 12px; vertical-align: top; }
@@ -640,7 +643,7 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
     `);
     printWindow.document.close();
     printWindow.focus();
-    setTimeout(() => printWindow.print(), 200);
+    void printWhenFontsReady(printWindow);
   };
 
   const handleSubmit = () => {

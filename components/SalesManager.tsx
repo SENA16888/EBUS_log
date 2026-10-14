@@ -456,7 +456,7 @@ export const SalesManager: React.FC<SalesManagerProps> = ({
                         </div>
                         <div className="min-w-0">
                           <div className="font-bold truncate">{line.name}</div>
-                          <div className="text-xs text-slate-500 font-mono truncate">{line.barcode || line.itemId}</div>
+                          <div className="text-xs text-slate-500 font-sans truncate">{line.barcode || line.itemId}</div>
                           <div className="text-sm font-black">{line.price.toLocaleString()}đ</div>
                           <div className="text-xs text-emerald-700">Còn lại: {remainingAfterLine}/{maxQuantity}</div>
                         </div>
@@ -535,7 +535,7 @@ export const SalesManager: React.FC<SalesManagerProps> = ({
               return (
                 <div key={item.id} className="border border-slate-100 rounded-lg p-3 bg-slate-50">
                   <div className="font-bold truncate">{item.name}</div>
-                  <div className="text-xs text-slate-500 font-mono truncate">{item.barcode || item.id}</div>
+                  <div className="text-xs text-slate-500 font-sans truncate">{item.barcode || item.id}</div>
                   <div className="mt-2 flex items-end justify-between gap-3">
                     <div>
                       <div className="text-xs text-slate-500">Giá niêm yết</div>
