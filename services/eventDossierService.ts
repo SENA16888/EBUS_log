@@ -356,6 +356,9 @@ const calculateStaffCosts = (event: Event) => calculateGroupedStaffCosts(event.s
 const calculateExpenseCosts = (event: Event) =>
   (event.expenses || []).reduce((sum, expense) => sum + (Number(expense.amount) || 0), 0);
 
+const calculateRequestedAdvances = (event: Event) =>
+  (event.advanceRequests || []).reduce((sum, request) => sum + (Number(request.amount) || 0), 0);
+
 const calculateSaleOrderRevenue = (order: SaleOrder) => {
   if ((order.type || 'SALE') === 'RETURN' || order.status !== 'FINALIZED') return 0;
   const itemRevenue = (order.items || []).reduce((sum, item) => {
@@ -467,12 +470,26 @@ const buildPlanSection = (event: Event, employees: Employee[], preparedBy: strin
         </tr>
       `;
   const staffActionRowCount = Math.max(1, programStaffSummaries.length);
+  const requestedAdvances = calculateRequestedAdvances(event);
+  const advanceActionRow = `
+    <tr>
+      <td class="center">${staffActionRowCount + 1}</td>
+      <td>Chi phí tạm ứng</td>
+      <td>${event.advanceRequests?.length ? `${event.advanceRequests.length} khoản đề nghị tạm ứng` : 'Chưa có đề nghị tạm ứng'}</td>
+      <td>${htmlEscape(profile.einsteinPic || preparedBy || 'TEAM')}</td>
+      <td></td>
+      <td></td>
+      <td class="money">${formatMoney(requestedAdvances)}</td>
+      <td>Theo tổng đề nghị tại phụ lục tạm ứng, không phải số đã chi</td>
+    </tr>
+  `;
+  const budgetActionRowCount = staffActionRowCount + 1;
 
   const timelineRows = [...(event.timeline || [])]
     .sort((a, b) => a.datetime.localeCompare(b.datetime))
     .map((entry, index) => `
       <tr>
-        <td class="center">${index + staffActionRowCount + 1}</td>
+        <td class="center">${index + budgetActionRowCount + 1}</td>
         <td>${htmlEscape(TIMELINE_PHASE_LABELS[entry.phase])}</td>
         <td>${multiline(entry.note)}</td>
         <td>${htmlEscape(profile.einsteinPic || preparedBy || 'TEAM')}</td>
@@ -486,7 +503,7 @@ const buildPlanSection = (event: Event, employees: Employee[], preparedBy: strin
   const staffCosts = calculateStaffCosts(event);
   const expenseRows = (event.expenses || []).map((expense, index) => `
     <tr>
-      <td class="center">${index + staffActionRowCount + 1 + (event.timeline?.length || 0)}</td>
+      <td class="center">${index + budgetActionRowCount + 1 + (event.timeline?.length || 0)}</td>
       <td>${htmlEscape(EXPENSE_CATEGORY_LABELS[expense.category])}</td>
       <td>${multiline(expense.description)}</td>
       <td>${htmlEscape(profile.einsteinPic || preparedBy || 'TEAM')}</td>
@@ -496,7 +513,7 @@ const buildPlanSection = (event: Event, employees: Employee[], preparedBy: strin
       <td>${htmlEscape(expense.vatInvoiceLink ? 'Có hóa đơn/chứng từ' : '')}</td>
     </tr>
   `).join('');
-  const totalCosts = staffCosts + calculateExpenseCosts(event);
+  const totalCosts = staffCosts + calculateExpenseCosts(event) + requestedAdvances;
   const eventType = profile.eventType ? EVENT_TYPE_LABELS[profile.eventType] : 'Chương trình trải nghiệm khoa học';
   const audience = getAudienceLabel(event);
   const contact = profile.schoolContact;
@@ -558,6 +575,7 @@ const buildPlanSection = (event: Event, employees: Employee[], preparedBy: strin
         <tbody>
           <tr class="group-row"><td colspan="6">Vận hành</td><td class="money">${formatMoney(totalCosts)}</td><td></td></tr>
           ${staffActionRows}
+          ${advanceActionRow}
           ${timelineRows}
           ${expenseRows}
           <tr class="total-row"><td colspan="6">Tổng tiền</td><td class="money">${formatMoney(totalCosts)}</td><td></td></tr>
@@ -648,7 +666,7 @@ const buildExpenseSection = (event: Event, quotation?: Quotation | null, saleOrd
 
 const buildAdvanceSection = (event: Event) => {
   const requests = event.advanceRequests || [];
-  const requested = requests.reduce((sum, request) => sum + (Number(request.amount) || 0), 0);
+  const requested = calculateRequestedAdvances(event);
   const paid = Number(event.advancePaidAmount) || 0;
   const vatExpenses = (event.expenses || [])
     .filter(expense => Boolean(expense.vatInvoiceLink))
